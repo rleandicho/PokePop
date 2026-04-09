@@ -45,7 +45,6 @@ export default function App() {
       .select('id, username')
       .eq('id', userId)
       .maybeSingle()
-    console.log('Current Profile:', data, error ?? '')
     setProfile(data ?? null)
     setProfileReady(true)
   }
@@ -78,10 +77,11 @@ export default function App() {
 
   // ── Filter helpers ──────────────────────────────────────────────────────────
   function handleVibeChange(vibe) {
+    // If vibe is toggled off (null), fall back to girlypop — never leave a blank state
     setSearch('')
     setSearchInput('')
     setSetQuery(null)
-    setActiveVibe(vibe)
+    setActiveVibe(vibe ?? 'girlypop')
   }
 
   function handleSetQuery(q) {
@@ -107,7 +107,7 @@ export default function App() {
       {/* ── Header ─────────────────────────────────────────────────────── */}
       <header className="text-center pt-8 pb-2 px-4 space-y-3">
         <h1 className="text-4xl sm:text-5xl font-bold text-pink-500 drop-shadow-sm tracking-tight">
-          Pokepop 🌸
+          Poképop 🌸
         </h1>
         <p className="text-pink-400 font-medium text-sm">
           Discover Pokémon cards by vibe ✨
@@ -154,9 +154,14 @@ export default function App() {
       {/* ── Main content ────────────────────────────────────────────────── */}
       <main className="max-w-6xl mx-auto pb-16">
         {isWishlist ? (
-          <WishlistDashboard user={user} onToast={showToast} />
+          <WishlistDashboard
+            user={user}
+            onToast={showToast}
+            onGoExplore={() => { setActiveVibe('girlypop'); setSetQuery(null) }}
+          />
         ) : (
           <CardGrid
+            key={`${activeVibe ?? ''}|${setQuery ?? ''}|${search}`}
             activeVibe={activeVibe}
             search={search}
             setQuery={setQuery}
@@ -169,6 +174,42 @@ export default function App() {
       </main>
 
       <Toast message={toast} onDone={() => setToast('')} />
+
+      {/* ── Ko-fi FAB — fixed bottom-right on desktop, footer link on mobile ── */}
+      <a
+        href="https://ko-fi.com/qakirap"
+        target="_blank"
+        rel="noopener noreferrer"
+        className="fixed bottom-5 right-5 z-40
+                   hidden sm:flex items-center gap-2
+                   bg-white/80 hover:bg-white
+                   text-pink-500 font-semibold text-sm
+                   px-4 py-2.5 rounded-full
+                   shadow-lg hover:shadow-xl
+                   border border-pink-200
+                   backdrop-blur-md
+                   transition-all duration-200
+                   hover:scale-105 active:scale-95"
+      >
+        ☕ Support on Ko-fi
+      </a>
+
+      {/* Mobile: centered footer link so it never blocks "Load More" */}
+      <footer className="sm:hidden text-center py-4 pb-6">
+        <a
+          href="https://ko-fi.com/qakirap"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1.5
+                     text-xs text-pink-400 font-semibold
+                     bg-white/60 hover:bg-white/90
+                     px-4 py-2 rounded-full
+                     border border-pink-200
+                     shadow-sm transition-all"
+        >
+          ☕ Support on Ko-fi
+        </a>
+      </footer>
     </div>
   )
 }

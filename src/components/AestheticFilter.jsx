@@ -1,45 +1,82 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, memo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 
 // ─── Vibe definitions ─────────────────────────────────────────────────────────
 const VIBES = [
-  { id: 'all',         label: 'All Cards 🌐',   color: 'bg-sky-100 text-sky-700' },
-  { id: 'girlypop',    label: 'Girlypop 🌸',   color: 'bg-pink-200 text-pink-700' },
-  { id: 'space',       label: 'Space ✨',        color: 'bg-indigo-200 text-indigo-700' },
-  { id: 'pastel',      label: 'Pastel 🍬',       color: 'bg-yellow-100 text-yellow-600' },
-  { id: 'cottagecore', label: 'Cottagecore 🌿',  color: 'bg-green-200 text-green-700' },
-  { id: 'darkfairy',   label: 'Dark Fairy 🖤',   color: 'bg-purple-200 text-purple-700' },
-  { id: 'nature',      label: 'Nature 🌱',       color: 'bg-emerald-200 text-emerald-700' },
+  { id: 'all',         label: 'All Cards 🌐',          color: 'bg-sky-100 text-sky-700' },
+  { id: 'girlypop',    label: 'Girlypop 🌸',           color: 'bg-pink-200 text-pink-700' },
+  { id: 'space',       label: 'Space ✨',               color: 'bg-indigo-200 text-indigo-700' },
+  { id: 'pastel',      label: 'Pastel 🍬',              color: 'bg-yellow-100 text-yellow-600' },
+  { id: 'cottagecore', label: 'Cottagecore 🌿',         color: 'bg-green-200 text-green-700' },
+  { id: 'darkfairy',   label: 'Dark Fairy 🖤',          color: 'bg-purple-200 text-purple-700' },
+  { id: 'nature',      label: 'Nature 🌱',              color: 'bg-emerald-200 text-emerald-700' },
+  { id: 'fullart',     label: 'Full Art 🎨',            color: 'bg-fuchsia-200 text-fuchsia-700' },
 ]
 
-// ─── Module-level sets cache (fetch once for the session) ─────────────────────
-let setsCache = null
+// ─── Sets cache — memory + localStorage with 24-hour TTL ─────────────────────
+const LS_KEY = 'pokepop_sets_v1'
+const TTL_MS = 24 * 60 * 60 * 1000
+
+let setsCache = null   // in-memory reference to avoid re-parsing localStorage
 
 async function fetchSets() {
+  // 1. Return in-memory cache immediately (same session, already parsed)
   if (setsCache) return setsCache
-  const res  = await fetch('https://api.pokemontcg.io/v2/sets?orderBy=-releaseDate&select=id,name,series,releaseDate')
-  const data = await res.json()
-  const sets  = data.data ?? []
 
-  // Build ordered { series → [set, ...] } preserving newest-series-first order
-  const order   = []
+  // 2. Try localStorage (survives page reload within 24 h)
+  try {
+    const raw = localStorage.getItem(LS_KEY)
+    if (raw) {
+      const { ts, payload } = JSON.parse(raw)
+      if (Date.now() - ts < TTL_MS) {
+        setsCache = payload
+        return setsCache
+      }
+    }
+  } catch (_) { /* corrupt entry — fall through to network */ }
+
+  // 3. Fetch from TCG API (pageSize=250 is the API maximum)
+  const res  = await fetch(
+    'https://api.pokemontcg.io/v2/sets?orderBy=-releaseDate&pageSize=250&select=id,name,series,releaseDate'
+  )
+  const data = await res.json()
+  const sets = data.data ?? []
+
+  // Group ALL sets by series — sets without a series fall under 'Other'
   const grouped = {}
   for (const s of sets) {
-    if (!grouped[s.series]) { grouped[s.series] = []; order.push(s.series) }
-    grouped[s.series].push(s)
+    const key = s.series?.trim() || 'Other'
+    if (!grouped[key]) grouped[key] = []
+    grouped[key].push(s)
   }
+
+  // Sort sets within each series newest → oldest
+  for (const key of Object.keys(grouped)) {
+    grouped[key].sort((a, b) => new Date(b.releaseDate) - new Date(a.releaseDate))
+  }
+
+  // Sort series headers by their newest set's releaseDate (newest series first)
+  const order = Object.keys(grouped).sort((a, b) =>
+    new Date(grouped[b][0].releaseDate) - new Date(grouped[a][0].releaseDate)
+  )
+
   setsCache = { grouped, order }
+
+  // 4. Persist to localStorage for next page load
+  try {
+    localStorage.setItem(LS_KEY, JSON.stringify({ ts: Date.now(), payload: setsCache }))
+  } catch (_) { /* storage full — fine, session cache still works */ }
+
   return setsCache
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
-export default function AestheticFilter({ active, onChange, setQuery, onSetQuery, user }) {
+function AestheticFilter({ active, onChange, setQuery, onSetQuery, user }) {
   const [setsOpen,       setSetsOpen]       = useState(false)
   const [setGroups,      setSetGroups]      = useState({ grouped: {}, order: [] })
   const [expandedSeries, setExpandedSeries] = useState(null)
   const [loadingSets,    setLoadingSets]    = useState(false)
 
-  // Load sets when dropdown opens
   useEffect(() => {
     if (!setsOpen) return
     if (setsCache) { setSetGroups(setsCache); return }
@@ -51,16 +88,17 @@ export default function AestheticFilter({ active, onChange, setQuery, onSetQuery
   }, [setsOpen])
 
   const vibes = user
-    ? [...VIBES, { id: 'wishlist', label: 'My Wishlist 💖', color: 'bg-rose-200 text-rose-700' }]
+    ? [...VIBES, { id: 'wishlist', label: 'Wishlist & Collection ✨📦', color: 'bg-rose-200 text-rose-700' }]
     : VIBES
 
   function handleVibe(id) {
-    onSetQuery(null)                         // clear set filter
-    onChange(id === active ? null : id)
+    onSetQuery(null)
+    // Toggling the active pill off snaps back to girlypop, never leaves a null state
+    onChange(id === active ? 'girlypop' : id)
   }
 
   function handleSeriesClick(series) {
-    onChange(null)                           // clear vibe
+    onChange(null)
     setExpandedSeries(expandedSeries === series ? null : series)
     const q = `set.series:"${series}"`
     onSetQuery(setQuery === q ? null : q)
@@ -72,7 +110,6 @@ export default function AestheticFilter({ active, onChange, setQuery, onSetQuery
     onSetQuery(setQuery === q ? null : q)
   }
 
-  // Derive which series/set is currently active from setQuery
   const activeSeriesQuery = setQuery?.startsWith('set.series:') ? setQuery : null
   const activeSetQuery    = setQuery?.startsWith('set.id:')     ? setQuery : null
 
@@ -120,7 +157,7 @@ export default function AestheticFilter({ active, onChange, setQuery, onSetQuery
         </motion.button>
       </div>
 
-      {/* ── Sets accordion (collapsible) ───────────────────────────────── */}
+      {/* ── Sets accordion ─────────────────────────────────────────────── */}
       <AnimatePresence>
         {setsOpen && (
           <motion.div
@@ -130,7 +167,7 @@ export default function AestheticFilter({ active, onChange, setQuery, onSetQuery
             className="overflow-hidden"
           >
             <div className="border-t border-white/40 mt-1 pt-2 max-h-64 overflow-y-auto
-                            scrollbar-thin space-y-0.5 px-2 max-w-2xl mx-auto">
+                            scrollbar-thin space-y-0.5 px-2 max-w-4xl mx-auto">
 
               {loadingSets && (
                 <div className="flex items-center justify-center gap-2 py-4 text-pink-400 text-xs font-medium">
@@ -151,7 +188,6 @@ export default function AestheticFilter({ active, onChange, setQuery, onSetQuery
 
                 return (
                   <div key={series}>
-                    {/* Series row */}
                     <div className="flex items-center gap-1">
                       <motion.button
                         whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
@@ -166,7 +202,6 @@ export default function AestheticFilter({ active, onChange, setQuery, onSetQuery
                         <span className="ml-1 text-gray-400 font-normal">({sets.length})</span>
                       </motion.button>
 
-                      {/* Expand arrow */}
                       <button
                         onClick={() => setExpandedSeries(isExpanded ? null : series)}
                         className="p-1 text-gray-400 hover:text-sky-500 transition-colors"
@@ -181,7 +216,6 @@ export default function AestheticFilter({ active, onChange, setQuery, onSetQuery
                       </button>
                     </div>
 
-                    {/* Individual sets (expanded) */}
                     <AnimatePresence>
                       {isExpanded && (
                         <motion.div
@@ -192,7 +226,7 @@ export default function AestheticFilter({ active, onChange, setQuery, onSetQuery
                         >
                           <div className="flex flex-wrap gap-1 py-1.5">
                             {sets.map(set => {
-                              const setQ    = `set.id:${set.id}`
+                              const setQ     = `set.id:${set.id}`
                               const isActive = activeSetQuery === setQ
                               return (
                                 <motion.button
@@ -223,3 +257,5 @@ export default function AestheticFilter({ active, onChange, setQuery, onSetQuery
     </div>
   )
 }
+
+export default memo(AestheticFilter)

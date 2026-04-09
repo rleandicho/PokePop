@@ -1,6 +1,7 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef, memo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { supabase } from '../lib/supabase'
+import CardSkeleton from './CardSkeleton'
 
 const PAGE_SIZE = 20
 
@@ -9,8 +10,8 @@ export const SORT_OPTIONS = [
   { id: 'oldest',    label: 'Release Date (Oldest)', param: 'set.releaseDate' },
   { id: 'newest',    label: 'Release Date (Newest)', param: '-set.releaseDate' },
   { id: 'alpha',     label: 'Alphabetical (A–Z)',    param: 'name' },
-  { id: 'price',     label: 'Price (High → Low)',    param: null },   // client-side desc
-  { id: 'price-asc', label: 'Price (Low → High)',    param: null },   // client-side asc
+  { id: 'price-high', label: 'Price (High → Low)',    param: null },   // client-side desc
+  { id: 'price-low',  label: 'Price (Low → High)',   param: null },   // client-side asc
 ]
 
 // ─── Vibe → TCG query mapping ─────────────────────────────────────────────────
@@ -21,6 +22,8 @@ const VIBE_QUERIES = {
   cottagecore: { names: ['comfey', 'roselia', 'cherubi', 'shaymin', 'tangela', 'bellossom'] },
   darkfairy:   { names: ['misdreavus', 'mismagius', 'gardevoir', 'hatterene'] },
   nature:      { type: 'grass' },
+  // Full Art: catches Sword & Shield / older "Full Art" subtypes AND modern SV rarities
+  fullart:     { query: '(subtypes:"Full Art" OR rarity:"Special Illustration Rare" OR rarity:"Illustration Rare" OR rarity:"Hyper Rare")' },
 }
 
 function getBestPrice(prices = {}) {
@@ -33,14 +36,26 @@ function getBestPrice(prices = {}) {
   )
 }
 
+// Full-card price: cardmarket averageSellPrice first, TCGPlayer holofoil as fallback.
+// Null/undefined prices resolve to 0 so they always sink to the bottom of sorted results.
+function getCardPrice(card) {
+  return (
+    card.cardmarket?.prices?.averageSellPrice ||
+    card.tcgplayer?.prices?.holofoil?.market  ||
+    0
+  )
+}
+
 // Returns the q= value, or null for "all cards" (no filter)
 function buildTcgQuery(vibe, search, setQuery) {
-  if (search)   return `name:"*${search}*"`
+  // Strip characters that could break the Lucene query syntax
+  if (search)   return `name:"*${search.replace(/["()]/g, '').trim()}*"`
   if (setQuery) return setQuery                // e.g. set.id:sv1 or set.series:"Scarlet & Violet"
   if (vibe === 'all') return null              // all cards, no filter
   const cfg = VIBE_QUERIES[vibe]
   if (!cfg) return null
-  if (cfg.type) return `types:${cfg.type}`
+  if (cfg.query) return cfg.query              // raw query string (e.g. fullart)
+  if (cfg.type)  return `types:${cfg.type}`
   return `name:${cfg.names[Math.floor(Math.random() * cfg.names.length)]}`
 }
 
@@ -57,8 +72,8 @@ function PriceTag({ prices }) {
 
 function SortToolbar({ sortBy, onSortChange }) {
   return (
-    <div className="flex justify-end items-center px-4 pt-2 pb-1 gap-2">
-      <span className="text-xs text-gray-400 font-medium">Sort by</span>
+    <div className="flex justify-end items-center flex-wrap px-4 pt-2 pb-1 gap-2">
+      <span className="text-xs text-gray-400 font-medium whitespace-nowrap">Sort by</span>
       <div className="relative">
         <select
           value={sortBy}
@@ -66,13 +81,12 @@ function SortToolbar({ sortBy, onSortChange }) {
           className="appearance-none bg-white/70 border border-pink-200 text-pink-600 text-xs
                      font-semibold rounded-full pl-3 pr-7 py-1.5 focus:outline-none
                      focus:ring-2 focus:ring-pink-300 cursor-pointer shadow-sm hover:bg-white/90
-                     transition-all"
+                     transition-all max-w-[200px]"
         >
           {SORT_OPTIONS.map(o => (
             <option key={o.id} value={o.id}>{o.label}</option>
           ))}
         </select>
-        {/* custom chevron */}
         <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-pink-400 text-xs">
           ▾
         </span>
@@ -98,7 +112,7 @@ function CardModal({ card, user, onToast, onClose }) {
       market_price: getBestPrice(prices),
     }, { onConflict: 'user_id,card_id' })
     setSaving(false)
-    if (!error) { setSaved(true); onToast('Saved to Wishlist! 💖') }
+    if (!error) { setSaved(true); onToast('Saved to Wishlist & Collection! ✨📦') }
   }
 
   return (
@@ -137,10 +151,10 @@ function CardModal({ card, user, onToast, onClose }) {
               className="bg-rose-400 hover:bg-rose-500 disabled:opacity-60 text-white
                          font-semibold py-2 rounded-2xl transition-colors"
             >
-              {saved ? 'Added! 💖' : saving ? 'Saving…' : '✨ Add to Wishlist'}
+              {saved ? 'Saved! ✨📦' : saving ? 'Saving…' : '✨ Add to Wishlist & Collection'}
             </button>
           ) : (
-            <p className="text-center text-xs text-gray-400">Login to save cards to your wishlist 💖</p>
+            <p className="text-center text-xs text-gray-400">Login to save cards to your Wishlist & Collection 💖</p>
           )}
           {card.tcgplayer?.url && (
             <a href={card.tcgplayer.url} target="_blank" rel="noreferrer"
@@ -159,46 +173,60 @@ function CardModal({ card, user, onToast, onClose }) {
 }
 
 // ─── Main grid ────────────────────────────────────────────────────────────────
-export default function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, user, onToast }) {
+function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, user, onToast }) {
   const [cards,    setCards]    = useState([])
   const [page,     setPage]     = useState(1)
   const [hasMore,  setHasMore]  = useState(false)
-  const [loading,  setLoading]  = useState(false)
+  // Start as true when a filter is already active so skeletons show on the very first paint
+  const [loading,  setLoading]  = useState(() => !!(activeVibe || setQuery || search))
   const [selected, setSelected] = useState(null)
 
+  const abortRef = useRef(null)
+  const reqIdRef = useRef(0)   // increments with every new request; stale responses check this
+
   const fetchCards = useCallback(async (vibe, srch, sq, sort, pg) => {
+    // Cancel any in-flight request
+    abortRef.current?.abort()
+    abortRef.current = new AbortController()
+    const { signal } = abortRef.current
+
+    // Stamp this request so we can discard responses that arrive out of order
+    const reqId = ++reqIdRef.current
+
     setLoading(true)
 
-    const q           = buildTcgQuery(vibe, srch, sq)
-    const sortOption  = SORT_OPTIONS.find(o => o.id === sort) ?? SORT_OPTIONS[0]
-    // price sorts are client-side; still ask API for oldest-first for a stable result set
-    const orderParam  = sortOption.param ?? 'set.releaseDate'
+    const q          = buildTcgQuery(vibe, srch, sq)
+    const sortOption = SORT_OPTIONS.find(o => o.id === sort) ?? SORT_OPTIONS[0]
+    // Price sorts are client-side; use oldest-first from the API for a stable page window
+    const orderParam = sortOption.param ?? 'set.releaseDate'
 
-    let url = `https://api.pokemontcg.io/v2/cards?page=${pg}&pageSize=${PAGE_SIZE}&orderBy=${encodeURIComponent(orderParam)}&select=id,name,images,set,rarity,tcgplayer`
+    let url = `https://api.pokemontcg.io/v2/cards?page=${pg}&pageSize=${PAGE_SIZE}&orderBy=${encodeURIComponent(orderParam)}&select=id,name,images,set,rarity,tcgplayer,cardmarket`
     if (q) url += `&q=${encodeURIComponent(q)}`
 
     try {
-      const res  = await fetch(url)
+      const res = await fetch(url, { signal })
+
+      // A newer request has already started — discard this response entirely
+      if (reqIdRef.current !== reqId) return
+
       const data = await res.json()
       let incoming = data.data ?? []
 
-      // Client-side price sort (API doesn't expose price ordering)
-      if (sort === 'price') {
-        incoming = [...incoming].sort((a, b) =>
-          getBestPrice(b.tcgplayer?.prices) - getBestPrice(a.tcgplayer?.prices)
-        )
-      } else if (sort === 'price-asc') {
-        incoming = [...incoming].sort((a, b) =>
-          getBestPrice(a.tcgplayer?.prices) - getBestPrice(b.tcgplayer?.prices)
-        )
+      if (sort === 'price-high') {
+        incoming = [...incoming].sort((a, b) => getCardPrice(b) - getCardPrice(a))
+      } else if (sort === 'price-low') {
+        incoming = [...incoming].sort((a, b) => getCardPrice(a) - getCardPrice(b))
       }
 
       setCards(prev => pg === 1 ? incoming : [...prev, ...incoming])
       setHasMore(incoming.length === PAGE_SIZE)
-    } catch (_) {
+    } catch (err) {
+      if (err.name === 'AbortError') return   // intentional cancel — leave loading state alone
       setHasMore(false)
     }
-    setLoading(false)
+
+    // Only clear loading if this is still the active request
+    if (reqIdRef.current === reqId) setLoading(false)
   }, [])
 
   useEffect(() => {
@@ -227,7 +255,7 @@ export default function CardGrid({ activeVibe, search, setQuery, sortBy, onSortC
     <>
       <SortToolbar sortBy={sortBy} onSortChange={onSortChange} />
 
-      {(sortBy === 'price' || sortBy === 'price-asc') && (
+      {(sortBy === 'price-high' || sortBy === 'price-low') && (
         <p className="text-center text-xs text-gray-400 pb-1">
           Price sort applies per page of 20 cards
         </p>
@@ -258,7 +286,13 @@ export default function CardGrid({ activeVibe, search, setQuery, sortBy, onSortC
         ))}
       </motion.div>
 
-      {loading && (
+      {loading && cards.length === 0 && (
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 p-4">
+          {Array.from({ length: 10 }).map((_, i) => <CardSkeleton key={i} />)}
+        </div>
+      )}
+
+      {loading && cards.length > 0 && (
         <div className="flex justify-center py-8">
           <motion.div
             className="w-10 h-10 rounded-full border-4 border-pink-300 border-t-pink-500"
@@ -288,3 +322,5 @@ export default function CardGrid({ activeVibe, search, setQuery, sortBy, onSortC
     </>
   )
 }
+
+export default memo(CardGrid)

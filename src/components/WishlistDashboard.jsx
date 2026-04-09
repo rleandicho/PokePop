@@ -110,7 +110,7 @@ function HighRollers({ items }) {
 }
 
 // ─── Main dashboard ──────────────────────────────────────────────────────────
-export default function WishlistDashboard({ user, onToast }) {
+export default function WishlistDashboard({ user, onToast, onGoExplore }) {
   const [items,   setItems]   = useState([])
   const [loading, setLoading] = useState(true)
 
@@ -136,23 +136,22 @@ export default function WishlistDashboard({ user, onToast }) {
       .eq('user_id', user.id)
       .eq('card_id', cardId)
     if (error) {
-      // Roll back on failure
       setItems(prev => prev.map(i => i.card_id === cardId ? { ...i, owned: currentOwned } : i))
     } else {
-      onToast(!currentOwned ? 'Marked as owned! 🌸' : 'Removed from owned')
+      onToast(!currentOwned ? 'Added to Collection! ✨📦' : 'Moved back to Wishlist 💖')
     }
   }
 
   async function removeCard(cardId) {
     setItems(prev => prev.filter(i => i.card_id !== cardId))
     await supabase.from('wishlists').delete().eq('user_id', user.id).eq('card_id', cardId)
-    onToast('Removed from wishlist')
+    onToast('Removed from Wishlist & Collection')
   }
 
   if (!user) {
     return (
       <p className="text-center text-pink-300 font-semibold mt-16 text-lg">
-        Login to see your wishlist 💖
+        Login to see your Wishlist & Collection ✨📦
       </p>
     )
   }
@@ -170,9 +169,19 @@ export default function WishlistDashboard({ user, onToast }) {
 
   if (!items.length) {
     return (
-      <p className="text-center text-pink-300 font-semibold mt-16 text-lg">
-        Your wishlist is empty — add some cards! 🌸
-      </p>
+      <div className="text-center mt-16 px-4">
+        <p className="text-pink-300 font-semibold text-lg mb-4">
+          Your collection is empty! Go find some cards! ✨
+        </p>
+        <motion.button
+          whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.97 }}
+          onClick={onGoExplore}
+          className="bg-pink-400 hover:bg-pink-500 text-white font-semibold
+                     px-6 py-2.5 rounded-full shadow-md transition-colors"
+        >
+          Start Exploring 🌸
+        </motion.button>
+      </div>
     )
   }
 
@@ -227,7 +236,7 @@ export default function WishlistDashboard({ user, onToast }) {
                 className="absolute top-1.5 right-1.5 z-10 w-6 h-6 rounded-full bg-white/70
                            text-gray-400 hover:text-red-400 hover:bg-white text-xs leading-none
                            flex items-center justify-center shadow-sm transition-colors"
-                title="Remove from wishlist"
+                title="Remove from Wishlist & Collection"
               >
                 ✕
               </button>
