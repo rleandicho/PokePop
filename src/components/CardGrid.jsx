@@ -15,12 +15,15 @@ export const SORT_OPTIONS = [
 ]
 
 // ─── Vibe → TCG query mapping ─────────────────────────────────────────────────
+// name-based vibes use `names` arrays — all are OR'd together for consistent results
 const VIBE_QUERIES = {
-  girlypop:    { names: ['cleffa', 'sylveon', 'alcremie', 'jigglypuff', 'togepi', 'snubbull', 'togekiss', 'clefairy'] },
-  space:       { names: ['cleffa', 'lunala', 'cosmog', 'minior', 'staryu', 'starmie', 'jirachi'] },
+  girlypop:    { names: ['cleffa', 'sylveon', 'alcremie', 'jigglypuff', 'togepi', 'snubbull', 'togekiss', 'clefairy', 'chansey', 'happiny', 'mew', 'eevee'] },
+  // Space: named space Pokémon + background-aware flavor/set keywords to catch non-space Pokémon
+  // depicted in starry/lunar/cosmic scenes (e.g. Clefairy on a moonlit mountain).
+  space: { query: '((name:lunala OR name:cosmog OR name:cosmoem OR name:minior OR name:jirachi OR name:elgyem OR name:beheeyem OR name:deoxys OR name:solrock OR name:lunatone OR name:cresselia OR name:stakataka OR name:nihilego OR name:solgaleo) OR set.name:"Cosmic Eclipse" OR flavorText:space OR flavorText:galaxy OR flavorText:moon OR flavorText:meteor OR flavorText:celestial OR flavorText:cosmic OR flavorText:lunar)' },
   pastel:      { type: 'fairy' },
-  cottagecore: { names: ['comfey', 'roselia', 'cherubi', 'shaymin', 'tangela', 'bellossom'] },
-  darkfairy:   { names: ['misdreavus', 'mismagius', 'gardevoir', 'hatterene'] },
+  cottagecore: { names: ['comfey', 'roselia', 'cherubi', 'shaymin', 'tangela', 'bellossom', 'flabebe', 'floette', 'florges', 'gossifleur', 'eldegoss'] },
+  darkfairy:   { names: ['misdreavus', 'mismagius', 'gardevoir', 'hatterene', 'grimmsnarl', 'dragapult', 'gengar', 'spiritomb'] },
   nature:      { type: 'grass' },
   // Full Art: catches Sword & Shield / older "Full Art" subtypes AND modern SV rarities
   fullart:     { query: '(subtypes:"Full Art" OR rarity:"Special Illustration Rare" OR rarity:"Illustration Rare" OR rarity:"Hyper Rare")' },
@@ -36,14 +39,9 @@ function getBestPrice(prices = {}) {
   )
 }
 
-// Full-card price: cardmarket averageSellPrice first, TCGPlayer holofoil as fallback.
-// Null/undefined prices resolve to 0 so they always sink to the bottom of sorted results.
+// Sort price uses the same source as the displayed PriceTag to avoid visible mismatches.
 function getCardPrice(card) {
-  return (
-    card.cardmarket?.prices?.averageSellPrice ||
-    card.tcgplayer?.prices?.holofoil?.market  ||
-    0
-  )
+  return getBestPrice(card.tcgplayer?.prices ?? {})
 }
 
 // Returns the q= value, or null for "all cards" (no filter)
@@ -56,7 +54,8 @@ function buildTcgQuery(vibe, search, setQuery) {
   if (!cfg) return null
   if (cfg.query) return cfg.query              // raw query string (e.g. fullart)
   if (cfg.type)  return `types:${cfg.type}`
-  return `name:${cfg.names[Math.floor(Math.random() * cfg.names.length)]}`
+  // OR all names together for consistent, full-vibe results
+  return `(${cfg.names.map(n => `name:${n}`).join(' OR ')})`
 }
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
@@ -210,15 +209,16 @@ function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, user, on
       if (reqIdRef.current !== reqId) return
 
       const data = await res.json()
-      let incoming = data.data ?? []
+      const incoming = data.data ?? []
 
-      if (sort === 'price-high') {
-        incoming = [...incoming].sort((a, b) => getCardPrice(b) - getCardPrice(a))
-      } else if (sort === 'price-low') {
-        incoming = [...incoming].sort((a, b) => getCardPrice(a) - getCardPrice(b))
-      }
-
-      setCards(prev => pg === 1 ? incoming : [...prev, ...incoming])
+      // Merge first, THEN sort the entire accumulated list so prices are globally ordered.
+      // Without this, each page would be sorted in isolation and correct ordering breaks on "Load More".
+      setCards(prev => {
+        const all = pg === 1 ? incoming : [...prev, ...incoming]
+        if (sort === 'price-high') return [...all].sort((a, b) => getCardPrice(b) - getCardPrice(a))
+        if (sort === 'price-low')  return [...all].sort((a, b) => getCardPrice(a) - getCardPrice(b))
+        return all
+      })
       setHasMore(incoming.length === PAGE_SIZE)
     } catch (err) {
       if (err.name === 'AbortError') return   // intentional cancel — leave loading state alone
@@ -271,7 +271,7 @@ function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, user, on
           <motion.div
             key={card.id}
             className="cursor-pointer rounded-2xl overflow-hidden shadow-md"
-            style={{ background: 'rgba(255,255,255,0.45)', backdropFilter: 'blur(10px)', border: '1px solid rgba(255,255,255,0.6)' }}
+            style={{ background: 'rgba(255,255,255,0.45)', backdropFilter: 'blur(10px)', border: '1px solid rgba(255,255,255,0.6)', userSelect: 'none', WebkitUserSelect: 'none', WebkitTouchCallout: 'none', touchAction: 'manipulation' }}
             variants={{ hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0 } }}
             whileHover={{ scale: 1.05, boxShadow: '0 12px 30px rgba(255,182,193,0.5)' }}
             onClick={() => setSelected(card)}
