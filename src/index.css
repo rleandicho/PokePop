@@ -1,0 +1,17 @@
+@import url('https://fonts.googleapis.com/css2?family=Quicksand:wght@400;500;600;700&display=swap');
+@import "tailwindcss";
+
+* {
+  font-family: 'Quicksand', sans-serif;
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: linear-gradient(135deg, #FFD1DC 0%, #FFF0F5 50%, #B2E2F2 100%);
+}
+
+#root {
+  min-height: 100vh;
+}
