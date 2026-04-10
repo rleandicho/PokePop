@@ -19,9 +19,7 @@ export const SORT_OPTIONS = [
 // name-based vibes use `names` arrays — all are OR'd together for consistent results
 const VIBE_QUERIES = {
   girlypop:    { names: ['cleffa', 'sylveon', 'alcremie', 'jigglypuff', 'togepi', 'snubbull', 'togekiss', 'clefairy', 'chansey', 'happiny', 'mew', 'eevee'] },
-  // Cast the widest net for Trainer cards: root supertype + all modern subtype labels so
-  // Supporters, Items, and Stadiums that lack an explicit supertype tag are still caught.
-  trainers:    { query: '(supertype:Trainer OR subtypes:Supporter OR subtypes:Item OR subtypes:Stadium)' },
+  trainers:    { query: 'supertype:Trainer OR subtypes:Supporter OR subtypes:Item OR subtypes:Stadium' },
   // Space: named space Pokémon + background-aware flavor/set keywords to catch non-space Pokémon
   // depicted in starry/lunar/cosmic scenes (e.g. Clefairy on a moonlit mountain).
   space: { query: '((name:lunala OR name:cosmog OR name:cosmoem OR name:minior OR name:jirachi OR name:elgyem OR name:beheeyem OR name:deoxys OR name:solrock OR name:lunatone OR name:cresselia OR name:stakataka OR name:nihilego OR name:solgaleo) OR set.name:"Cosmic Eclipse" OR flavorText:space OR flavorText:galaxy OR flavorText:moon OR flavorText:meteor OR flavorText:celestial OR flavorText:cosmic OR flavorText:lunar)' },
@@ -80,22 +78,32 @@ function sortCards(cards, sort) {
   }
 }
 
-// Returns the q= value, or null for "all cards" (no filter).
-// A name search and a set filter can be combined — e.g. searching "Charizard" while a set
-// is active sends: name:"*charizard*" set.id:sv4  so the API intersects both constraints.
+// Builds the q= string sent to the TCG API.
+// Parts are joined with a space — the API treats spaces as AND operators.
+// Returns null when there is nothing to filter (renders "all cards" endpoint).
 function buildTcgQuery(vibe, search, setQuery) {
-  // Strip characters that could break the Lucene query syntax
+  const parts = []
+
+  // 1. Name search — wildcards let partial names match (e.g. "eev" → Eevee)
   const safeName = search ? search.replace(/["()]/g, '').trim() : ''
-  if (safeName && setQuery) return `name:"*${safeName}*" ${setQuery}`
-  if (safeName)  return `name:"*${safeName}*"`
-  if (setQuery) return setQuery                // e.g. set.id:sv1 or set.series:"Scarlet & Violet"
-  if (vibe === 'all') return null              // all cards, no filter
-  const cfg = VIBE_QUERIES[vibe]
-  if (!cfg) return null
-  if (cfg.query) return cfg.query   // raw Lucene string (fullart, trainers, space…)
-  if (cfg.type)  return `types:${cfg.type}`
-  // OR all names together for consistent, full-vibe results
-  return `(${cfg.names.map(n => `name:${n}`).join(' OR ')})`
+  if (safeName) parts.push(`name:"*${safeName}*"`)
+
+  // 2. Set filter — passed through verbatim (e.g. "set.id:base1", "set.series:\"Base\"")
+  if (setQuery) parts.push(setQuery)
+
+  // 3. Vibe filter — skipped for 'all' or when vibe is null/undefined
+  if (vibe && vibe !== 'all') {
+    const cfg = VIBE_QUERIES[vibe]
+    if (cfg) {
+      // Raw query strings are wrapped in () so their internal OR clauses don't bleed
+      // into the AND-joined parts (e.g. "name:*eevee* (supertype:Trainer OR ...)")
+      if      (cfg.query) parts.push(`(${cfg.query})`)
+      else if (cfg.type)  parts.push(`types:${cfg.type}`)
+      else if (cfg.names) parts.push(`(${cfg.names.map(n => `name:${n}`).join(' OR ')})`)
+    }
+  }
+
+  return parts.length ? parts.join(' ') : null
 }
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
@@ -277,6 +285,8 @@ function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, user, on
     // number + subtypes added so variant badges ("1st Ed", "#4/102") render without a second fetch
     let url = `https://api.pokemontcg.io/v2/cards?page=${pg}&pageSize=${PAGE_SIZE}&orderBy=${encodeURIComponent('set.releaseDate')}&select=id,name,images,set,number,subtypes,rarity,tcgplayer,cardmarket`
     if (q) url += `&q=${encodeURIComponent(q)}`
+
+    console.log("Final API Query:", q)
 
     try {
       const res = await fetch(url, { signal })
