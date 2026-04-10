@@ -805,14 +805,15 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
         ))}
         {/* Share button */}
         <motion.button
-          whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.92 }}
+          whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }}
           onClick={handleShare}
-          className="w-9 h-9 flex items-center justify-center rounded-full
-                     bg-pink-400 hover:bg-pink-500 text-white
-                     shadow-sm transition-colors text-base"
+          className="flex items-center gap-1.5 px-4 py-1.5 rounded-full
+                     bg-pink-400 hover:bg-pink-500 text-white text-sm font-semibold
+                     shadow-sm transition-colors"
           title="Share My Collection"
         >
-          ↗
+          <span>↗</span>
+          <span>Share</span>
         </motion.button>
 
         {/* Settings gear */}
@@ -833,7 +834,7 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
         <>
           {/* Bookshelf row */}
           <div className="px-4 mb-6">
-            <div className="flex items-center gap-4 overflow-x-auto pb-2 scrollbar-none">
+            <div className="flex items-center justify-center gap-4 overflow-x-auto pb-2 scrollbar-none">
               {binders.map(b => {
                 const isActive = selectedBinder?.id === b.id
                 const col      = b.color ?? '#a78bfa'
@@ -848,7 +849,6 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
                           color:           '#fff',
                           backgroundColor:  col,
                           borderColor:      col,
-                          boxShadow: `0 0 0 4px ${col}50, 0 0 28px ${col}60, 0 6px 20px ${col}40`,
                         }
                       : {
                           background:  'rgba(255,255,255,0.75)',
