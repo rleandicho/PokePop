@@ -513,7 +513,7 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
         .from('wishlists')
         .select('card_id, name, image, owned, market_price, slot_index, binder_id')
         .eq('user_id', user.id)
-        .order('created_at', { ascending: false }),
+        .order('slot_index', { ascending: true, nullsFirst: false }),
       supabase
         .from('profiles')
         .select('is_public')

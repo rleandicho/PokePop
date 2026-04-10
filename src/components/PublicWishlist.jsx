@@ -40,14 +40,14 @@ export default function PublicWishlist() {
 
       setProfile(prof)
 
-      // Fetch wishlist + follow status together
-      // Order by slot_index so the public binder mirrors the owner's layout exactly
+      // Fetch wishlist + follow status together.
+      // nullsFirst: false keeps slot-indexed cards first; null-slot cards fill gaps after.
       const queries = [
         supabase
           .from('wishlists')
           .select('card_id, name, image, owned, market_price, slot_index')
           .eq('user_id', userId)
-          .order('slot_index', { ascending: true }),
+          .order('slot_index', { ascending: true, nullsFirst: false }),
       ]
 
       // Only check follow status if viewer is logged in and not their own page
