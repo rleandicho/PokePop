@@ -14,3 +14,19 @@ The React Compiler is not enabled on this template because of its impact on dev 
 ## Expanding the ESLint configuration
 
 If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+
+------------------------------------------
+
+What is it?: A platform for users to find cute and filtered pokemon cards and also manage their collections
+
+The Problem: Card collection managers can be boring, outdated, or just not beginner-friendly
+
+Solution: An attractive girlypop-forward UI that focuses on the look and feel of your collection, while making it easy to find cards you would be interested in 
+
+Tech Stack: React (Vite) + Tailwind CSS + Framer Motion 
+
+Backend: Supabase (PostgreSQL, Auth, and Real-time database)
+
+Deployment: Vercel
+
+Mobile: PWA architecture 

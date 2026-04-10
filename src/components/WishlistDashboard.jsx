@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { supabase } from '../lib/supabase'
 import BinderView from './BinderView'
@@ -204,7 +204,7 @@ function SupportCard() {
         <div className="flex-1 min-w-0">
           <p className="text-sm font-bold text-amber-800">Support Poképop</p>
           <p className="text-xs text-amber-600">
-            Enjoying the app? A coffee helps keep the cards flowing ✨
+            Fund a Pack! 🃏 Every bit helps me chase the next big hit for the collection.
           </p>
         </div>
         <span className="text-xs font-semibold text-amber-700 whitespace-nowrap">
@@ -212,6 +212,248 @@ function SupportCard() {
         </span>
       </div>
     </motion.a>
+  )
+}
+
+// ─── Account settings modal ───────────────────────────────────────────────────
+function AccountSettingsModal({ user, onToast, onClose }) {
+  const [username,    setUsername]    = useState('')
+  const [saving,      setSaving]      = useState(false)
+  const [deleteStep,  setDeleteStep]  = useState(0)   // 0=idle 1=confirm 2=final
+  const [deleteInput, setDeleteInput] = useState('')
+
+  // Load current username on open
+  useEffect(() => {
+    supabase.from('profiles').select('username').eq('id', user.id).maybeSingle()
+      .then(({ data }) => { if (data?.username) setUsername(data.username) })
+  }, [user.id])
+
+  async function saveUsername() {
+    const trimmed = username.trim()
+    if (!trimmed) return
+    setSaving(true)
+    const { error } = await supabase
+      .from('profiles')
+      .update({ username: trimmed })
+      .eq('id', user.id)
+    setSaving(false)
+    if (error) {
+      onToast('Username already taken 😿 Try another!')
+    } else {
+      onToast('Username updated! ✨')
+      onClose()
+    }
+  }
+
+  async function deleteAccount() {
+    // Delete all user data then sign out (Supabase cascade handles DB rows)
+    await supabase.from('wishlists').delete().eq('user_id', user.id)
+    await supabase.from('follows').delete().eq('follower_id', user.id)
+    await supabase.from('follows').delete().eq('following_id', user.id)
+    await supabase.from('profiles').delete().eq('id', user.id)
+    await supabase.auth.signOut()
+    onToast('Account deleted. Goodbye 💔')
+  }
+
+  return (
+    <motion.div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style={{ background: 'rgba(255,209,220,0.55)', backdropFilter: 'blur(8px)' }}
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      onClick={onClose}
+    >
+      <motion.div
+        className="bg-white/90 backdrop-blur-md rounded-3xl shadow-2xl p-6 max-w-sm w-full"
+        initial={{ scale: 0.88, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.88, opacity: 0 }}
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between mb-5">
+          <h2 className="text-lg font-bold text-pink-500">⚙️ Account Settings</h2>
+          <button onClick={onClose} className="text-gray-300 hover:text-gray-500 text-xl leading-none">✕</button>
+        </div>
+
+        {/* Username */}
+        <div className="mb-5">
+          <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1.5">
+            Username
+          </label>
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={username}
+              onChange={e => setUsername(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && saveUsername()}
+              placeholder="your_trainer_name"
+              maxLength={30}
+              className="flex-1 bg-pink-50/60 border border-pink-200 rounded-xl px-3 py-2
+                         text-sm text-gray-700 placeholder-gray-300
+                         focus:outline-none focus:ring-2 focus:ring-pink-300"
+            />
+            <motion.button
+              whileTap={{ scale: 0.96 }}
+              onClick={saveUsername}
+              disabled={saving || !username.trim()}
+              className="bg-pink-400 hover:bg-pink-500 disabled:opacity-50 text-white
+                         font-semibold text-sm px-4 rounded-xl transition-colors"
+            >
+              {saving ? '…' : 'Save'}
+            </motion.button>
+          </div>
+        </div>
+
+        <div className="border-t border-gray-100 pt-4">
+          <p className="text-xs font-semibold text-red-400 uppercase tracking-wide mb-3">
+            ⚠️ Danger Zone
+          </p>
+
+          {deleteStep === 0 && (
+            <motion.button
+              whileTap={{ scale: 0.96 }}
+              onClick={() => setDeleteStep(1)}
+              className="w-full bg-red-50 hover:bg-red-100 text-red-400 border border-red-200
+                         font-semibold text-sm py-2 rounded-xl transition-colors"
+            >
+              Delete Account
+            </motion.button>
+          )}
+
+          {deleteStep === 1 && (
+            <div className="space-y-2">
+              <p className="text-xs text-gray-500 text-center">
+                This will permanently delete your collection, binders, and follows. Type{' '}
+                <span className="font-bold text-red-400">DELETE</span> to confirm.
+              </p>
+              <input
+                type="text"
+                value={deleteInput}
+                onChange={e => setDeleteInput(e.target.value)}
+                placeholder="Type DELETE"
+                className="w-full bg-red-50/60 border border-red-200 rounded-xl px-3 py-2
+                           text-sm text-center focus:outline-none focus:ring-2 focus:ring-red-300"
+              />
+              <div className="flex gap-2">
+                <button
+                  onClick={() => { setDeleteStep(0); setDeleteInput('') }}
+                  className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-500
+                             font-semibold text-sm py-2 rounded-xl transition-colors"
+                >
+                  Cancel
+                </button>
+                <motion.button
+                  whileTap={{ scale: 0.96 }}
+                  onClick={deleteAccount}
+                  disabled={deleteInput !== 'DELETE'}
+                  className="flex-1 bg-red-400 hover:bg-red-500 disabled:opacity-40
+                             text-white font-semibold text-sm py-2 rounded-xl transition-colors"
+                >
+                  Confirm Delete
+                </motion.button>
+              </div>
+            </div>
+          )}
+        </div>
+      </motion.div>
+    </motion.div>
+  )
+}
+
+// ─── New binder modal ─────────────────────────────────────────────────────────
+const BINDER_COLOR_PRESETS = [
+  '#f9a8d4', '#a78bfa', '#6ee7b7', '#7dd3fc', '#fb7185', '#fbbf24', '#1e1b4b',
+]
+
+function NewBinderModal({ onSave, onClose }) {
+  const [name,  setName]  = useState('')
+  const [color, setColor] = useState('#a78bfa')
+  const colorRef = useRef(null)
+
+  async function handleSave() {
+    const trimmed = name.trim()
+    if (!trimmed) return
+    onSave(trimmed, color)
+    onClose()
+  }
+
+  return (
+    <motion.div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style={{ background: 'rgba(255,209,220,0.55)', backdropFilter: 'blur(8px)' }}
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      onClick={onClose}
+    >
+      <motion.div
+        className="bg-white/90 backdrop-blur-md rounded-3xl shadow-2xl p-6 max-w-xs w-full"
+        initial={{ scale: 0.88, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.88, opacity: 0 }}
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-base font-bold text-pink-500">📒 New Binder</h2>
+          <button onClick={onClose} className="text-gray-300 hover:text-gray-500 text-xl leading-none">✕</button>
+        </div>
+
+        <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1.5">
+          Binder Name
+        </label>
+        <input
+          type="text"
+          value={name}
+          onChange={e => setName(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && handleSave()}
+          placeholder="e.g. Shiny Hunters"
+          maxLength={40}
+          autoFocus
+          className="w-full bg-pink-50/60 border border-pink-200 rounded-xl px-3 py-2
+                     text-sm text-gray-700 placeholder-gray-300 mb-4
+                     focus:outline-none focus:ring-2 focus:ring-pink-300"
+        />
+
+        <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">
+          Cover Color
+        </label>
+        <div className="flex items-center gap-2 flex-wrap mb-5">
+          {BINDER_COLOR_PRESETS.map(hex => (
+            <button
+              key={hex}
+              onClick={() => setColor(hex)}
+              className="w-7 h-7 rounded-full shadow-sm transition-transform hover:scale-110"
+              style={{
+                background: hex,
+                border: color === hex ? '2.5px solid #374151' : '2px solid rgba(0,0,0,0.12)',
+                outline: color === hex ? '2px solid white' : 'none',
+                outlineOffset: '-3px',
+              }}
+            />
+          ))}
+          <button
+            onClick={() => colorRef.current?.click()}
+            className="w-7 h-7 rounded-full shadow-sm flex items-center justify-center text-[10px]"
+            style={{
+              background: BINDER_COLOR_PRESETS.includes(color) ? 'rgba(255,255,255,0.7)' : color,
+              border: !BINDER_COLOR_PRESETS.includes(color) ? '2.5px solid #374151' : '2px solid rgba(0,0,0,0.12)',
+            }}
+          >
+            {BINDER_COLOR_PRESETS.includes(color) ? '✎' : ''}
+          </button>
+          <input ref={colorRef} type="color" className="sr-only" value={color} onChange={e => setColor(e.target.value)} />
+        </div>
+
+        {/* Preview swatch */}
+        <div
+          className="w-full h-8 rounded-xl mb-5 shadow-sm"
+          style={{ background: `linear-gradient(to right, ${color}, ${color}99)` }}
+        />
+
+        <motion.button
+          whileTap={{ scale: 0.96 }}
+          onClick={handleSave}
+          disabled={!name.trim()}
+          className="w-full bg-pink-400 hover:bg-pink-500 disabled:opacity-50 text-white
+                     font-semibold py-2.5 rounded-2xl transition-colors"
+        >
+          Create Binder 📒
+        </motion.button>
+      </motion.div>
+    </motion.div>
   )
 }
 
@@ -225,16 +467,22 @@ export default function WishlistDashboard({ user, onToast, onGoExplore }) {
   const [activeTab,        setActiveTab]        = useState('collection')  // 'collection' | 'binder' | 'trainers'
   const [followedTrainers, setFollowedTrainers] = useState([])
 
+  // ── Binder state ──────────────────────────────────────────────────────────
+  const [binders,         setBinders]         = useState([])
+  const [selectedBinder,  setSelectedBinder]  = useState(null)  // { id, name, color, coverColor, pageStyle }
+  const [showNewBinder,   setShowNewBinder]   = useState(false)
+  const [showSettings,    setShowSettings]    = useState(false)
+
   const shareUrl = `${window.location.origin}/share/${user?.id}`
 
   async function fetchWishlist() {
     if (!user) return
 
-    // Single round-trip: wishlist + profile + follow IDs all at once
-    const [{ data: wishlist }, { data: prof }, { data: followData }] = await Promise.all([
+    // Single round-trip: wishlist + profile + follow IDs + binders all at once
+    const [{ data: wishlist }, { data: prof }, { data: followData }, { data: binderData }] = await Promise.all([
       supabase
         .from('wishlists')
-        .select('card_id, name, image, owned, market_price, slot_index')
+        .select('card_id, name, image, owned, market_price, slot_index, binder_id')
         .eq('user_id', user.id)
         .order('created_at', { ascending: false }),
       supabase
@@ -246,10 +494,23 @@ export default function WishlistDashboard({ user, onToast, onGoExplore }) {
         .from('follows')
         .select('following_id')
         .eq('follower_id', user.id),
+      supabase
+        .from('binders')
+        .select('id, name, color, cover_color, page_style')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: true }),
     ])
 
     setItems(wishlist ?? [])
     setIsPublic(prof?.is_public ?? false)
+
+    const loadedBinders = binderData ?? []
+    setBinders(loadedBinders)
+    // Auto-select first binder if none selected
+    setSelectedBinder(prev => {
+      if (prev) return prev   // keep existing selection
+      return loadedBinders[0] ?? null
+    })
 
     // Fetch followed trainers' profiles + top-3 priced cards in a second parallel round-trip
     const followedIds = (followData ?? []).map(f => f.following_id)
@@ -331,6 +592,36 @@ export default function WishlistDashboard({ user, onToast, onGoExplore }) {
     onToast('Removed from Wishlist & Collection')
   }
 
+  async function createBinder(name, color) {
+    const { data, error } = await supabase
+      .from('binders')
+      .insert({ user_id: user.id, name, color })
+      .select('id, name, color, cover_color, page_style')
+      .single()
+    if (!error && data) {
+      setBinders(prev => [...prev, data])
+      setSelectedBinder(data)
+      onToast(`Binder "${name}" created! 📒`)
+    }
+  }
+
+  async function updateBinderTheme(binderId, theme) {
+    // Persist cover_color and page_style back to the binders table
+    await supabase
+      .from('binders')
+      .update({ cover_color: theme.coverColor, page_style: theme.pageStyle })
+      .eq('id', binderId)
+    // Keep local state in sync
+    setBinders(prev => prev.map(b => b.id === binderId
+      ? { ...b, cover_color: theme.coverColor, page_style: theme.pageStyle }
+      : b
+    ))
+    setSelectedBinder(prev => prev?.id === binderId
+      ? { ...prev, cover_color: theme.coverColor, page_style: theme.pageStyle }
+      : prev
+    )
+  }
+
   if (!user) {
     return (
       <p className="text-center text-pink-300 font-semibold mt-16 text-lg">
@@ -358,7 +649,7 @@ export default function WishlistDashboard({ user, onToast, onGoExplore }) {
   return (
     <>
       {/* ── Tab bar ────────────────────────────────────────────────── */}
-      <div className="flex justify-center gap-2 px-4 pt-2 pb-4">
+      <div className="flex justify-center items-center gap-2 px-4 pt-2 pb-4 flex-wrap">
         {[
           { id: 'collection', label: 'Wishlist & Collection ✨📦' },
           { id: 'binder',     label: 'Virtual Binder 📒' },
@@ -377,10 +668,78 @@ export default function WishlistDashboard({ user, onToast, onGoExplore }) {
             {tab.label}
           </motion.button>
         ))}
+        {/* Settings gear */}
+        <motion.button
+          whileHover={{ scale: 1.1, rotate: 30 }} whileTap={{ scale: 0.92 }}
+          onClick={() => setShowSettings(true)}
+          className="w-9 h-9 flex items-center justify-center rounded-full
+                     bg-white/60 border border-gray-200 text-gray-400 hover:text-gray-600
+                     hover:bg-white/80 shadow-sm transition-colors text-base"
+          title="Account Settings"
+        >
+          ⚙️
+        </motion.button>
       </div>
 
-      {/* ── Binder view ────────────────────────────────────────────── */}
-      {activeTab === 'binder' && <BinderView items={items} user={user} />}
+      {/* ── Binder tab ─────────────────────────────────────────────── */}
+      {activeTab === 'binder' && (
+        <>
+          {/* Bookshelf row */}
+          <div className="px-4 mb-4">
+            <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none">
+              {binders.map(b => (
+                <motion.button
+                  key={b.id}
+                  whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
+                  onClick={() => setSelectedBinder(b)}
+                  className={`flex-shrink-0 flex items-center gap-2 px-4 py-2 rounded-full text-sm
+                             font-semibold border shadow-sm transition-all
+                             ${selectedBinder?.id === b.id
+                               ? 'text-white border-transparent shadow-md'
+                               : 'bg-white/60 text-gray-500 border-gray-200 hover:bg-white/80'
+                             }`}
+                  style={selectedBinder?.id === b.id ? { backgroundColor: b.color ?? '#a78bfa', borderColor: b.color ?? '#a78bfa' } : {}}
+                >
+                  <span
+                    className="w-3 h-3 rounded-full flex-shrink-0"
+                    style={{ background: b.color ?? '#a78bfa' }}
+                  />
+                  {b.name}
+                </motion.button>
+              ))}
+
+              {/* + New binder */}
+              <motion.button
+                whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
+                onClick={() => setShowNewBinder(true)}
+                className="flex-shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-full text-sm
+                           font-semibold border border-dashed border-pink-300 text-pink-400
+                           bg-white/50 hover:bg-pink-50 shadow-sm transition-all"
+              >
+                + New Binder
+              </motion.button>
+            </div>
+          </div>
+
+          {/* Binder view for selected binder */}
+          {selectedBinder ? (
+            <BinderView
+              key={selectedBinder.id}
+              items={items.filter(i => i.binder_id === selectedBinder.id)}
+              user={user}
+              initialTheme={{
+                coverColor: selectedBinder.cover_color ?? selectedBinder.color ?? '#a78bfa',
+                pageStyle:  selectedBinder.page_style  ?? 'white',
+              }}
+              onThemeChange={theme => updateBinderTheme(selectedBinder.id, theme)}
+            />
+          ) : (
+            <p className="text-center text-pink-300 font-semibold mt-16 text-sm">
+              Create a binder above to get started 📒
+            </p>
+          )}
+        </>
+      )}
 
       {/* ── Followed trainers ──────────────────────────────────────── */}
       {activeTab === 'trainers' && (
@@ -611,6 +970,26 @@ export default function WishlistDashboard({ user, onToast, onGoExplore }) {
 
       </>}  {/* end items.length > 0 */}
       </>)}  {/* end activeTab === 'collection' */}
+
+      {/* ── Modals ─────────────────────────────────────────────────── */}
+      <AnimatePresence>
+        {showSettings && (
+          <AccountSettingsModal
+            user={user}
+            onToast={onToast}
+            onClose={() => setShowSettings(false)}
+          />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showNewBinder && (
+          <NewBinderModal
+            onSave={createBinder}
+            onClose={() => setShowNewBinder(false)}
+          />
+        )}
+      </AnimatePresence>
     </>
   )
 }

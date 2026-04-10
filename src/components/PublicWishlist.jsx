@@ -138,10 +138,11 @@ export default function PublicWishlist() {
           </p>
           <Link
             to="/"
-            className="mt-2 text-sm font-semibold text-pink-400 hover:text-pink-600
-                       underline underline-offset-2 transition-colors"
+            className="mt-2 inline-flex items-center gap-1.5 bg-white/60 hover:bg-pink-100
+                       text-pink-500 font-semibold text-sm px-4 py-2 rounded-full
+                       border border-pink-200 shadow-sm transition-all"
           >
-            ← Back to Poképop
+            ← Return to Poképop 🌸
           </Link>
         </div>
       </Shell>
@@ -161,9 +162,11 @@ export default function PublicWishlist() {
       <header className="text-center pt-8 pb-4 px-4 space-y-3">
         <Link
           to="/"
-          className="text-sm font-semibold text-pink-400 hover:text-pink-600 transition-colors"
+          className="inline-flex items-center gap-1.5 bg-white/60 hover:bg-pink-100
+                     text-pink-500 font-semibold text-sm px-4 py-2 rounded-full
+                     border border-pink-200 shadow-sm transition-all"
         >
-          ← Poképop 🌸
+          ← Return to Poképop 🌸
         </Link>
 
         <h1 className="text-3xl sm:text-4xl font-bold text-pink-500 drop-shadow-sm">

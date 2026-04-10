@@ -381,13 +381,19 @@ function ThemeControls({ theme, onThemeChange, binderSize, onSizeChange }) {
 }
 
 // ─── Main BinderView ──────────────────────────────────────────────────────────
-export default function BinderView({ items, user, readOnly = false }) {
+export default function BinderView({ items, user, readOnly = false, initialTheme, onThemeChange }) {
   const [binderSize,   setBinderSize]   = useState('3x3')
-  const [theme,        setTheme]        = useState(DEFAULT_THEME)
+  const [theme,        setTheme]        = useState(initialTheme ?? DEFAULT_THEME)
   const [slotArray,    setSlotArray]    = useState([])
   const [selectedIdx,  setSelectedIdx]  = useState(null)
 
-  function patchTheme(patch) { setTheme(prev => ({ ...prev, ...patch })) }
+  function patchTheme(patch) {
+    setTheme(prev => {
+      const next = { ...prev, ...patch }
+      onThemeChange?.(next)
+      return next
+    })
+  }
 
   const cfg          = BINDER_SIZES.find(s => s.id === binderSize)
   const slotsPerPage = cfg.cols * cfg.cols
