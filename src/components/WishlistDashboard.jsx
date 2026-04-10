@@ -534,11 +534,18 @@ export default function WishlistDashboard({ user, onToast, onGoExplore }) {
 
     // ── Auto-create "Main Binder" for users who have none ─────────────────────
     if (loadedBinders.length === 0) {
-      const { data: newBinder } = await supabase
+      const { data: newBinder, error: binderErr } = await supabase
         .from('binders')
-        .insert({ user_id: user.id, name: 'Main Binder', color: '#a78bfa' })
+        .insert({
+          user_id:    user.id,
+          name:       'Main Binder',
+          color:      '#a78bfa',
+          cover_color: '#a78bfa',
+          page_style:  'white',
+        })
         .select('id, name, color, cover_color, page_style')
         .single()
+      if (binderErr) console.error('Auto-create Main Binder failed:', binderErr)
       if (newBinder) loadedBinders = [newBinder]
     }
 
@@ -641,15 +648,27 @@ export default function WishlistDashboard({ user, onToast, onGoExplore }) {
   }
 
   async function createBinder(name, color) {
+    const payload = {
+      user_id:    user.id,   // required by RLS policy: auth.uid() = user_id
+      name,
+      color,
+      cover_color: color,    // explicit so NOT NULL columns never fail
+      page_style:  'white',  // explicit default — avoids NULL constraint errors
+    }
+
     const { data, error } = await supabase
       .from('binders')
-      .insert({ user_id: user.id, name, color })
+      .insert(payload)
       .select('id, name, color, cover_color, page_style')
       .single()
+
     if (error || !data) {
-      onToast('Could not create binder 😿 Try again!')
+      // Surface the real Supabase error so it's debuggable
+      console.error('Binder creation error:', error)
+      onToast(`Binder error: ${error?.message ?? 'unknown — check console'}`)
       return false
     }
+
     setBinders(prev => [...prev, data])
     setSelectedBinder(data)
     onToast(`Binder "${name}" created! 📒`)
