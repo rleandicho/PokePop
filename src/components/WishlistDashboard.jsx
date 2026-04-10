@@ -803,19 +803,6 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
             {tab.label}
           </motion.button>
         ))}
-        {/* Share button */}
-        <motion.button
-          whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }}
-          onClick={handleShare}
-          className="flex items-center gap-1.5 px-4 py-1.5 rounded-full
-                     bg-pink-400 hover:bg-pink-500 text-white text-sm font-semibold
-                     shadow-sm transition-colors"
-          title="Share My Collection"
-        >
-          <span>↗</span>
-          <span>Share</span>
-        </motion.button>
-
         {/* Settings gear */}
         <motion.button
           whileHover={{ scale: 1.1, rotate: 30 }} whileTap={{ scale: 0.92 }}
@@ -1058,7 +1045,7 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
                 </div>
 
                 {/* Action buttons */}
-                <div className="flex gap-2 flex-wrap">
+                <div className="flex flex-wrap gap-2">
                   <motion.button
                     whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }}
                     onClick={copyShareLink}
@@ -1079,6 +1066,15 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
                   >
                     👁 View as Guest
                   </motion.a>
+
+                  <motion.button
+                    whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }}
+                    onClick={handleShare}
+                    className="flex items-center gap-1.5 bg-violet-400 hover:bg-violet-500 text-white
+                               text-xs font-semibold px-4 py-2 rounded-full shadow-sm transition-colors"
+                  >
+                    ↗ Share Collection
+                  </motion.button>
                 </div>
 
               </div>
