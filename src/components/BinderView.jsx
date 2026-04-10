@@ -119,8 +119,10 @@ function EmptySlot({ isSelected, pageStyle, onClick }) {
 }
 
 // ─── Filled card slot ─────────────────────────────────────────────────────────
-function CardSlot({ item, isSelected, pageStyle, onClick }) {
-  const dark = pageStyle === 'black'
+function CardSlot({ item, isSelected, pageStyle, onClick, binders, onTransfer, currentBinderId }) {
+  const dark         = pageStyle === 'black'
+  const [showMenu, setShowMenu] = useState(false)
+  const canTransfer  = onTransfer && binders?.filter(b => b.id !== currentBinderId).length > 0
 
   return (
     <motion.div
@@ -128,7 +130,7 @@ function CardSlot({ item, isSelected, pageStyle, onClick }) {
       animate={isSelected ? { y: -6, scale: 1.04 } : { y: 0, scale: 1 }}
       transition={{ type: 'spring', stiffness: 500, damping: 28 }}
       whileHover={!isSelected ? { scale: 1.04, zIndex: 10 } : {}}
-      className="relative rounded-xl overflow-hidden cursor-pointer"
+      className="relative rounded-xl cursor-pointer"
       style={{
         aspectRatio: '2.5 / 3.5',
         userSelect: 'none',
@@ -143,52 +145,109 @@ function CardSlot({ item, isSelected, pageStyle, onClick }) {
           : dark
             ? '0 2px 8px rgba(0,0,0,0.4)'
             : '0 2px 8px rgba(0,0,0,0.1)',
-        zIndex: isSelected ? 20 : undefined,
+        zIndex: isSelected || showMenu ? 20 : undefined,
       }}
     >
-      <img
-        src={item.image}
-        alt={item.name}
-        className="w-full h-full object-cover"
-        loading="lazy"
-        draggable={false}
-      />
+      {/* ── Clipped visual layer (image + glare) — overflow hidden here only ── */}
+      <div className="absolute inset-0 rounded-xl overflow-hidden pointer-events-none">
+        <img
+          src={item.image}
+          alt={item.name}
+          className="w-full h-full object-cover"
+          loading="lazy"
+          draggable={false}
+        />
+        {/* Plastic sleeve glare */}
+        <div
+          className="absolute inset-0"
+          style={{
+            background: 'linear-gradient(135deg, rgba(255,255,255,0.22) 0%, rgba(255,255,255,0.04) 45%, transparent 70%)',
+          }}
+        />
+        {/* Sleeve bottom edge shimmer */}
+        <div
+          className="absolute bottom-0 left-0 right-0 h-px"
+          style={{ background: 'rgba(255,255,255,0.35)' }}
+        />
+      </div>
 
-      {/* Plastic sleeve glare */}
-      <div
-        className="absolute inset-0 pointer-events-none rounded-xl"
-        style={{
-          background:
-            'linear-gradient(135deg, rgba(255,255,255,0.22) 0%, rgba(255,255,255,0.04) 45%, transparent 70%)',
-        }}
-      />
-      {/* Sleeve bottom edge shimmer */}
-      <div
-        className="absolute bottom-0 left-0 right-0 h-px pointer-events-none"
-        style={{ background: 'rgba(255,255,255,0.35)' }}
-      />
-
-      {/* Selection indicator — Poképop 🌸 accent */}
+      {/* ── Badges (outside overflow:hidden so they render on top cleanly) ── */}
+      {item.owned && (
+        <div
+          className="absolute top-1.5 left-1.5 z-10 text-[9px] font-bold
+                     bg-emerald-400/90 text-white rounded-full w-4 h-4
+                     flex items-center justify-center shadow-sm pointer-events-none"
+        >
+          ✓
+        </div>
+      )}
       {isSelected && (
         <motion.div
           initial={{ scale: 0 }}
           animate={{ scale: 1 }}
           className="absolute top-1.5 right-1.5 z-30 text-[11px] leading-none
                      bg-amber-400 text-white rounded-full w-5 h-5
-                     flex items-center justify-center shadow-md"
+                     flex items-center justify-center shadow-md pointer-events-none"
         >
           🌸
         </motion.div>
       )}
 
-      {/* Owned badge (bottom-left, doesn't conflict with selection badge) */}
-      {item.owned && (
-        <div
-          className="absolute top-1.5 left-1.5 z-10 text-[9px] font-bold
-                     bg-emerald-400/90 text-white rounded-full w-4 h-4
-                     flex items-center justify-center shadow-sm"
-        >
-          ✓
+      {/* ── Transfer button (outside overflow:hidden so dropdown isn't clipped) ── */}
+      {canTransfer && (
+        <div className="absolute bottom-1.5 left-0 right-0 flex justify-center z-30">
+          <div className="relative">
+            <button
+              onClick={e => { e.stopPropagation(); setShowMenu(m => !m) }}
+              className="bg-black/40 hover:bg-black/65 text-white text-[9px] font-bold
+                         px-2 py-0.5 rounded-full backdrop-blur-sm transition-all leading-none"
+              title="Move to another binder"
+            >
+              ↗ Move
+            </button>
+
+            {showMenu && (
+              <>
+                {/* Backdrop — click outside to close */}
+                <div
+                  className="fixed inset-0 z-40"
+                  onClick={e => { e.stopPropagation(); setShowMenu(false) }}
+                />
+                {/* Dropdown */}
+                <div
+                  className="absolute bottom-full mb-1.5 left-1/2 -translate-x-1/2 z-50
+                             bg-white/95 backdrop-blur-md rounded-2xl shadow-2xl
+                             border border-pink-100 overflow-hidden"
+                  style={{ minWidth: '120px' }}
+                >
+                  <p className="text-[9px] text-pink-400 font-bold uppercase tracking-widest px-3 pt-2.5 pb-1">
+                    Move to…
+                  </p>
+                  {binders
+                    .filter(b => b.id !== currentBinderId)
+                    .map(b => (
+                      <button
+                        key={b.id}
+                        onClick={e => {
+                          e.stopPropagation()
+                          onTransfer(item.card_id, b.id)
+                          setShowMenu(false)
+                        }}
+                        className="flex items-center gap-2 w-full px-3 py-2.5
+                                   text-xs font-semibold text-gray-600 hover:bg-pink-50
+                                   transition-colors text-left"
+                      >
+                        <span
+                          className="w-2.5 h-2.5 rounded-full flex-shrink-0"
+                          style={{ background: b.color ?? '#a78bfa' }}
+                        />
+                        <span className="truncate">{b.name}</span>
+                      </button>
+                    ))}
+                </div>
+              </>
+            )}
+          </div>
         </div>
       )}
     </motion.div>
@@ -196,7 +255,7 @@ function CardSlot({ item, isSelected, pageStyle, onClick }) {
 }
 
 // ─── Single binder page ────────────────────────────────────────────────────────
-function BinderPage({ slots, cols, pageNumber, theme, selectedIdx, pageOffset, onSlotClick }) {
+function BinderPage({ slots, cols, pageNumber, theme, selectedIdx, pageOffset, onSlotClick, binders, onTransfer, currentBinderId }) {
   const { coverColor, pageStyle } = theme
   const dark = pageStyle === 'black'
 
@@ -268,6 +327,9 @@ function BinderPage({ slots, cols, pageNumber, theme, selectedIdx, pageOffset, o
                 isSelected={isSel}
                 pageStyle={pageStyle}
                 onClick={() => onSlotClick(globalIdx)}
+                binders={binders}
+                onTransfer={onTransfer}
+                currentBinderId={currentBinderId}
               />
             ) : (
               <EmptySlot
@@ -381,7 +443,7 @@ function ThemeControls({ theme, onThemeChange, binderSize, onSizeChange }) {
 }
 
 // ─── Main BinderView ──────────────────────────────────────────────────────────
-export default function BinderView({ items, user, readOnly = false, initialTheme, onThemeChange }) {
+export default function BinderView({ items, user, readOnly = false, initialTheme, onThemeChange, binders, onTransfer, currentBinderId }) {
   const [binderSize,   setBinderSize]   = useState('3x3')
   const [theme,        setTheme]        = useState(initialTheme ?? DEFAULT_THEME)
   const [slotArray,    setSlotArray]    = useState([])
@@ -495,6 +557,9 @@ export default function BinderView({ items, user, readOnly = false, initialTheme
               selectedIdx={selectedIdx}
               pageOffset={pageIdx * slotsPerPage}
               onSlotClick={handleSlotClick}
+              binders={binders}
+              onTransfer={onTransfer}
+              currentBinderId={currentBinderId}
             />
           ))}
         </motion.div>

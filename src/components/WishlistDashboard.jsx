@@ -802,48 +802,51 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
       {activeTab === 'binder' && (
         <>
           {/* Bookshelf row */}
-          <div className="px-4 mb-5">
-            <div className="flex items-center gap-3 overflow-x-auto pb-2 scrollbar-none">
+          <div className="px-4 mb-6">
+            <div className="flex items-center gap-4 overflow-x-auto pb-2 scrollbar-none">
               {binders.map(b => {
                 const isActive = selectedBinder?.id === b.id
+                const col      = b.color ?? '#a78bfa'
                 return (
                   <motion.div
                     key={b.id}
                     whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
-                    className={`flex-shrink-0 flex items-center gap-2.5 pl-4 pr-2.5 py-2.5 rounded-full
-                               font-semibold border-2 transition-all select-none
-                               ${isActive
-                                 ? 'text-white border-transparent'
-                                 : 'bg-white/70 text-gray-600 border-gray-200 hover:bg-white/90 hover:border-gray-300'
-                               }`}
+                    className={`flex-shrink-0 flex items-center gap-3 pl-6 pr-3 py-3
+                               sm:pl-8 sm:pr-4 sm:py-4
+                               font-black text-xl rounded-full border-2 transition-all select-none`}
                     style={isActive
                       ? {
-                          backgroundColor: b.color ?? '#a78bfa',
-                          borderColor:     b.color ?? '#a78bfa',
-                          boxShadow:       `0 0 0 3px ${(b.color ?? '#a78bfa')}40, 0 4px 14px ${(b.color ?? '#a78bfa')}50`,
+                          color:           '#fff',
+                          backgroundColor:  col,
+                          borderColor:      col,
+                          boxShadow: `0 0 0 4px ${col}50, 0 0 28px ${col}60, 0 6px 20px ${col}40`,
                         }
-                      : {}}
+                      : {
+                          background:  'rgba(255,255,255,0.75)',
+                          borderColor: '#e5e7eb',
+                          color:       '#4b5563',
+                        }}
                   >
-                    {/* Tap label to select */}
+                    {/* Select button */}
                     <button
                       onClick={() => setSelectedBinder(b)}
-                      className="flex items-center gap-2 text-base focus:outline-none"
+                      className="flex items-center gap-2.5 focus:outline-none"
                     >
                       <span
-                        className="w-3.5 h-3.5 rounded-full flex-shrink-0 shadow-sm"
-                        style={{ background: isActive ? 'rgba(255,255,255,0.75)' : (b.color ?? '#a78bfa') }}
+                        className="w-4 h-4 rounded-full flex-shrink-0 shadow-sm"
+                        style={{ background: isActive ? 'rgba(255,255,255,0.8)' : col }}
                       />
                       {b.name}
                     </button>
 
-                    {/* Delete × — only shown when > 1 binder exists */}
+                    {/* Delete × */}
                     {binders.length > 1 && (
                       <button
                         onClick={() => deleteBinder(b.id)}
-                        className={`ml-1 w-6 h-6 rounded-full flex items-center justify-center
-                                   text-sm font-bold leading-none transition-all
+                        className={`ml-1 w-8 h-8 rounded-full flex items-center justify-center
+                                   text-lg font-bold leading-none transition-all
                                    ${isActive
-                                     ? 'bg-white/20 hover:bg-red-500/70 text-white'
+                                     ? 'bg-white/20 hover:bg-red-500/80 text-white'
                                      : 'bg-gray-100 hover:bg-red-500/20 text-gray-400 hover:text-red-500'
                                    }`}
                         title={`Delete "${b.name}"`}
@@ -859,9 +862,9 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
               <motion.button
                 whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
                 onClick={() => setShowNewBinder(true)}
-                className="flex-shrink-0 flex items-center gap-2 px-5 py-2.5 rounded-full
-                           font-semibold text-base border-2 border-dashed border-pink-300 text-pink-400
-                           bg-white/50 hover:bg-pink-50 hover:border-pink-400 transition-all"
+                className="flex-shrink-0 flex items-center gap-2.5 px-6 py-3 sm:px-8 sm:py-4
+                           font-black text-xl rounded-full border-2 border-dashed border-pink-300
+                           text-pink-400 bg-white/50 hover:bg-pink-50 hover:border-pink-400 transition-all"
               >
                 + New Binder
               </motion.button>
@@ -879,6 +882,9 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
                 pageStyle:  selectedBinder.page_style  ?? 'white',
               }}
               onThemeChange={theme => updateBinderTheme(selectedBinder.id, theme)}
+              binders={binders}
+              onTransfer={moveCardToBinder}
+              currentBinderId={selectedBinder.id}
             />
           ) : (
             <p className="text-center text-pink-300 font-semibold mt-16 text-sm">
