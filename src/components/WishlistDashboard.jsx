@@ -511,7 +511,9 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
     const [{ data: wishlist }, { data: prof }, { data: followData }, { data: binderData }] = await Promise.all([
       supabase
         .from('wishlists')
-        .select('card_id, name, image, owned, market_price, slot_index, binder_id')
+        // edition column: run migration before this works →
+        //   ALTER TABLE wishlists ADD COLUMN IF NOT EXISTS edition TEXT NOT NULL DEFAULT 'unlimited';
+        .select('card_id, name, image, owned, market_price, slot_index, binder_id, edition')
         .eq('user_id', user.id)
         .order('slot_index', { ascending: true, nullsFirst: false }),
       supabase
@@ -644,6 +646,47 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
       }
     } else {
       copyShareLink()
+    }
+  }
+
+  async function toggleEdition(cardId, currentEdition) {
+    const next = currentEdition === '1st' ? 'unlimited' : '1st'
+
+    // Optimistic label flip so the UI feels instant
+    setItems(prev => prev.map(i => i.card_id === cardId ? { ...i, edition: next } : i))
+
+    try {
+      // Fetch this card's full TCGPlayer price breakdown to get the edition-correct market price.
+      // card_id IS the TCG API id (e.g. "base1-4"), so we can look it up directly.
+      const res = await fetch(`https://api.pokemontcg.io/v2/cards/${cardId}?select=tcgplayer`)
+      const { data: tcgCard } = await res.json()
+      const prices = tcgCard?.tcgplayer?.prices ?? {}
+
+      // Pick the price variant that matches the selected edition.
+      // 1st Edition keys: '1stEditionHolofoil', '1stEditionNormal'
+      // Unlimited keys: 'holofoil', 'reverseHolofoil', 'normal'
+      const editionPrice = next === '1st'
+        ? (prices['1stEditionHolofoil']?.market ?? prices['1stEditionNormal']?.market ?? null)
+        : (prices.holofoil?.market ?? prices.reverseHolofoil?.market ?? prices.normal?.market ?? null)
+
+      const updates = { edition: next }
+      if (editionPrice != null) {
+        updates.market_price = editionPrice
+        setItems(prev => prev.map(i => i.card_id === cardId ? { ...i, market_price: editionPrice } : i))
+      }
+
+      const { error } = await supabase
+        .from('wishlists')
+        .update(updates)
+        .eq('user_id', user.id)
+        .eq('card_id', cardId)
+
+      if (error) throw error
+      onToast(next === '1st' ? '⭐ Switched to 1st Edition!' : 'Switched to Unlimited')
+    } catch {
+      // Revert both the label and any price we may have set
+      setItems(prev => prev.map(i => i.card_id === cardId ? { ...i, edition: currentEdition } : i))
+      onToast('Could not update edition 😿')
     }
   }
 
@@ -1140,6 +1183,32 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
                 >
                   {item.owned ? '✅ I own this!' : '🌸 I own this'}
                 </motion.button>
+
+                {/* Edition toggle — owned cards only. Fetches & updates the edition-correct price. */}
+                {item.owned && (
+                  <div className="flex gap-0.5 mt-1.5 bg-gray-100 rounded-lg p-0.5">
+                    <button
+                      onClick={() => (item.edition ?? 'unlimited') !== 'unlimited' && toggleEdition(item.card_id, item.edition ?? 'unlimited')}
+                      className={`flex-1 text-[10px] font-semibold py-0.5 rounded-md transition-all
+                        ${(item.edition ?? 'unlimited') === 'unlimited'
+                          ? 'bg-white text-gray-700 shadow-sm'
+                          : 'text-gray-400 hover:text-gray-600'
+                        }`}
+                    >
+                      Unlimited
+                    </button>
+                    <button
+                      onClick={() => (item.edition ?? 'unlimited') !== '1st' && toggleEdition(item.card_id, item.edition ?? 'unlimited')}
+                      className={`flex-1 text-[10px] font-semibold py-0.5 rounded-md transition-all
+                        ${(item.edition ?? 'unlimited') === '1st'
+                          ? 'bg-amber-400 text-white shadow-sm'
+                          : 'text-gray-400 hover:text-gray-600'
+                        }`}
+                    >
+                      ⭐ 1st Ed
+                    </button>
+                  </div>
+                )}
 
                 {/* Binder placement — owned cards only */}
                 {item.owned && binders.length > 0 ? (

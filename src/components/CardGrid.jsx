@@ -78,10 +78,14 @@ function sortCards(cards, sort) {
   }
 }
 
-// Returns the q= value, or null for "all cards" (no filter)
+// Returns the q= value, or null for "all cards" (no filter).
+// A name search and a set filter can be combined — e.g. searching "Charizard" while a set
+// is active sends: name:"*charizard*" set.id:sv4  so the API intersects both constraints.
 function buildTcgQuery(vibe, search, setQuery) {
   // Strip characters that could break the Lucene query syntax
-  if (search)   return `name:"*${search.replace(/["()]/g, '').trim()}*"`
+  const safeName = search ? search.replace(/["()]/g, '').trim() : ''
+  if (safeName && setQuery) return `name:"*${safeName}*" ${setQuery}`
+  if (safeName)  return `name:"*${safeName}*"`
   if (setQuery) return setQuery                // e.g. set.id:sv1 or set.series:"Scarlet & Violet"
   if (vibe === 'all') return null              // all cards, no filter
   const cfg = VIBE_QUERIES[vibe]
