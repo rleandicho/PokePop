@@ -104,6 +104,30 @@ function PriceTag({ prices }) {
   )
 }
 
+// Shows "1st Ed" and/or the card number so multiple printings are visually distinct.
+// Only renders badges that add information — hides gracefully when data is absent.
+function VariantBadges({ card }) {
+  const is1stEd = card.subtypes?.includes('1st Edition')
+  const num     = card.number
+  if (!is1stEd && !num) return null
+  return (
+    <div className="flex items-center justify-center gap-1 flex-wrap mt-0.5 mb-0.5">
+      {is1stEd && (
+        <span className="text-[9px] font-bold bg-amber-100 text-amber-700
+                         px-1.5 py-0.5 rounded-full border border-amber-200 leading-tight">
+          1st Ed
+        </span>
+      )}
+      {num && (
+        <span className="text-[9px] text-gray-400 bg-gray-100
+                         px-1.5 py-0.5 rounded-full leading-tight">
+          #{num}
+        </span>
+      )}
+    </div>
+  )
+}
+
 function SortToolbar({ sortBy, onSortChange }) {
   return (
     <div className="flex justify-end items-center flex-wrap px-4 pt-2 pb-1 gap-2">
@@ -245,7 +269,8 @@ function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, user, on
 
     const q = buildTcgQuery(vibe, srch, sq)
     // Always fetch in stable oldest-first order — all sort options are applied locally.
-    let url = `https://api.pokemontcg.io/v2/cards?page=${pg}&pageSize=${PAGE_SIZE}&orderBy=${encodeURIComponent('set.releaseDate')}&select=id,name,images,set,rarity,tcgplayer,cardmarket`
+    // number + subtypes added so variant badges ("1st Ed", "#4/102") render without a second fetch
+    let url = `https://api.pokemontcg.io/v2/cards?page=${pg}&pageSize=${PAGE_SIZE}&orderBy=${encodeURIComponent('set.releaseDate')}&select=id,name,images,set,number,subtypes,rarity,tcgplayer,cardmarket`
     if (q) url += `&q=${encodeURIComponent(q)}`
 
     try {
@@ -357,7 +382,8 @@ function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, user, on
             <img src={card.images?.small} alt={card.name} className="w-full" loading="lazy" />
             <div className="p-2 text-center">
               <p className="text-sm font-bold text-gray-700 truncate">{card.name}</p>
-              <p className="text-xs text-gray-400 truncate mb-1">{card.set?.name}</p>
+              <p className="text-xs text-gray-400 truncate">{card.set?.name}</p>
+              <VariantBadges card={card} />
               <PriceTag prices={card.tcgplayer?.prices} />
             </div>
           </motion.div>
