@@ -86,9 +86,8 @@ export default function App() {
   }
 
   function handleSetQuery(q) {
-    setSearch('')
-    setSearchInput('')
-    setActiveVibe(null)
+    // Only update the set filter — do NOT clear search or vibe so hybrid queries
+    // (e.g. name:"*eevee*" set.id:base1) reach buildTcgQuery with all parts intact.
     setSetQuery(q)
   }
 

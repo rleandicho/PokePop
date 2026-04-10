@@ -99,14 +99,15 @@ function AestheticFilter({ active, onChange, setQuery, onSetQuery, user }) {
   }
 
   function handleSeriesClick(series) {
-    onChange(null)
+    // Do NOT call onChange(null) — clearing vibe would trigger handleVibeChange
+    // in App.jsx which wipes the search term, breaking hybrid queries.
     setExpandedSeries(expandedSeries === series ? null : series)
     const q = `set.series:"${series}"`
     onSetQuery(setQuery === q ? null : q)
   }
 
   function handleSetClick(setId) {
-    onChange(null)
+    // Do NOT call onChange(null) — same reason as above.
     const q = `set.id:${setId}`
     onSetQuery(setQuery === q ? null : q)
   }

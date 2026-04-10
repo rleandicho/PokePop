@@ -19,7 +19,7 @@ export const SORT_OPTIONS = [
 // name-based vibes use `names` arrays — all are OR'd together for consistent results
 const VIBE_QUERIES = {
   girlypop:    { names: ['cleffa', 'sylveon', 'alcremie', 'jigglypuff', 'togepi', 'snubbull', 'togekiss', 'clefairy', 'chansey', 'happiny', 'mew', 'eevee'] },
-  trainers:    { query: 'supertype:Trainer OR subtypes:Supporter OR subtypes:Item OR subtypes:Stadium' },
+  trainers:    { query: 'supertype:Trainer OR subtypes:Supporter OR subtypes:Item OR subtypes:Stadium OR subtypes:"Pokémon Tool"' },
   // Space: named space Pokémon + background-aware flavor/set keywords to catch non-space Pokémon
   // depicted in starry/lunar/cosmic scenes (e.g. Clefairy on a moonlit mountain).
   space: { query: '((name:lunala OR name:cosmog OR name:cosmoem OR name:minior OR name:jirachi OR name:elgyem OR name:beheeyem OR name:deoxys OR name:solrock OR name:lunatone OR name:cresselia OR name:stakataka OR name:nihilego OR name:solgaleo) OR set.name:"Cosmic Eclipse" OR flavorText:space OR flavorText:galaxy OR flavorText:moon OR flavorText:meteor OR flavorText:celestial OR flavorText:cosmic OR flavorText:lunar)' },
