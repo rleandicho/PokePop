@@ -111,9 +111,48 @@ function HighRollers({ items }) {
 }
 
 // ─── Trainer card (followed user preview) ────────────────────────────────────
+function MiniCardRow({ cards, emptyColor = 'pink', badge }) {
+  return (
+    <div className="flex gap-1.5">
+      {cards.map(card => (
+        <div key={card.card_id} className="flex-1 relative">
+          <img
+            src={card.image}
+            alt={card.name}
+            className="w-full rounded-lg shadow-sm"
+            loading="lazy"
+          />
+          {badge && card.market_price > 0 && (
+            <span
+              className="absolute bottom-0.5 right-0.5 text-[9px] font-bold leading-none
+                         bg-emerald-500/90 text-white rounded px-1 py-0.5"
+            >
+              ${card.market_price.toFixed(2)}
+            </span>
+          )}
+        </div>
+      ))}
+      {/* Empty placeholders — always fill to 3 slots */}
+      {Array.from({ length: 3 - cards.length }).map((_, i) => (
+        <div
+          key={i}
+          className={`flex-1 rounded-lg border border-dashed
+            ${emptyColor === 'emerald'
+              ? 'bg-emerald-50/60 border-emerald-200'
+              : 'bg-pink-50/60 border-pink-200'
+            }`}
+          style={{ aspectRatio: '2.5 / 3.5' }}
+        />
+      ))}
+    </div>
+  )
+}
+
 function TrainerCard({ trainer }) {
-  const shareUrl = `${window.location.origin}/share/${trainer.id}`
-  const initial  = trainer.username?.[0]?.toUpperCase() ?? '?'
+  const shareUrl   = `${window.location.origin}/share/${trainer.id}`
+  const initial    = trainer.username?.[0]?.toUpperCase() ?? '?'
+  const topOwned   = trainer.topOwned   ?? []
+  const topWishlist = trainer.topWishlist ?? []
 
   return (
     <motion.div
@@ -122,7 +161,7 @@ function TrainerCard({ trainer }) {
       className="rounded-2xl border border-pink-200 bg-white/50 backdrop-blur-md p-4 shadow-sm"
     >
       {/* Header row */}
-      <div className="flex items-center gap-2.5 mb-3">
+      <div className="flex items-center gap-2.5 mb-4">
         <div
           className="w-9 h-9 rounded-full flex-shrink-0 flex items-center justify-center
                      text-white font-bold text-sm"
@@ -135,9 +174,9 @@ function TrainerCard({ trainer }) {
             {trainer.username ?? 'Unknown Trainer'}
           </p>
           <p className="text-xs text-gray-400">
-            {trainer.topCards.length > 0
-              ? `Top card: $${trainer.topCards[0].market_price.toFixed(2)}`
-              : 'No priced cards yet'}
+            {topOwned.length > 0
+              ? `Top card: $${topOwned[0].market_price.toFixed(2)}`
+              : 'No owned cards yet'}
           </p>
         </div>
         <a
@@ -151,33 +190,17 @@ function TrainerCard({ trainer }) {
         </a>
       </div>
 
-      {/* Top-3 card previews */}
-      <div className="flex gap-1.5">
-        {trainer.topCards.map(card => (
-          <div key={card.card_id} className="flex-1 relative">
-            <img
-              src={card.image}
-              alt={card.name}
-              className="w-full rounded-lg shadow-sm"
-              loading="lazy"
-            />
-            <span
-              className="absolute bottom-0.5 right-0.5 text-[9px] font-bold leading-none
-                         bg-pink-500/90 text-white rounded px-1 py-0.5"
-            >
-              ${card.market_price.toFixed(2)}
-            </span>
-          </div>
-        ))}
-        {/* Empty placeholders so the row always has 3 slots */}
-        {Array.from({ length: 3 - trainer.topCards.length }).map((_, i) => (
-          <div
-            key={i}
-            className="flex-1 rounded-lg bg-pink-50/60 border border-dashed border-pink-200"
-            style={{ aspectRatio: '2.5 / 3.5' }}
-          />
-        ))}
-      </div>
+      {/* Top Collection */}
+      <p className="text-[10px] font-semibold text-emerald-500 uppercase tracking-wide mb-1.5">
+        🏆 Top Collection
+      </p>
+      <MiniCardRow cards={topOwned} emptyColor="emerald" badge />
+
+      {/* Most Wanted */}
+      <p className="text-[10px] font-semibold text-pink-400 uppercase tracking-wide mt-3 mb-1.5">
+        💖 Most Wanted
+      </p>
+      <MiniCardRow cards={topWishlist} emptyColor="pink" />
     </motion.div>
   )
 }
@@ -522,21 +545,32 @@ export default function WishlistDashboard({ user, onToast, onGoExplore }) {
           .in('id', followedIds),
         supabase
           .from('wishlists')
-          .select('user_id, card_id, name, image, market_price')
+          .select('user_id, card_id, name, image, market_price, owned, created_at')
           .in('user_id', followedIds)
-          .gt('market_price', 0)
-          .order('market_price', { ascending: false }),
+          .order('created_at', { ascending: false }),
       ])
 
-      // Group: top-3 priced cards per trainer (already sorted desc by market_price)
+      // Group all fetched cards by user (already ordered by created_at DESC from DB)
       const cardsByUser = {}
       for (const card of (followedCards ?? [])) {
         if (!cardsByUser[card.user_id]) cardsByUser[card.user_id] = []
-        if (cardsByUser[card.user_id].length < 3) cardsByUser[card.user_id].push(card)
+        cardsByUser[card.user_id].push(card)
       }
 
       setFollowedTrainers(
-        (followedProfiles ?? []).map(p => ({ ...p, topCards: cardsByUser[p.id] ?? [] }))
+        (followedProfiles ?? []).map(p => {
+          const all = cardsByUser[p.id] ?? []
+          // Top 3 owned cards by market_price descending
+          const topOwned = all
+            .filter(c => c.owned && c.market_price > 0)
+            .sort((a, b) => b.market_price - a.market_price)
+            .slice(0, 3)
+          // Top 3 most-recently-added wishlist cards (DB already sorted created_at DESC)
+          const topWishlist = all
+            .filter(c => !c.owned)
+            .slice(0, 3)
+          return { ...p, topOwned, topWishlist }
+        })
       )
     } else {
       setFollowedTrainers([])

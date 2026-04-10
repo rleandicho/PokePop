@@ -41,12 +41,13 @@ export default function PublicWishlist() {
       setProfile(prof)
 
       // Fetch wishlist + follow status together
+      // Order by slot_index so the public binder mirrors the owner's layout exactly
       const queries = [
         supabase
           .from('wishlists')
-          .select('card_id, name, image, owned, market_price')
+          .select('card_id, name, image, owned, market_price, slot_index')
           .eq('user_id', userId)
-          .order('created_at', { ascending: false }),
+          .order('slot_index', { ascending: true }),
       ]
 
       // Only check follow status if viewer is logged in and not their own page
