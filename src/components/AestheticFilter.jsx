@@ -11,6 +11,7 @@ const VIBES = [
   { id: 'darkfairy',   label: 'Dark Fairy 🖤',          color: 'bg-purple-200 text-purple-700' },
   { id: 'nature',      label: 'Nature 🌱',              color: 'bg-emerald-200 text-emerald-700' },
   { id: 'fullart',     label: 'Full Art 🎨',            color: 'bg-fuchsia-200 text-fuchsia-700' },
+  { id: 'trainers',   label: 'Trainers 🃏',            color: 'bg-orange-100 text-orange-600'  },
 ]
 
 // ─── Sets cache — memory + localStorage with 24-hour TTL ─────────────────────

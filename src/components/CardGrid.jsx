@@ -3,21 +3,23 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { supabase } from '../lib/supabase'
 import CardSkeleton from './CardSkeleton'
 
-const PAGE_SIZE = 20
+const PAGE_SIZE   = 20
+const CACHE_LIMIT = 10  // max unique filter combinations held in memory
 
 // ─── Sort options ─────────────────────────────────────────────────────────────
 export const SORT_OPTIONS = [
-  { id: 'oldest',    label: 'Release Date (Oldest)', param: 'set.releaseDate' },
-  { id: 'newest',    label: 'Release Date (Newest)', param: '-set.releaseDate' },
-  { id: 'alpha',     label: 'Alphabetical (A–Z)',    param: 'name' },
-  { id: 'price-high', label: 'Price (High → Low)',    param: null },   // client-side desc
-  { id: 'price-low',  label: 'Price (Low → High)',   param: null },   // client-side asc
+  { id: 'oldest',    label: 'Release Date (Oldest)' },
+  { id: 'newest',    label: 'Release Date (Newest)' },
+  { id: 'alpha',     label: 'Alphabetical (A–Z)' },
+  { id: 'price-high', label: 'Price (High → Low)' },
+  { id: 'price-low',  label: 'Price (Low → High)' },
 ]
 
 // ─── Vibe → TCG query mapping ─────────────────────────────────────────────────
 // name-based vibes use `names` arrays — all are OR'd together for consistent results
 const VIBE_QUERIES = {
   girlypop:    { names: ['cleffa', 'sylveon', 'alcremie', 'jigglypuff', 'togepi', 'snubbull', 'togekiss', 'clefairy', 'chansey', 'happiny', 'mew', 'eevee'] },
+  trainers:    { supertype: 'Trainer' },
   // Space: named space Pokémon + background-aware flavor/set keywords to catch non-space Pokémon
   // depicted in starry/lunar/cosmic scenes (e.g. Clefairy on a moonlit mountain).
   space: { query: '((name:lunala OR name:cosmog OR name:cosmoem OR name:minior OR name:jirachi OR name:elgyem OR name:beheeyem OR name:deoxys OR name:solrock OR name:lunatone OR name:cresselia OR name:stakataka OR name:nihilego OR name:solgaleo) OR set.name:"Cosmic Eclipse" OR flavorText:space OR flavorText:galaxy OR flavorText:moon OR flavorText:meteor OR flavorText:celestial OR flavorText:cosmic OR flavorText:lunar)' },
@@ -44,6 +46,38 @@ function getCardPrice(card) {
   return getBestPrice(card.tcgplayer?.prices ?? {})
 }
 
+// Stable cache key based only on filter identity — excludes sortBy so sort changes are local-only
+function buildCacheKey(vibe, search, setQuery) {
+  return `${vibe ?? ''}|${search ?? ''}|${setQuery ?? ''}`
+}
+
+// All sorting is local. Fetch always uses a stable API order (oldest-first) as the raw baseline.
+// For price sorts, cards with no price data always sink to the bottom.
+function sortCards(cards, sort) {
+  const arr = [...cards]
+  switch (sort) {
+    case 'price-high':
+      return arr.sort((a, b) => {
+        const pa = getCardPrice(a), pb = getCardPrice(b)
+        if (!pa && !pb) return 0
+        if (!pa) return 1   // unpriced → bottom
+        if (!pb) return -1
+        return pb - pa
+      })
+    case 'price-low':
+      return arr.sort((a, b) => {
+        const pa = getCardPrice(a), pb = getCardPrice(b)
+        if (!pa && !pb) return 0
+        if (!pa) return 1   // unpriced → bottom
+        if (!pb) return -1
+        return pa - pb
+      })
+    case 'alpha':   return arr.sort((a, b) => a.name.localeCompare(b.name))
+    case 'newest':  return arr.sort((a, b) => (b.set?.releaseDate ?? '').localeCompare(a.set?.releaseDate ?? ''))
+    default:        return arr   // 'oldest' is the stable API fetch order — no sort needed
+  }
+}
+
 // Returns the q= value, or null for "all cards" (no filter)
 function buildTcgQuery(vibe, search, setQuery) {
   // Strip characters that could break the Lucene query syntax
@@ -52,8 +86,9 @@ function buildTcgQuery(vibe, search, setQuery) {
   if (vibe === 'all') return null              // all cards, no filter
   const cfg = VIBE_QUERIES[vibe]
   if (!cfg) return null
-  if (cfg.query) return cfg.query              // raw query string (e.g. fullart)
-  if (cfg.type)  return `types:${cfg.type}`
+  if (cfg.query)     return cfg.query              // raw query string (e.g. fullart)
+  if (cfg.supertype) return `supertype:${cfg.supertype}`
+  if (cfg.type)      return `types:${cfg.type}`
   // OR all names together for consistent, full-vibe results
   return `(${cfg.names.map(n => `name:${n}`).join(' OR ')})`
 }
@@ -186,10 +221,18 @@ function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, user, on
   const [loading,  setLoading]  = useState(() => !!(activeVibe || setQuery || search))
   const [selected, setSelected] = useState(null)
 
-  const abortRef = useRef(null)
-  const reqIdRef = useRef(0)   // increments with every new request; stale responses check this
+  const abortRef     = useRef(null)
+  const reqIdRef     = useRef(0)    // increments with every new request; stale responses check this
+  // Per-filter cache: cacheKey → { rawCards, page, hasMore }
+  // Raw cards are in stable API order (oldest-first); sorting is applied on top locally.
+  const cacheRef     = useRef({})
+  const cacheKeysRef = useRef([])   // insertion-order key list for CACHE_LIMIT eviction
+  const activeKeyRef = useRef(null) // tracks which cache entry loadMore should write to
 
   const fetchCards = useCallback(async (vibe, srch, sq, sort, pg) => {
+    const key = buildCacheKey(vibe, srch, sq)
+    activeKeyRef.current = key
+
     // Cancel any in-flight request
     abortRef.current?.abort()
     abortRef.current = new AbortController()
@@ -200,12 +243,9 @@ function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, user, on
 
     setLoading(true)
 
-    const q          = buildTcgQuery(vibe, srch, sq)
-    const sortOption = SORT_OPTIONS.find(o => o.id === sort) ?? SORT_OPTIONS[0]
-    // Price sorts are client-side; use oldest-first from the API for a stable page window
-    const orderParam = sortOption.param ?? 'set.releaseDate'
-
-    let url = `https://api.pokemontcg.io/v2/cards?page=${pg}&pageSize=${PAGE_SIZE}&orderBy=${encodeURIComponent(orderParam)}&select=id,name,images,set,rarity,tcgplayer,cardmarket`
+    const q = buildTcgQuery(vibe, srch, sq)
+    // Always fetch in stable oldest-first order — all sort options are applied locally.
+    let url = `https://api.pokemontcg.io/v2/cards?page=${pg}&pageSize=${PAGE_SIZE}&orderBy=${encodeURIComponent('set.releaseDate')}&select=id,name,images,set,rarity,tcgplayer,cardmarket`
     if (q) url += `&q=${encodeURIComponent(q)}`
 
     try {
@@ -216,16 +256,25 @@ function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, user, on
 
       const data = await res.json()
       const incoming = data.data ?? []
+      const more = incoming.length === PAGE_SIZE
 
-      // Merge first, THEN sort the entire accumulated list so prices are globally ordered.
-      // Without this, each page would be sorted in isolation and correct ordering breaks on "Load More".
-      setCards(prev => {
-        const all = pg === 1 ? incoming : [...prev, ...incoming]
-        if (sort === 'price-high') return [...all].sort((a, b) => getCardPrice(b) - getCardPrice(a))
-        if (sort === 'price-low')  return [...all].sort((a, b) => getCardPrice(a) - getCardPrice(b))
-        return all
-      })
-      setHasMore(incoming.length === PAGE_SIZE)
+      // Merge pages into raw (unsorted) list, update cache, then apply local sort for display
+      const prevRaw  = cacheRef.current[key]?.rawCards ?? []
+      const rawCards = pg === 1 ? incoming : [...prevRaw, ...incoming]
+
+      // Write to cache with LRU eviction — cap at CACHE_LIMIT unique filter combinations
+      const keyList = cacheKeysRef.current
+      const existing = keyList.indexOf(key)
+      if (existing !== -1) keyList.splice(existing, 1)
+      if (keyList.length >= CACHE_LIMIT) {
+        const evicted = keyList.shift()
+        delete cacheRef.current[evicted]
+      }
+      keyList.push(key)
+      cacheRef.current[key] = { rawCards, page: pg, hasMore: more }
+
+      setCards(sortCards(rawCards, sort))
+      setHasMore(more)
     } catch (err) {
       if (err.name === 'AbortError') return   // intentional cancel — leave loading state alone
       setHasMore(false)
@@ -235,13 +284,42 @@ function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, user, on
     if (reqIdRef.current === reqId) setLoading(false)
   }, [])
 
+  // Filter change: serve from cache if available (no flicker), otherwise fetch.
+  // sortBy is intentionally excluded — sort changes are handled by the effect below.
   useEffect(() => {
     const hasFilter = activeVibe || setQuery || search
     if (!hasFilter) return
-    setPage(1)
-    setCards([])
-    fetchCards(activeVibe, search, setQuery, sortBy, 1)
-  }, [activeVibe, search, setQuery, sortBy, fetchCards])
+
+    const key = buildCacheKey(activeVibe, search, setQuery)
+    activeKeyRef.current = key
+    const cached = cacheRef.current[key]
+
+    // Always cancel any in-flight request when the filter changes — even on a cache hit.
+    // Without this, a slow fetch for the previous filter could arrive late and overwrite
+    // the cards we're about to restore from cache ("ghost data" jump).
+    abortRef.current?.abort()
+    reqIdRef.current++
+
+    if (cached) {
+      // Cache hit: restore instantly with current sort applied — zero network, zero flicker
+      setCards(sortCards(cached.rawCards, sortBy))
+      setPage(cached.page)
+      setHasMore(cached.hasMore)
+      setLoading(false)
+    } else {
+      // Cache miss: fresh fetch
+      setPage(1)
+      setCards([])
+      fetchCards(activeVibe, search, setQuery, sortBy, 1)
+    }
+  }, [activeVibe, search, setQuery, fetchCards]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Sort change: re-sort cached raw cards locally — instantaneous, no network call
+  useEffect(() => {
+    const key = activeKeyRef.current
+    const rawCards = key ? (cacheRef.current[key]?.rawCards ?? null) : null
+    if (rawCards) setCards(sortCards(rawCards, sortBy))
+  }, [sortBy])
 
   function loadMore() {
     const next = page + 1
@@ -261,14 +339,8 @@ function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, user, on
     <>
       <SortToolbar sortBy={sortBy} onSortChange={onSortChange} />
 
-      {(sortBy === 'price-high' || sortBy === 'price-low') && (
-        <p className="text-center text-xs text-gray-400 pb-1">
-          Price sort applies per page of 20 cards
-        </p>
-      )}
-
       <motion.div
-        key={`${activeVibe}-${setQuery}-${search}-${sortBy}`}
+        key={`${activeVibe}-${setQuery}-${search}`}
         className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 p-4"
         initial="hidden" animate="show"
         variants={{ hidden: {}, show: { transition: { staggerChildren: 0.04 } } }}

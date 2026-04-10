@@ -629,6 +629,24 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
     })
   }
 
+  async function handleShare() {
+    // Use the native share sheet on mobile/supported browsers; fall back to clipboard
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: 'My Poképop Collection ✨',
+          text:  'Check out my Pokémon TCG collection!',
+          url:   shareUrl,
+        })
+      } catch (err) {
+        // User dismissed the sheet — not an error worth surfacing
+        if (err.name !== 'AbortError') copyShareLink()
+      }
+    } else {
+      copyShareLink()
+    }
+  }
+
   async function toggleOwned(cardId, currentOwned) {
     // Optimistic update
     setItems(prev => prev.map(i => i.card_id === cardId ? { ...i, owned: !currentOwned } : i))
@@ -785,6 +803,18 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
             {tab.label}
           </motion.button>
         ))}
+        {/* Share button */}
+        <motion.button
+          whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.92 }}
+          onClick={handleShare}
+          className="w-9 h-9 flex items-center justify-center rounded-full
+                     bg-pink-400 hover:bg-pink-500 text-white
+                     shadow-sm transition-colors text-base"
+          title="Share My Collection"
+        >
+          ↗
+        </motion.button>
+
         {/* Settings gear */}
         <motion.button
           whileHover={{ scale: 1.1, rotate: 30 }} whileTap={{ scale: 0.92 }}
