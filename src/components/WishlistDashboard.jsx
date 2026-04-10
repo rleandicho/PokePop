@@ -386,15 +386,18 @@ const BINDER_COLOR_PRESETS = [
 ]
 
 function NewBinderModal({ onSave, onClose }) {
-  const [name,  setName]  = useState('')
-  const [color, setColor] = useState('#a78bfa')
+  const [name,   setName]   = useState('')
+  const [color,  setColor]  = useState('#a78bfa')
+  const [saving, setSaving] = useState(false)
   const colorRef = useRef(null)
 
   async function handleSave() {
     const trimmed = name.trim()
-    if (!trimmed) return
-    onSave(trimmed, color)
-    onClose()
+    if (!trimmed || saving) return
+    setSaving(true)
+    const ok = await onSave(trimmed, color)   // waits for Supabase insert
+    setSaving(false)
+    if (ok) onClose()                          // only close on success
   }
 
   return (
@@ -469,11 +472,11 @@ function NewBinderModal({ onSave, onClose }) {
         <motion.button
           whileTap={{ scale: 0.96 }}
           onClick={handleSave}
-          disabled={!name.trim()}
+          disabled={!name.trim() || saving}
           className="w-full bg-pink-400 hover:bg-pink-500 disabled:opacity-50 text-white
                      font-semibold py-2.5 rounded-2xl transition-colors"
         >
-          Create Binder 📒
+          {saving ? 'Creating…' : 'Create Binder 📒'}
         </motion.button>
       </motion.div>
     </motion.div>
@@ -527,12 +530,23 @@ export default function WishlistDashboard({ user, onToast, onGoExplore }) {
     setItems(wishlist ?? [])
     setIsPublic(prof?.is_public ?? false)
 
-    const loadedBinders = binderData ?? []
+    let loadedBinders = binderData ?? []
+
+    // ── Auto-create "Main Binder" for users who have none ─────────────────────
+    if (loadedBinders.length === 0) {
+      const { data: newBinder } = await supabase
+        .from('binders')
+        .insert({ user_id: user.id, name: 'Main Binder', color: '#a78bfa' })
+        .select('id, name, color, cover_color, page_style')
+        .single()
+      if (newBinder) loadedBinders = [newBinder]
+    }
+
     setBinders(loadedBinders)
-    // Auto-select first binder if none selected
+    // Always select the first binder on initial load; keep selection if user already chose one
     setSelectedBinder(prev => {
-      if (prev) return prev   // keep existing selection
-      return loadedBinders[0] ?? null
+      const stillExists = prev && loadedBinders.some(b => b.id === prev.id)
+      return stillExists ? prev : (loadedBinders[0] ?? null)
     })
 
     // Fetch followed trainers' profiles + top-3 priced cards in a second parallel round-trip
@@ -560,10 +574,10 @@ export default function WishlistDashboard({ user, onToast, onGoExplore }) {
       setFollowedTrainers(
         (followedProfiles ?? []).map(p => {
           const all = cardsByUser[p.id] ?? []
-          // Top 3 owned cards by market_price descending
+          // Top 3 owned cards by market_price descending; null/0 prices sort to the end
           const topOwned = all
-            .filter(c => c.owned && c.market_price > 0)
-            .sort((a, b) => b.market_price - a.market_price)
+            .filter(c => c.owned)
+            .sort((a, b) => (b.market_price ?? 0) - (a.market_price ?? 0))
             .slice(0, 3)
           // Top 3 most-recently-added wishlist cards (DB already sorted created_at DESC)
           const topWishlist = all
@@ -632,11 +646,14 @@ export default function WishlistDashboard({ user, onToast, onGoExplore }) {
       .insert({ user_id: user.id, name, color })
       .select('id, name, color, cover_color, page_style')
       .single()
-    if (!error && data) {
-      setBinders(prev => [...prev, data])
-      setSelectedBinder(data)
-      onToast(`Binder "${name}" created! 📒`)
+    if (error || !data) {
+      onToast('Could not create binder 😿 Try again!')
+      return false
     }
+    setBinders(prev => [...prev, data])
+    setSelectedBinder(data)
+    onToast(`Binder "${name}" created! 📒`)
+    return true
   }
 
   async function updateBinderTheme(binderId, theme) {
