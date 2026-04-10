@@ -9,16 +9,17 @@ import UsernameSetup       from './components/UsernameSetup'
 import './index.css'
 
 export default function App() {
-  const [user,         setUser]         = useState(null)
-  const [profile,      setProfile]      = useState(null)   // { id, username } | null
-  const [profileReady, setProfileReady] = useState(false)  // has fetch completed?
-  const [skippedSetup, setSkippedSetup] = useState(false)  // user clicked "maybe later"
-  const [activeVibe,   setActiveVibe]   = useState('girlypop')
-  const [setQuery,     setSetQuery]     = useState(null)   // raw TCG query fragment
-  const [sortBy,       setSortBy]       = useState('oldest')
-  const [search,       setSearch]       = useState('')
-  const [searchInput,  setSearchInput]  = useState('')
-  const [toast,        setToast]        = useState('')
+  const [user,           setUser]           = useState(null)
+  const [profile,        setProfile]        = useState(null)   // { id, username } | null
+  const [profileReady,   setProfileReady]   = useState(false)  // has fetch completed?
+  const [skippedSetup,   setSkippedSetup]   = useState(false)  // user clicked "maybe later"
+  const [activeVibe,     setActiveVibe]     = useState('girlypop')
+  const [setQuery,       setSetQuery]       = useState(null)   // raw TCG query fragment
+  const [sortBy,         setSortBy]         = useState('oldest')
+  const [search,         setSearch]         = useState('')
+  const [searchInput,    setSearchInput]    = useState('')
+  const [toast,          setToast]          = useState('')
+  const [activeBinderId, setActiveBinderId] = useState(null)   // tracks selected binder in Dashboard
 
   // ── Auth + profile ──────────────────────────────────────────────────────────
   useEffect(() => {
@@ -158,6 +159,7 @@ export default function App() {
             user={user}
             onToast={showToast}
             onGoExplore={() => { setActiveVibe('girlypop'); setSetQuery(null) }}
+            onBinderChange={setActiveBinderId}
           />
         ) : (
           <CardGrid
@@ -169,6 +171,7 @@ export default function App() {
             onSortChange={setSortBy}
             user={user}
             onToast={showToast}
+            activeBinderId={activeBinderId}
           />
         )}
       </main>

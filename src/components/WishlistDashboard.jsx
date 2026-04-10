@@ -484,7 +484,7 @@ function NewBinderModal({ onSave, onClose }) {
 }
 
 // ─── Main dashboard ──────────────────────────────────────────────────────────
-export default function WishlistDashboard({ user, onToast, onGoExplore }) {
+export default function WishlistDashboard({ user, onToast, onGoExplore, onBinderChange }) {
   const [items,     setItems]     = useState([])
   const [loading,   setLoading]   = useState(true)
   const [isPublic,  setIsPublic]  = useState(false)
@@ -498,6 +498,9 @@ export default function WishlistDashboard({ user, onToast, onGoExplore }) {
   const [selectedBinder,  setSelectedBinder]  = useState(null)  // { id, name, color, coverColor, pageStyle }
   const [showNewBinder,   setShowNewBinder]   = useState(false)
   const [showSettings,    setShowSettings]    = useState(false)
+
+  // Notify App whenever the active binder changes (so CardGrid can route new cards here)
+  useEffect(() => { onBinderChange?.(selectedBinder?.id ?? null) }, [selectedBinder])
 
   const shareUrl = `${window.location.origin}/share/${user?.id}`
 
@@ -675,6 +678,50 @@ export default function WishlistDashboard({ user, onToast, onGoExplore }) {
     return true
   }
 
+  async function deleteBinder(binderId) {
+    // 1. Unhome all cards in this binder (set binder_id → null, keep the cards)
+    setItems(prev => prev.map(i => i.binder_id === binderId ? { ...i, binder_id: null } : i))
+    await supabase
+      .from('wishlists')
+      .update({ binder_id: null })
+      .eq('user_id', user.id)
+      .eq('binder_id', binderId)
+
+    // 2. Delete the binder row
+    await supabase
+      .from('binders')
+      .delete()
+      .eq('id', binderId)
+      .eq('user_id', user.id)
+
+    // 3. Update local binder list and auto-select another binder
+    setBinders(prev => {
+      const remaining = prev.filter(b => b.id !== binderId)
+      setSelectedBinder(remaining[0] ?? null)
+      return remaining
+    })
+    onToast('Binder deleted — cards moved to inbox 📥')
+  }
+
+  async function moveCardToBinder(cardId, binderId) {
+    // Optimistic update
+    setItems(prev => prev.map(i =>
+      i.card_id === cardId ? { ...i, binder_id: binderId || null } : i
+    ))
+    const { error } = await supabase
+      .from('wishlists')
+      .update({ binder_id: binderId || null })
+      .eq('user_id', user.id)
+      .eq('card_id', cardId)
+    if (error) {
+      // Revert on failure
+      setItems(prev => prev.map(i =>
+        i.card_id === cardId ? { ...i, binder_id: items.find(x => x.card_id === cardId)?.binder_id } : i
+      ))
+      onToast('Could not move card 😿')
+    }
+  }
+
   async function updateBinderTheme(binderId, theme) {
     // Persist cover_color and page_style back to the binders table
     await supabase
@@ -757,26 +804,49 @@ export default function WishlistDashboard({ user, onToast, onGoExplore }) {
           {/* Bookshelf row */}
           <div className="px-4 mb-4">
             <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none">
-              {binders.map(b => (
-                <motion.button
-                  key={b.id}
-                  whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
-                  onClick={() => setSelectedBinder(b)}
-                  className={`flex-shrink-0 flex items-center gap-2 px-4 py-2 rounded-full text-sm
-                             font-semibold border shadow-sm transition-all
-                             ${selectedBinder?.id === b.id
-                               ? 'text-white border-transparent shadow-md'
-                               : 'bg-white/60 text-gray-500 border-gray-200 hover:bg-white/80'
-                             }`}
-                  style={selectedBinder?.id === b.id ? { backgroundColor: b.color ?? '#a78bfa', borderColor: b.color ?? '#a78bfa' } : {}}
-                >
-                  <span
-                    className="w-3 h-3 rounded-full flex-shrink-0"
-                    style={{ background: b.color ?? '#a78bfa' }}
-                  />
-                  {b.name}
-                </motion.button>
-              ))}
+              {binders.map(b => {
+                const isActive = selectedBinder?.id === b.id
+                return (
+                  <motion.div
+                    key={b.id}
+                    whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
+                    className={`flex-shrink-0 flex items-center gap-2 pl-3 pr-2 py-2 rounded-full text-sm
+                               font-semibold border shadow-sm transition-all select-none
+                               ${isActive
+                                 ? 'text-white border-transparent shadow-md'
+                                 : 'bg-white/60 text-gray-500 border-gray-200 hover:bg-white/80'
+                               }`}
+                    style={isActive ? { backgroundColor: b.color ?? '#a78bfa', borderColor: b.color ?? '#a78bfa' } : {}}
+                  >
+                    {/* Tap label to select */}
+                    <button
+                      onClick={() => setSelectedBinder(b)}
+                      className="flex items-center gap-2 focus:outline-none"
+                    >
+                      <span
+                        className="w-3 h-3 rounded-full flex-shrink-0"
+                        style={{ background: isActive ? 'rgba(255,255,255,0.7)' : (b.color ?? '#a78bfa') }}
+                      />
+                      {b.name}
+                    </button>
+                    {/* Delete × — only shown when > 1 binder exists */}
+                    {binders.length > 1 && (
+                      <button
+                        onClick={() => deleteBinder(b.id)}
+                        className={`ml-0.5 w-4 h-4 rounded-full flex items-center justify-center
+                                   text-[10px] leading-none transition-all
+                                   ${isActive
+                                     ? 'bg-white/25 hover:bg-white/50 text-white'
+                                     : 'bg-gray-200/70 hover:bg-red-100 text-gray-400 hover:text-red-500'
+                                   }`}
+                        title={`Delete "${b.name}"`}
+                      >
+                        ×
+                      </button>
+                    )}
+                  </motion.div>
+                )
+              })}
 
               {/* + New binder */}
               <motion.button
@@ -1032,6 +1102,22 @@ export default function WishlistDashboard({ user, onToast, onGoExplore }) {
                 >
                   {item.owned ? '✅ I own this!' : '🌸 I own this'}
                 </motion.button>
+
+                {/* Move to binder */}
+                {binders.length > 0 && (
+                  <select
+                    value={item.binder_id ?? ''}
+                    onChange={e => moveCardToBinder(item.card_id, e.target.value)}
+                    className="mt-1.5 w-full text-[10px] text-gray-400 bg-white/60 border border-gray-100
+                               rounded-lg px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-pink-200
+                               cursor-pointer hover:bg-white/80 transition-colors"
+                  >
+                    <option value="">📦 No binder</option>
+                    {binders.map(b => (
+                      <option key={b.id} value={b.id}>{b.name}</option>
+                    ))}
+                  </select>
+                )}
               </div>
             </motion.div>
           ))}

@@ -94,7 +94,7 @@ function SortToolbar({ sortBy, onSortChange }) {
   )
 }
 
-function CardModal({ card, user, onToast, onClose }) {
+function CardModal({ card, user, onToast, onClose, activeBinderId }) {
   const [saving, setSaving] = useState(false)
   const [saved,  setSaved]  = useState(false)
   const prices    = card.tcgplayer?.prices ?? {}
@@ -103,13 +103,19 @@ function CardModal({ card, user, onToast, onClose }) {
   async function addToWishlist() {
     if (!user) return
     setSaving(true)
-    const { error } = await supabase.from('wishlists').upsert({
+    const payload = {
       user_id:      user.id,
       card_id:      card.id,
       name:         card.name,
       image:        card.images?.small,
       market_price: getBestPrice(prices),
-    }, { onConflict: 'user_id,card_id' })
+    }
+    // Route to the active binder if one is selected in the Dashboard
+    if (activeBinderId) payload.binder_id = activeBinderId
+
+    const { error } = await supabase
+      .from('wishlists')
+      .upsert(payload, { onConflict: 'user_id,card_id' })
     setSaving(false)
     if (!error) { setSaved(true); onToast('Saved to Wishlist & Collection! ✨📦') }
   }
@@ -172,7 +178,7 @@ function CardModal({ card, user, onToast, onClose }) {
 }
 
 // ─── Main grid ────────────────────────────────────────────────────────────────
-function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, user, onToast }) {
+function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, user, onToast, activeBinderId }) {
   const [cards,    setCards]    = useState([])
   const [page,     setPage]     = useState(1)
   const [hasMore,  setHasMore]  = useState(false)
@@ -316,7 +322,7 @@ function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, user, on
 
       <AnimatePresence>
         {selected && (
-          <CardModal card={selected} user={user} onToast={onToast} onClose={() => setSelected(null)} />
+          <CardModal card={selected} user={user} onToast={onToast} onClose={() => setSelected(null)} activeBinderId={activeBinderId} />
         )}
       </AnimatePresence>
     </>
