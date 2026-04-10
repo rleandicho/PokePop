@@ -248,8 +248,8 @@ export default function PublicWishlist() {
                       key={b.id}
                       whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
                       onClick={() => setSelectedBinder(b)}
-                      className="flex-shrink-0 flex items-center gap-2.5 px-6 py-3
-                                 sm:px-8 sm:py-4 font-black text-xl rounded-full border-2 transition-all"
+                      className="flex-shrink-0 flex items-center gap-2 px-5 py-2.5
+                                 font-bold text-base rounded-full border-2 transition-all"
                       style={isActive
                         ? {
                             color:           '#fff',

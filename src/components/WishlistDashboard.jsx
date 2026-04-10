@@ -811,9 +811,8 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
                   <motion.div
                     key={b.id}
                     whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
-                    className={`flex-shrink-0 flex items-center gap-3 pl-6 pr-3 py-3
-                               sm:pl-8 sm:pr-4 sm:py-4
-                               font-black text-xl rounded-full border-2 transition-all select-none`}
+                    className={`flex-shrink-0 flex items-center gap-2.5 pl-5 pr-2.5 py-2.5
+                               font-bold text-base rounded-full border-2 transition-all select-none`}
                     style={isActive
                       ? {
                           color:           '#fff',
@@ -862,8 +861,8 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
               <motion.button
                 whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
                 onClick={() => setShowNewBinder(true)}
-                className="flex-shrink-0 flex items-center gap-2.5 px-6 py-3 sm:px-8 sm:py-4
-                           font-black text-xl rounded-full border-2 border-dashed border-pink-300
+                className="flex-shrink-0 flex items-center gap-2 px-5 py-2.5
+                           font-bold text-base rounded-full border-2 border-dashed border-pink-300
                            text-pink-400 bg-white/50 hover:bg-pink-50 hover:border-pink-400 transition-all"
               >
                 + New Binder
@@ -1121,13 +1120,15 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
                   <select
                     value={item.binder_id ?? ''}
                     onChange={e => moveCardToBinder(item.card_id, e.target.value)}
-                    className="mt-1.5 w-full text-[10px] text-gray-400 bg-white/60 border border-gray-100
-                               rounded-lg px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-pink-200
-                               cursor-pointer hover:bg-white/80 transition-colors"
+                    className="mt-2 w-full text-sm font-bold text-white border-2 border-violet-500
+                               rounded-xl px-3 py-2.5 cursor-pointer transition-all
+                               focus:outline-none focus:ring-2 focus:ring-violet-400
+                               hover:border-violet-400"
+                    style={{ background: 'linear-gradient(135deg, #4c1d95, #5b21b6)' }}
                   >
-                    <option value="">📦 No binder</option>
+                    <option value="" style={{ background: '#1e1b4b' }}>📦 No binder</option>
                     {binders.map(b => (
-                      <option key={b.id} value={b.id}>{b.name}</option>
+                      <option key={b.id} value={b.id} style={{ background: '#1e1b4b' }}>{b.name}</option>
                     ))}
                   </select>
                 ) : !item.owned ? (
