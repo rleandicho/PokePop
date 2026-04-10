@@ -167,8 +167,11 @@ export default function PublicWishlist() {
   const ownedCount   = items.filter(i => i.owned).length
   const isOwnProfile = viewer?.id === userId
   const canFollow    = viewer && !isOwnProfile
-  // Shop mode: only cards with a real price (gift-finding view)
-  const visibleItems = shopMode ? items.filter(i => i.market_price > 0) : items
+  // Shop mode: unowned "chase" cards — the trainer's gift registry / trade list.
+  // A second-pass price filter keeps only cards that can actually be purchased.
+  const visibleItems = shopMode
+    ? items.filter(i => !i.owned && i.market_price > 0)
+    : items
 
   return (
     <Shell>
@@ -300,7 +303,7 @@ export default function PublicWishlist() {
             <div className="flex items-center justify-between px-4 pb-3">
               <p className="text-xs text-gray-400 font-medium">
                 {shopMode
-                  ? `${visibleItems.length} priced cards · shop view`
+                  ? `${visibleItems.length} chase card${visibleItems.length !== 1 ? 's' : ''} · gift registry`
                   : `${items.length} total cards`}
               </p>
               <motion.button
@@ -321,7 +324,7 @@ export default function PublicWishlist() {
           {visibleItems.length === 0 ? (
             <p className="text-center text-pink-300 font-semibold mt-16 text-lg">
               {shopMode
-                ? 'No priced cards in this collection 🛍'
+                ? `${profile.username ?? 'This trainer'} already owns everything with a price tag! 🎉`
                 : 'This collection is empty ✨'}
             </p>
           ) : (
@@ -339,7 +342,7 @@ export default function PublicWishlist() {
                     key={item.card_id}
                     initial={{ opacity: 0, y: 16 }}
                     animate={{ opacity: 1, y: 0 }}
-                    className="rounded-2xl overflow-hidden shadow-md"
+                    className="rounded-2xl overflow-hidden shadow-md flex flex-col"
                     style={{
                       background:     item.owned ? 'rgba(236,253,245,0.7)' : 'rgba(255,255,255,0.45)',
                       backdropFilter: 'blur(10px)',
@@ -347,11 +350,11 @@ export default function PublicWishlist() {
                     }}
                   >
                     <img src={item.image} alt={item.name} className="w-full" loading="lazy" />
-                    <div className="p-2 text-center">
+                    <div className="p-2 text-center flex flex-col flex-1">
                       <p className="text-sm font-bold text-gray-700 truncate">{item.name}</p>
                       {item.market_price > 0 && (
                         <p className="text-xs font-semibold text-pink-600 bg-pink-100 px-2 py-0.5
-                                       rounded-full inline-block mb-1">
+                                       rounded-full inline-block mb-1 mx-auto">
                           ${item.market_price.toFixed(2)}
                         </p>
                       )}
@@ -359,6 +362,21 @@ export default function PublicWishlist() {
                         <span className="block text-xs text-emerald-600 font-semibold mt-0.5">
                           ✅ Owned
                         </span>
+                      )}
+
+                      {/* Buy button — only rendered in shop mode */}
+                      {shopMode && (
+                        <a
+                          href={`https://www.tcgplayer.com/search/all/product?q=${encodeURIComponent(item.name)}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={e => e.stopPropagation()}
+                          className="mt-auto pt-2 block w-full text-xs font-bold text-white
+                                     py-1.5 rounded-xl transition-all hover:opacity-90 active:scale-95"
+                          style={{ background: 'linear-gradient(135deg, #0070f3, #00a8cc)' }}
+                        >
+                          🛒 Buy on TCGPlayer
+                        </a>
                       )}
                     </div>
                   </motion.div>
