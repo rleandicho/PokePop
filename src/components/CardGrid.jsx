@@ -33,22 +33,35 @@ const VIBE_QUERIES = {
   fullart:     { query: '(subtypes:"Full Art" OR rarity:"Special Illustration Rare" OR rarity:"Illustration Rare" OR rarity:"Hyper Rare")' },
 }
 
+// Unlimited-only price lookup — explicitly skips all 1stEdition* tiers so unlimited
+// cards never inherit 1st Ed prices (the "pricing leak" fix).
 function getBestPrice(prices = {}) {
   return (
     prices.holofoil?.market ??
     prices.reverseHolofoil?.market ??
     prices.normal?.market ??
-    Object.values(prices).find(p => p?.market)?.market ??
+    // Generic fallback: any non-1stEdition tier — safe for non-standard sets like Perfect Order
+    Object.entries(prices).find(([k, v]) => !k.startsWith('1stEdition') && v?.market != null)?.[1]?.market ??
     0
   )
 }
 
-// Sort price mirrors PriceTag exactly.
-// Explicit market_price (set for all WotC tiles) is always preferred over getBestPrice,
-// which has an Object.values catch-all that can accidentally grab 1stEdition* keys.
+// Edition-aware price resolver.
+// 1st Ed cards check dedicated 1stEdition* tiers first, then fall back to Unlimited (Edition Swap).
+// Unlimited cards ONLY use getBestPrice — they never touch 1stEdition* keys.
 function getCardPrice(card) {
   if (card.market_price != null) return card.market_price
-  return getBestPrice(card.tcgplayer?.prices ?? {})
+  const prices = card.tcgplayer?.prices ?? {}
+  if (card._is1stEd) {
+    // Prefer the dedicated 1st Ed tier; fall back to Unlimited as a baseline
+    return (
+      prices['1stEditionHolofoil']?.market ??
+      prices['1stEditionNormal']?.market ??
+      getBestPrice(prices)
+    )
+  }
+  // Unlimited card: strictly non-1stEdition tiers
+  return getBestPrice(prices)
 }
 
 // Stable cache key based only on filter identity — excludes sortBy so sort changes are local-only
@@ -116,8 +129,9 @@ function buildTcgQuery(vibe, search, setQuery) {
 }
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
-// For 1st Ed cards: shows the pre-resolved 1st Ed price, or "N/A" if TCGPlayer
-// has no dedicated 1stEdition key — never falls back to the Unlimited price.
+// For 1st Ed cards: shows the 1st Ed price when available; falls back to the
+// Unlimited price as a baseline (Edition Swap). "N/A" shown only when neither
+// edition nor unlimited has any price data.
 // For regular cards: shows the best available Unlimited market price.
 function PriceTag({ card }) {
   // All cards have market_price set at fetch time — no getBestPrice fallback needed.
@@ -208,7 +222,9 @@ function CardModal({ card, user, onToast, onClose, activeBinderId, collectionIds
       card_id:      card.id,                  // includes -1st suffix for 1st Ed variants
       name:         card._is1stEd ? `${card.name} ⭐` : card.name,
       image:        card.images?.small,
-      market_price: getCardPrice(card),        // edition-aware price
+      market_price: getCardPrice(card),        // edition-aware market price
+      mid_price:    card.mid_price    ?? null, // edition-aware mid price
+      low_price:    card.low_price    ?? null, // edition-aware low price
       owned,
     }
     if (activeBinderId) payload.binder_id = activeBinderId
@@ -420,21 +436,38 @@ function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, user, on
       const expanded = []
       for (const card of incoming) {
         const tcg = card.tcgplayer?.prices
-        // UNLIMITED PRICE: strictly only these three keys — never touches 1stEdition* keys
-        const priceUnl = tcg?.holofoil?.market || tcg?.reverseHolofoil?.market || tcg?.normal?.market || null
-        // 1ST ED PRICE: strictly only these two keys — never falls back to Unlimited
-        const price1st = tcg?.['1stEditionHolofoil']?.market || tcg?.['1stEditionNormal']?.market || null
 
-        // UPDATE ORIGINAL CARD — every card gets an explicit market_price so PriceTag never needs getBestPrice
+        // UNLIMITED — strictly holofoil / reverseHolofoil / normal, never 1stEdition* keys
+        const priceUnl = tcg?.holofoil?.market || tcg?.reverseHolofoil?.market || tcg?.normal?.market || null
+        const midUnl   = tcg?.holofoil?.mid    || tcg?.reverseHolofoil?.mid    || tcg?.normal?.mid    || null
+        const lowUnl   = tcg?.holofoil?.low    || tcg?.reverseHolofoil?.low    || tcg?.normal?.low    || null
+
+        // 1ST ED — strictly these two keys, never falls back to Unlimited
+        const price1st = tcg?.['1stEditionHolofoil']?.market || tcg?.['1stEditionNormal']?.market || null
+        const mid1st   = tcg?.['1stEditionHolofoil']?.mid    || tcg?.['1stEditionNormal']?.mid    || null
+        const low1st   = tcg?.['1stEditionHolofoil']?.low    || tcg?.['1stEditionNormal']?.low    || null
+
+        // UPDATE ORIGINAL CARD — attach all three price points so payloads are complete
         card.market_price = priceUnl
+        card.mid_price    = midUnl
+        card.low_price    = lowUnl
 
         expanded.push(card)
 
-        // CREATE VARIANT — spawn for every confirmed WotC set, even when price1st is null.
-        // PriceTag will display "N/A" for unpriced 1st Ed tiles rather than hiding the card.
+        // CREATE VARIANT — spawn for every confirmed WotC set.
+        // Edition Swap: falls back to Unlimited price when no dedicated 1st Ed tier exists.
         if (FIRST_ED_SET_IDS.has(card.set?.id)) {
-          console.log("Variant Spawned:", { id: `${card.id}-1st`, price: price1st })
-          const variant = { ...card, id: `${card.id}-1st`, _is1stEd: true, market_price: price1st }
+          // Edition Swap: if TCGPlayer has no dedicated 1st Ed tier, use Unlimited as a
+          // price baseline so cards never show "N/A". The amber badge still marks them.
+          const variant = {
+            ...card,
+            id:           `${card.id}-1st`,
+            _is1stEd:     true,
+            market_price: price1st ?? priceUnl,
+            mid_price:    mid1st   ?? midUnl,
+            low_price:    low1st   ?? lowUnl,
+          }
+          console.log("Variant Spawned:", { id: variant.id, price: variant.market_price, fallback: price1st == null })
           expanded.push(variant)
         }
       }
@@ -524,7 +557,9 @@ function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, user, on
       card_id:      card.id,                  // includes -1st suffix for 1st Ed variants
       name:         card._is1stEd ? `${card.name} ⭐` : card.name,
       image:        card.images?.small,
-      market_price: getCardPrice(card),        // edition-aware price
+      market_price: getCardPrice(card),        // edition-aware market price
+      mid_price:    card.mid_price    ?? null, // edition-aware mid price
+      low_price:    card.low_price    ?? null, // edition-aware low price
       owned,
     }
     if (activeBinderId) payload.binder_id = activeBinderId

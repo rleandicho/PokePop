@@ -3,6 +3,26 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { supabase } from '../lib/supabase'
 import BinderView from './BinderView'
 
+// ─── Pagination ───────────────────────────────────────────────────────────────
+const ITEMS_PER_PAGE = 20
+
+// ─── Price resolution: manual → market → mid → low → 0 ──────────────────────
+// manual_price wins when set (user override for cards TCGPlayer hasn't priced yet).
+// getDisplayPrice: returns the best numeric value (used in totals, sorts, filters)
+function getDisplayPrice(item) {
+  return item.manual_price || item.market_price || item.mid_price || item.low_price || 0
+}
+
+// getPriceInfo: returns { value, label } so the tile can show source context
+// 'Manual' label signals the value is user-entered, not live TCGPlayer data
+function getPriceInfo(item) {
+  if (item.manual_price) return { value: item.manual_price, label: 'Manual' }
+  if (item.market_price) return { value: item.market_price, label: '' }
+  if (item.mid_price)    return { value: item.mid_price,    label: 'Mid' }
+  if (item.low_price)    return { value: item.low_price,    label: 'Low' }
+  return { value: 0, label: '' }
+}
+
 // ─── Count-up hook ────────────────────────────────────────────────────────────
 function useCountUp(target, duration = 1200) {
   const [value, setValue] = useState(0)
@@ -71,8 +91,8 @@ function ProgressBar({ owned, total }) {
 // ─── Top 3 high-rollers ───────────────────────────────────────────────────────
 function HighRollers({ items }) {
   const top3 = [...items]
-    .filter(i => i.market_price > 0)
-    .sort((a, b) => b.market_price - a.market_price)
+    .filter(i => getDisplayPrice(i) > 0)
+    .sort((a, b) => getDisplayPrice(b) - getDisplayPrice(a))
     .slice(0, 3)
 
   if (!top3.length) return null
@@ -101,11 +121,71 @@ function HighRollers({ items }) {
             </div>
             <p className="text-xs font-bold text-gray-600 text-center max-w-[64px] truncate">{item.name}</p>
             <span className="text-xs font-semibold text-amber-600 bg-amber-100 px-2 py-0.5 rounded-full">
-              ${Number(item.market_price).toFixed(2)}
+              ${getDisplayPrice(item).toFixed(2)}
             </span>
           </motion.div>
         ))}
       </div>
+    </div>
+  )
+}
+
+// ─── Pagination bar ───────────────────────────────────────────────────────────
+function PaginationBar({ currentPage, totalPages, onPageChange }) {
+  if (totalPages <= 1) return null
+
+  // Show first, last, and up to 3 pages around the current one; insert '…' for gaps
+  const pages = []
+  for (let i = 1; i <= totalPages; i++) {
+    if (i === 1 || i === totalPages || (i >= currentPage - 1 && i <= currentPage + 1)) {
+      pages.push(i)
+    } else if (pages[pages.length - 1] !== '...') {
+      pages.push('...')
+    }
+  }
+
+  return (
+    <div className="flex items-center justify-center gap-1.5 py-6 flex-wrap">
+      <motion.button
+        whileTap={{ scale: 0.93 }}
+        onClick={() => onPageChange(currentPage - 1)}
+        disabled={currentPage === 1}
+        className="px-3 py-1.5 rounded-full text-sm font-semibold border transition-all
+                   bg-white/60 border-gray-200 text-gray-500 hover:bg-white/80
+                   disabled:opacity-30 disabled:cursor-not-allowed"
+      >
+        ← Prev
+      </motion.button>
+
+      {pages.map((p, i) =>
+        p === '...' ? (
+          <span key={`e-${i}`} className="text-gray-400 px-1 text-sm">…</span>
+        ) : (
+          <motion.button
+            key={p}
+            whileTap={{ scale: 0.93 }}
+            onClick={() => onPageChange(p)}
+            className={`w-9 h-9 rounded-full text-sm font-semibold border transition-all
+              ${p === currentPage
+                ? 'bg-pink-400 text-white border-pink-400 shadow-sm'
+                : 'bg-white/60 text-gray-500 border-gray-200 hover:bg-white/80'
+              }`}
+          >
+            {p}
+          </motion.button>
+        )
+      )}
+
+      <motion.button
+        whileTap={{ scale: 0.93 }}
+        onClick={() => onPageChange(currentPage + 1)}
+        disabled={currentPage === totalPages}
+        className="px-3 py-1.5 rounded-full text-sm font-semibold border transition-all
+                   bg-white/60 border-gray-200 text-gray-500 hover:bg-white/80
+                   disabled:opacity-30 disabled:cursor-not-allowed"
+      >
+        Next →
+      </motion.button>
     </div>
   )
 }
@@ -122,12 +202,12 @@ function MiniCardRow({ cards, emptyColor = 'pink', badge }) {
             className="w-full rounded-lg shadow-sm"
             loading="lazy"
           />
-          {badge && Number(card.market_price) > 0 && (
+          {badge && getDisplayPrice(card) > 0 && (
             <span
               className="absolute bottom-0.5 right-0.5 text-[9px] font-bold leading-none
                          bg-emerald-500/90 text-white rounded px-1 py-0.5"
             >
-              ${Number(card.market_price).toFixed(2)}
+              ${getDisplayPrice(card).toFixed(2)}
             </span>
           )}
         </div>
@@ -175,7 +255,7 @@ function TrainerCard({ trainer }) {
           </p>
           <p className="text-xs text-gray-400">
             {topOwned.length > 0
-              ? `Top card: $${Number(topOwned[0].market_price).toFixed(2)}`
+              ? `Top card: $${getDisplayPrice(topOwned[0]).toFixed(2)}`
               : 'No owned cards yet'}
           </p>
         </div>
@@ -239,7 +319,7 @@ function SupportCard() {
 }
 
 // ─── Account settings modal ───────────────────────────────────────────────────
-function AccountSettingsModal({ user, onToast, onClose }) {
+function AccountSettingsModal({ user, onToast, onClose, isPublic, toggling, onTogglePublic, refreshing, refreshProgress, onRefreshPrices }) {
   const [username,    setUsername]    = useState('')
   const [saving,      setSaving]      = useState(false)
   const [deleteStep,  setDeleteStep]  = useState(0)   // 0=idle 1=confirm 2=final
@@ -322,6 +402,69 @@ function AccountSettingsModal({ user, onToast, onClose }) {
               {saving ? '…' : 'Save'}
             </motion.button>
           </div>
+        </div>
+
+        {/* Public Profile Toggle */}
+        <div className="mb-5 flex items-center justify-between gap-3">
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-gray-700">
+              {isPublic ? '🔓' : '🔒'} Public Collection
+            </p>
+            <p className="text-xs text-gray-400 truncate">
+              {isPublic ? 'Anyone with your link can view' : 'Your collection is private'}
+            </p>
+          </div>
+          <button
+            onClick={onTogglePublic}
+            disabled={toggling}
+            aria-label="Toggle public collection"
+            className="relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full
+                       transition-colors duration-200 ease-in-out
+                       focus:outline-none focus:ring-2 focus:ring-pink-300 focus:ring-offset-1
+                       disabled:cursor-not-allowed disabled:opacity-60"
+            style={{ backgroundColor: isPublic ? '#ec4899' : '#e5e7eb' }}
+          >
+            <span
+              className="inline-block h-5 w-5 rounded-full bg-white shadow-md
+                         transform transition-transform duration-200 ease-in-out"
+              style={{ transform: isPublic ? 'translateX(1.25rem)' : 'translateX(0.125rem)' }}
+            />
+          </button>
+        </div>
+
+        {/* Refresh Prices */}
+        <div className="mb-5">
+          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1.5">
+            Price Data
+          </p>
+          <p className="text-xs text-gray-400 mb-2">
+            Re-fetch market, mid & low prices from TCGPlayer for all your saved cards.
+          </p>
+          <motion.button
+            whileTap={{ scale: 0.96 }}
+            onClick={onRefreshPrices}
+            disabled={refreshing}
+            className="w-full flex items-center justify-center gap-2 bg-emerald-50 hover:bg-emerald-100
+                       text-emerald-600 border border-emerald-200 font-semibold text-sm
+                       py-2 rounded-xl transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+          >
+            {refreshing ? (
+              <>
+                <motion.span
+                  animate={{ rotate: 360 }}
+                  transition={{ repeat: Infinity, duration: 0.9, ease: 'linear' }}
+                  className="inline-block leading-none"
+                >
+                  ↻
+                </motion.span>
+                {refreshProgress.total > 0
+                  ? `Refreshing… (${refreshProgress.done}/${refreshProgress.total})`
+                  : 'Refreshing…'}
+              </>
+            ) : (
+              '↻ Refresh All Prices'
+            )}
+          </motion.button>
         </div>
 
         <div className="border-t border-gray-100 pt-4">
@@ -490,7 +633,7 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
   const [isPublic,  setIsPublic]  = useState(false)
   const [toggling,  setToggling]  = useState(false)
   const [copied,    setCopied]    = useState(false)
-  const [activeTab,        setActiveTab]        = useState('collection')  // 'collection' | 'binder' | 'trainers'
+  const [activeTab,        setActiveTab]        = useState('collection')  // 'collection' | 'wishlist' | 'binder' | 'trainers'
   const [followedTrainers, setFollowedTrainers] = useState([])
   // 1st Edition is determined by card_id suffix ("-1st") — no toggle, no runtime Sets needed
 
@@ -499,6 +642,14 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
   const [selectedBinder,  setSelectedBinder]  = useState(null)  // { id, name, color, coverColor, pageStyle }
   const [showNewBinder,   setShowNewBinder]   = useState(false)
   const [showSettings,    setShowSettings]    = useState(false)
+  const [refreshing,      setRefreshing]      = useState(false)
+  const [refreshProgress, setRefreshProgress] = useState({ done: 0, total: 0 })
+  const [editingPriceId,  setEditingPriceId]  = useState(null)   // card_id being manually priced
+  const [manualInput,     setManualInput]     = useState('')
+
+  // ── Pagination ────────────────────────────────────────────────────────────
+  const [collectionPage, setCollectionPage] = useState(1)
+  const [wishlistPage,   setWishlistPage]   = useState(1)
 
   // Notify App whenever the active binder changes (so CardGrid can route new cards here)
   useEffect(() => { onBinderChange?.(selectedBinder?.id ?? null) }, [selectedBinder])
@@ -514,7 +665,7 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
         .from('wishlists')
         // edition column: run migration before this works →
         //   ALTER TABLE wishlists ADD COLUMN IF NOT EXISTS edition TEXT NOT NULL DEFAULT 'unlimited';
-        .select('card_id, name, image, owned, market_price, slot_index, binder_id, edition')
+        .select('card_id, name, image, owned, market_price, mid_price, low_price, manual_price, slot_index, binder_id, edition')
         .eq('user_id', user.id)
         .order('slot_index', { ascending: true, nullsFirst: false }),
       supabase
@@ -614,13 +765,14 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
   const totalCount        = items.length
   const ownedCount        = ownedItemsList.length
   const wishlistCount     = wishlistItemsList.length
-  const collectionValue   = useMemo(() => {
-    const total = ownedItemsList.reduce((sum, i) => sum + (Number(i.market_price) || 0), 0)
-    console.log('Collection Value:', total)
-    return total
-  }, [ownedItemsList])
+  // Collection Value: strictly owned === true cards only
+  const collectionValue = useMemo(
+    () => ownedItemsList.reduce((acc, i) => acc + getDisplayPrice(i), 0),
+    [ownedItemsList]
+  )
+  // Wishlist Value: strictly owned === false cards only
   const wishlistValue = useMemo(
-    () => wishlistItemsList.reduce((sum, i) => sum + (Number(i.market_price) || 0), 0),
+    () => wishlistItemsList.reduce((acc, i) => acc + getDisplayPrice(i), 0),
     [wishlistItemsList]
   )
 
@@ -638,6 +790,125 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
       onToast(next ? 'Collection is now public 🔓' : 'Collection set to private 🔒')
     }
     setToggling(false)
+  }
+
+  // ── Price tier extractor ─────────────────────────────────────────────────────
+  // Checks preferred tier names first; falls back to ANY tier that has a market
+  // price, intentionally skipping 1stEdition* keys for unlimited lookups.
+  // This fixes "blackout" on sets like Perfect Order that use non-standard tier names.
+  function extractUnlimitedPrices(prices) {
+    const PREFERRED = ['holofoil', 'reverseHolofoil', 'normal']
+    for (const key of PREFERRED) {
+      if (prices[key]?.market != null) {
+        return { market: prices[key].market ?? null, mid: prices[key].mid ?? null, low: prices[key].low ?? null }
+      }
+    }
+    // Generic fallback — iterate all tiers, skip any 1stEdition* key
+    const entry = Object.entries(prices).find(([k, v]) => !k.startsWith('1stEdition') && v?.market != null)
+    if (entry) {
+      const [, tier] = entry
+      return { market: tier.market ?? null, mid: tier.mid ?? null, low: tier.low ?? null }
+    }
+    return { market: null, mid: null, low: null }
+  }
+
+  function extract1stEdPrices(prices) {
+    const tier = prices['1stEditionHolofoil'] ?? prices['1stEditionNormal'] ?? {}
+    return { market: tier.market ?? null, mid: tier.mid ?? null, low: tier.low ?? null }
+  }
+
+  // ── Refresh Prices — re-fetch TCGPlayer market/mid/low for all saved cards ──
+  async function refreshPrices() {
+    if (refreshing) return
+    setRefreshing(true)
+    setRefreshProgress({ done: 0, total: 0 })
+
+    const { data: stale, error: fetchErr } = await supabase
+      .from('wishlists')
+      .select('card_id, market_price, mid_price, low_price')
+      .eq('user_id', user.id)
+
+    if (fetchErr || !stale?.length) {
+      onToast('Nothing to refresh.')
+      setRefreshing(false)
+      return
+    }
+
+    // Deduplicate base IDs (strip -1st suffix for the API lookup)
+    const uniqueBaseIds = [...new Set(stale.map(i => i.card_id.replace(/-1st$/, '')))]
+    const total = uniqueBaseIds.length
+    setRefreshProgress({ done: 0, total })
+
+    let updated = 0
+    let done    = 0
+
+    for (const baseId of uniqueBaseIds) {
+      try {
+        console.log(`[PriceRefresh] Fetching → ${baseId}`)
+
+        const res = await fetch(
+          `https://api.pokemontcg.io/v2/cards/${baseId}?select=id,tcgplayer`
+        )
+
+        if (!res.ok) {
+          console.warn(`[PriceRefresh] HTTP ${res.status} for ${baseId}`)
+          done++
+          setRefreshProgress({ done, total })
+          await new Promise(r => setTimeout(r, 300))
+          continue
+        }
+
+        const json   = await res.json()
+        const tcg    = json.data?.tcgplayer?.prices ?? {}
+        console.log(`[PriceRefresh] ${baseId} — raw prices:`, tcg)
+
+        // Unlimited card row
+        const unl = extractUnlimitedPrices(tcg)
+        console.log(`[PriceRefresh] ${baseId} — resolved unlimited:`, unl)
+        const { error: unlErr } = await supabase
+          .from('wishlists')
+          .update({ market_price: unl.market, mid_price: unl.mid, low_price: unl.low })
+          .eq('user_id', user.id)
+          .eq('card_id', baseId)
+        if (!unlErr) updated++
+
+        // 1st Ed row — only if this user has the -1st variant saved
+        const has1st = stale.some(i => i.card_id === `${baseId}-1st`)
+        if (has1st) {
+          const ed = extract1stEdPrices(tcg)
+          // Edition Swap: fall back to unlimited baseline if TCGPlayer has no 1st Ed tier
+          const ed1st = {
+            market: ed.market ?? unl.market,
+            mid:    ed.mid    ?? unl.mid,
+            low:    ed.low    ?? unl.low,
+          }
+          console.log(`[PriceRefresh] ${baseId}-1st — resolved 1st Ed:`, ed1st, ed.market == null ? '(unlimited fallback)' : '')
+          const { error: edErr } = await supabase
+            .from('wishlists')
+            .update({ market_price: ed1st.market, mid_price: ed1st.mid, low_price: ed1st.low })
+            .eq('user_id', user.id)
+            .eq('card_id', `${baseId}-1st`)
+          if (!edErr) updated++
+        }
+      } catch (err) {
+        console.warn(`[PriceRefresh] Exception for ${baseId}:`, err)
+      }
+
+      done++
+      setRefreshProgress({ done, total })
+      // 300ms between requests — gives the main thread room and avoids rate-limit triggers
+      await new Promise(r => setTimeout(r, 300))
+    }
+
+    setRefreshing(false)
+    setRefreshProgress({ done: 0, total: 0 })
+
+    if (updated > 0) {
+      await fetchWishlist()
+      onToast(`✨ Updated ${updated}/${stale.length} card${stale.length !== 1 ? 's' : ''}!`)
+    } else {
+      onToast('All prices are already up to date ✅')
+    }
   }
 
   function copyShareLink() {
@@ -679,6 +950,21 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
     } else {
       onToast(!currentOwned ? 'Added to Collection! ✨📦' : 'Moved back to Wishlist 💖')
     }
+  }
+
+  async function saveManualPrice(cardId) {
+    const num = parseFloat(manualInput)
+    const value = (!isNaN(num) && num > 0) ? num : null
+    // Optimistic local update — works even if the DB column doesn't exist yet
+    setItems(prev => prev.map(i => i.card_id === cardId ? { ...i, manual_price: value } : i))
+    setEditingPriceId(null)
+    setManualInput('')
+    // Persist to Supabase — silently ignored if manual_price column doesn't exist yet
+    await supabase
+      .from('wishlists')
+      .update({ manual_price: value })
+      .eq('user_id', user.id)
+      .eq('card_id', cardId)
   }
 
   async function removeCard(cardId) {
@@ -822,11 +1108,73 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
       <div className="p-2 text-center">
         <p className="text-sm font-bold text-gray-700 truncate">{item.name}</p>
 
-        {Number(item.market_price) > 0 && (
-          <p className="text-xs font-semibold text-pink-600 bg-pink-100 px-2 py-0.5 rounded-full inline-block mb-1">
-            ${Number(item.market_price).toFixed(2)}
-          </p>
-        )}
+        {(() => {
+          const { value: p, label } = getPriceInfo(item)
+          const is1st     = item.card_id?.endsWith('-1st')
+          const hasMarket = !!item.market_price   // real TCGPlayer price exists
+          const isEditing = editingPriceId === item.card_id
+
+          if (isEditing) {
+            return (
+              <div className="flex items-center gap-1 mb-1 px-1">
+                <span className="text-xs text-gray-400">$</span>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={manualInput}
+                  onChange={e => setManualInput(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') saveManualPrice(item.card_id)
+                    if (e.key === 'Escape') { setEditingPriceId(null); setManualInput('') }
+                  }}
+                  autoFocus
+                  placeholder="0.00"
+                  className="w-full text-xs text-center border border-pink-200 rounded-lg px-1.5 py-1
+                             focus:outline-none focus:ring-2 focus:ring-pink-300 bg-white/80"
+                />
+                <button
+                  onClick={() => saveManualPrice(item.card_id)}
+                  className="text-emerald-500 hover:text-emerald-600 text-sm font-bold leading-none flex-shrink-0"
+                  title="Save"
+                >✓</button>
+              </div>
+            )
+          }
+
+          return (
+            <div className="flex items-center justify-center gap-1 mb-1 flex-wrap">
+              {p > 0 ? (
+                <span className={`text-xs font-semibold px-2 py-0.5 rounded-full
+                  ${label === 'Manual'
+                    ? 'text-violet-600 bg-violet-100'
+                    : 'text-pink-600 bg-pink-100'
+                  }`}>
+                  ${p.toFixed(2)}{label ? ` (${label})` : ''}
+                </span>
+              ) : (
+                <span className="text-xs font-medium text-gray-300 bg-gray-100 px-2 py-0.5 rounded-full">
+                  {is1st ? '1st Ed — Checking…' : '---'}
+                </span>
+              )}
+              {is1st && p > 0 && (
+                <span className="text-[9px] font-bold text-amber-600 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded-full leading-none">
+                  1st Ed
+                </span>
+              )}
+              {/* Pencil — only when no real TCGPlayer market price */}
+              {!hasMarket && (
+                <button
+                  onClick={() => { setEditingPriceId(item.card_id); setManualInput(item.manual_price ? String(item.manual_price) : '') }}
+                  className="text-gray-300 hover:text-pink-400 transition-colors leading-none"
+                  title="Set manual price"
+                >
+                  ✏️
+                </button>
+              )}
+            </div>
+          )
+        })()}
 
         {item.card_id?.endsWith('-1st') && (
           <span className="inline-block text-[10px] font-bold bg-amber-400 text-white
@@ -870,19 +1218,22 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
     </motion.div>
   )
 
+  console.log('Current Items:', items)
+
   return (
     <>
       {/* ── Tab bar ────────────────────────────────────────────────── */}
       <div className="flex justify-center items-center gap-2 px-4 pt-2 pb-4 flex-wrap">
         {[
-          { id: 'collection', label: 'Wishlist & Collection ✨📦' },
+          { id: 'collection', label: 'Collection 📦' },
+          { id: 'wishlist',   label: 'Wishlist ✨' },
           { id: 'binder',     label: 'Virtual Binder 📒' },
           { id: 'trainers',   label: `Following 👥${followedTrainers.length ? ` · ${followedTrainers.length}` : ''}` },
         ].map(tab => (
           <motion.button
             key={tab.id}
             whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }}
-            onClick={() => setActiveTab(tab.id)}
+            onClick={() => { setActiveTab(tab.id); setCollectionPage(1); setWishlistPage(1) }}
             className={`px-5 py-2 rounded-full text-sm font-semibold transition-all border shadow-sm
               ${activeTab === tab.id
                 ? 'bg-pink-400 text-white border-pink-400 shadow-pink-200'
@@ -892,6 +1243,19 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
             {tab.label}
           </motion.button>
         ))}
+        {/* Share Collection button — only visible when profile is public */}
+        {isPublic && (
+          <motion.button
+            whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }}
+            onClick={handleShare}
+            className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5
+                       bg-violet-400 hover:bg-violet-500 text-white rounded-full
+                       shadow-sm transition-colors"
+          >
+            ↗ Share
+          </motion.button>
+        )}
+
         {/* Settings gear */}
         <motion.button
           whileHover={{ scale: 1.1, rotate: 30 }} whileTap={{ scale: 0.92 }}
@@ -904,6 +1268,22 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
           ⚙️
         </motion.button>
       </div>
+
+      {/* ── Shared stats + HighRollers (collection & wishlist tabs only) ── */}
+      {(activeTab === 'collection' || activeTab === 'wishlist') && items.length > 0 && <>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 p-4">
+          <StatCard icon="📦" label="Collection Value" value={collectionValue} color="mint"  prefix="$" decimals={2} />
+          <StatCard icon="✨" label="Wishlist Value"    value={wishlistValue}   color="blue"  prefix="$" decimals={2} />
+          <StatCard icon="💖" label="Total Cards"       value={totalCount}      color="pink"  />
+          <div className="rounded-2xl border border-violet-200 bg-gradient-to-br from-violet-100/80 to-purple-100/60 backdrop-blur-md p-4 shadow-sm">
+            <p className="text-2xl mb-1">✅</p>
+            <p className="text-xs text-gray-400 font-medium uppercase tracking-wide mb-0.5">Collection Progress</p>
+            <p className="text-2xl font-bold text-gray-700">{ownedCount}<span className="text-base text-gray-400">/{totalCount}</span></p>
+            <ProgressBar owned={ownedCount} total={totalCount} />
+          </div>
+        </div>
+        <HighRollers items={ownedItemsList} />
+      </>}
 
       {/* ── Binder tab ─────────────────────────────────────────────── */}
       {activeTab === 'binder' && (
@@ -980,7 +1360,7 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
           {selectedBinder ? (
             <BinderView
               key={selectedBinder.id}
-              items={items.filter(i => i.binder_id === selectedBinder.id)}
+              items={items.filter(i => i.owned && i.binder_id === selectedBinder.id)}
               user={user}
               initialTheme={{
                 coverColor: selectedBinder.cover_color ?? selectedBinder.color ?? '#a78bfa',
@@ -1065,154 +1445,102 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
 
       {items.length > 0 && <>
 
-      {/* ── Stats grid ─────────────────────────────────────────────── */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 p-4">
-        <StatCard icon="📦" label="Collection Value" value={collectionValue} color="mint"  prefix="$" decimals={2} />
-        <StatCard icon="✨" label="Wishlist Value"    value={wishlistValue}   color="blue"  prefix="$" decimals={2} />
-        <StatCard icon="💖" label="Total Cards"       value={totalCount}      color="pink"  />
-        <div className="rounded-2xl border border-violet-200 bg-gradient-to-br from-violet-100/80 to-purple-100/60 backdrop-blur-md p-4 shadow-sm">
-          <p className="text-2xl mb-1">✅</p>
-          <p className="text-xs text-gray-400 font-medium uppercase tracking-wide mb-0.5">Collection Progress</p>
-          <p className="text-2xl font-bold text-gray-700">{ownedCount}<span className="text-base text-gray-400">/{totalCount}</span></p>
-          <ProgressBar owned={ownedCount} total={totalCount} />
-        </div>
-      </div>
-
-      {/* ── Share panel ────────────────────────────────────────────── */}
-      <div className="mx-4 mb-4 rounded-2xl border border-pink-200 bg-white/50 backdrop-blur-md shadow-sm overflow-hidden">
-
-        {/* Toggle row */}
-        <div className="flex items-center gap-3 p-4">
-          <span className="text-xl select-none">{isPublic ? '🔓' : '🔒'}</span>
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-semibold text-gray-700">Public Collection</p>
-            <p className="text-xs text-gray-400 truncate">
-              {isPublic ? 'Sharing active — anyone with your link can view' : 'Your collection is private'}
-            </p>
-          </div>
-
-          {/* Sliding pill toggle */}
-          <button
-            onClick={togglePublic}
-            disabled={toggling}
-            aria-label="Toggle public collection"
-            className="relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full
-                       transition-colors duration-200 ease-in-out
-                       focus:outline-none focus:ring-2 focus:ring-pink-300 focus:ring-offset-1
-                       disabled:cursor-not-allowed disabled:opacity-60"
-            style={{ backgroundColor: isPublic ? '#ec4899' : '#e5e7eb' }}
-          >
-            <span
-              className="inline-block h-5 w-5 rounded-full bg-white shadow-md
-                         transform transition-transform duration-200 ease-in-out"
-              style={{ transform: isPublic ? 'translateX(1.25rem)' : 'translateX(0.125rem)' }}
-            />
-          </button>
-        </div>
-
-        {/* Sharing-active section — slides in when public */}
-        <AnimatePresence>
-          {isPublic && (
-            <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: 'auto' }}
-              exit={{ opacity: 0, height: 0 }}
-              transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
-              className="overflow-hidden"
-            >
-              <div className="px-4 pb-4 pt-3 border-t border-pink-100 space-y-3">
-
-                <p className="text-[11px] font-semibold text-pink-500 uppercase tracking-wide">
-                  ✨ Sharing Active
-                </p>
-
-                {/* URL display */}
-                <div className="flex items-center bg-pink-50/70 rounded-xl border border-pink-100 px-3 py-2">
-                  <span className="text-xs text-gray-500 font-mono truncate flex-1 select-all">
-                    {shareUrl}
-                  </span>
-                </div>
-
-                {/* Action buttons */}
-                <div className="flex flex-wrap gap-2">
-                  <motion.button
-                    whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }}
-                    onClick={copyShareLink}
-                    className="flex items-center gap-1.5 bg-pink-400 hover:bg-pink-500 text-white
-                               text-xs font-semibold px-4 py-2 rounded-full shadow-sm transition-colors"
-                  >
-                    {copied ? '✅ Copied!' : '🌸 Copy Link'}
-                  </motion.button>
-
-                  <motion.a
-                    href={shareUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }}
-                    className="flex items-center gap-1.5 bg-white/70 hover:bg-white text-pink-500
-                               text-xs font-semibold px-4 py-2 rounded-full shadow-sm
-                               border border-pink-200 transition-colors"
-                  >
-                    👁 View as Guest
-                  </motion.a>
-
-                  <motion.button
-                    whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }}
-                    onClick={handleShare}
-                    className="flex items-center gap-1.5 bg-violet-400 hover:bg-violet-500 text-white
-                               text-xs font-semibold px-4 py-2 rounded-full shadow-sm transition-colors"
-                  >
-                    ↗ Share Collection
-                  </motion.button>
-                </div>
-
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
-
-      {/* ── Top 3 ──────────────────────────────────────────────────── */}
-      <HighRollers items={items} />
-
       {/* ── 📦 My Collection ────────────────────────────────────────── */}
-      {ownedItemsList.length > 0 && <>
-        <div className="flex items-center gap-2 px-4 pt-4 pb-1">
-          <span className="text-base">📦</span>
-          <h3 className="text-sm font-bold text-gray-700">My Collection</h3>
-          <span className="text-[11px] font-semibold bg-emerald-100 text-emerald-600 px-2 py-0.5 rounded-full">
-            {ownedCount}
-          </span>
-        </div>
-        <motion.div
-          className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 p-4"
-          initial="hidden" animate="show"
-          variants={{ hidden: {}, show: { transition: { staggerChildren: 0.04 } } }}
-        >
-          <AnimatePresence>{ownedItemsList.map(renderTile)}</AnimatePresence>
-        </motion.div>
-      </>}
-
-      {/* ── ✨ My Wishlist ────────────────────────────────────────────── */}
-      {wishlistItemsList.length > 0 && <>
-        <div className="flex items-center gap-2 px-4 pt-4 pb-1">
-          <span className="text-base">✨</span>
-          <h3 className="text-sm font-bold text-gray-700">My Wishlist</h3>
-          <span className="text-[11px] font-semibold bg-violet-100 text-violet-600 px-2 py-0.5 rounded-full">
-            {wishlistCount}
-          </span>
-        </div>
-        <motion.div
-          className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 p-4"
-          initial="hidden" animate="show"
-          variants={{ hidden: {}, show: { transition: { staggerChildren: 0.04 } } }}
-        >
-          <AnimatePresence>{wishlistItemsList.map(renderTile)}</AnimatePresence>
-        </motion.div>
-      </>}
+      {ownedItemsList.length > 0 && (() => {
+        const totalColPages  = Math.ceil(ownedItemsList.length / ITEMS_PER_PAGE)
+        const collectionSlice = ownedItemsList.slice(
+          (collectionPage - 1) * ITEMS_PER_PAGE,
+          collectionPage * ITEMS_PER_PAGE
+        )
+        return (
+          <>
+            <div className="flex items-center gap-2 px-4 pt-4 pb-1">
+              <span className="text-base">📦</span>
+              <h3 className="text-sm font-bold text-gray-700">My Collection</h3>
+              <span className="text-[11px] font-semibold bg-emerald-100 text-emerald-600 px-2 py-0.5 rounded-full">
+                {ownedCount}
+              </span>
+              {totalColPages > 1 && (
+                <span className="text-[11px] text-gray-400 ml-auto">
+                  Page {collectionPage}/{totalColPages}
+                </span>
+              )}
+            </div>
+            <motion.div
+              key={`col-page-${collectionPage}`}
+              className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 p-4"
+              initial="hidden" animate="show"
+              variants={{ hidden: {}, show: { transition: { staggerChildren: 0.04 } } }}
+            >
+              <AnimatePresence>{collectionSlice.map(renderTile)}</AnimatePresence>
+            </motion.div>
+            <PaginationBar
+              currentPage={collectionPage}
+              totalPages={totalColPages}
+              onPageChange={p => { setCollectionPage(p); window.scrollTo({ top: 0, behavior: 'smooth' }) }}
+            />
+          </>
+        )
+      })()}
 
       </>}  {/* end items.length > 0 */}
       </>)}  {/* end activeTab === 'collection' */}
+
+      {/* ── Wishlist tab ───────────────────────────────────────────── */}
+      {activeTab === 'wishlist' && (
+        <div className="max-w-6xl mx-auto pb-16">
+          {wishlistItemsList.length === 0 ? (
+            <div className="text-center mt-16 px-4">
+              <p className="text-violet-300 font-semibold text-lg mb-4">
+                Your wishlist is empty! Start adding cards you want! 💜
+              </p>
+              <motion.button
+                whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.97 }}
+                onClick={onGoExplore}
+                className="bg-pink-400 hover:bg-pink-500 text-white font-semibold
+                           px-6 py-2.5 rounded-full shadow-md transition-colors"
+              >
+                Start Exploring 🌸
+              </motion.button>
+            </div>
+          ) : (() => {
+            const totalWishPages = Math.ceil(wishlistItemsList.length / ITEMS_PER_PAGE)
+            const wishlistSlice  = wishlistItemsList.slice(
+              (wishlistPage - 1) * ITEMS_PER_PAGE,
+              wishlistPage * ITEMS_PER_PAGE
+            )
+            return (
+              <>
+                <div className="flex items-center gap-2 px-4 pt-4 pb-1">
+                  <span className="text-base">✨</span>
+                  <h3 className="text-sm font-bold text-gray-700">My Wishlist</h3>
+                  <span className="text-[11px] font-semibold bg-violet-100 text-violet-600 px-2 py-0.5 rounded-full">
+                    {wishlistCount}
+                  </span>
+                  {totalWishPages > 1 && (
+                    <span className="text-[11px] text-gray-400 ml-auto">
+                      Page {wishlistPage}/{totalWishPages}
+                    </span>
+                  )}
+                </div>
+                <motion.div
+                  key={`wish-page-${wishlistPage}`}
+                  className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 p-4"
+                  initial="hidden" animate="show"
+                  variants={{ hidden: {}, show: { transition: { staggerChildren: 0.04 } } }}
+                >
+                  <AnimatePresence>{wishlistSlice.map(renderTile)}</AnimatePresence>
+                </motion.div>
+                <PaginationBar
+                  currentPage={wishlistPage}
+                  totalPages={totalWishPages}
+                  onPageChange={p => { setWishlistPage(p); window.scrollTo({ top: 0, behavior: 'smooth' }) }}
+                />
+              </>
+            )
+          })()}
+        </div>
+      )}
 
       {/* ── Modals ─────────────────────────────────────────────────── */}
       <AnimatePresence>
@@ -1221,6 +1549,12 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
             user={user}
             onToast={onToast}
             onClose={() => setShowSettings(false)}
+            isPublic={isPublic}
+            toggling={toggling}
+            onTogglePublic={togglePublic}
+            refreshing={refreshing}
+            refreshProgress={refreshProgress}
+            onRefreshPrices={refreshPrices}
           />
         )}
       </AnimatePresence>
