@@ -45,14 +45,6 @@ export default function HomePage({ user, collectionIds, ownedIds, onNavigate }) 
             : 'Browse 10,000+ Pokémon cards filtered by aesthetic — no account needed.'}
         </p>
         <div className="flex flex-wrap justify-center gap-3">
-          <motion.button
-            whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.97 }}
-            onClick={() => onNavigate('girlypop')}
-            className="bg-pink-400 hover:bg-pink-500 text-white font-semibold
-                       px-6 py-2.5 rounded-full shadow-md transition-all text-sm"
-          >
-            Explore Cards ✨
-          </motion.button>
           {user ? (
             <motion.button
               whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.97 }}
