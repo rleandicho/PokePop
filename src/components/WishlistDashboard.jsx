@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { supabase } from '../lib/supabase'
 import BinderView from './BinderView'
@@ -101,7 +101,7 @@ function HighRollers({ items }) {
             </div>
             <p className="text-xs font-bold text-gray-600 text-center max-w-[64px] truncate">{item.name}</p>
             <span className="text-xs font-semibold text-amber-600 bg-amber-100 px-2 py-0.5 rounded-full">
-              ${item.market_price.toFixed(2)}
+              ${Number(item.market_price).toFixed(2)}
             </span>
           </motion.div>
         ))}
@@ -122,12 +122,12 @@ function MiniCardRow({ cards, emptyColor = 'pink', badge }) {
             className="w-full rounded-lg shadow-sm"
             loading="lazy"
           />
-          {badge && card.market_price > 0 && (
+          {badge && Number(card.market_price) > 0 && (
             <span
               className="absolute bottom-0.5 right-0.5 text-[9px] font-bold leading-none
                          bg-emerald-500/90 text-white rounded px-1 py-0.5"
             >
-              ${card.market_price.toFixed(2)}
+              ${Number(card.market_price).toFixed(2)}
             </span>
           )}
         </div>
@@ -175,7 +175,7 @@ function TrainerCard({ trainer }) {
           </p>
           <p className="text-xs text-gray-400">
             {topOwned.length > 0
-              ? `Top card: $${topOwned[0].market_price.toFixed(2)}`
+              ? `Top card: $${Number(topOwned[0].market_price).toFixed(2)}`
               : 'No owned cards yet'}
           </p>
         </div>
@@ -483,6 +483,31 @@ function NewBinderModal({ onSave, onClose }) {
   )
 }
 
+// ─── 1st Edition set allow-list ───────────────────────────────────────────────
+// Only WotC-era English sets had 1st Edition print runs.
+// Base Set 2 (base4) and Legendary Collection (base6) are explicitly excluded — no 1st Ed prints.
+const FIRST_ED_SET_IDS = new Set([
+  'base1',   // Base Set
+  'base2',   // Jungle
+  'base3',   // Fossil
+  'base5',   // Team Rocket
+  'gym1',    // Gym Heroes
+  'gym2',    // Gym Challenge
+  'neo1',    // Neo Genesis
+  'neo2',    // Neo Discovery
+  'neo3',    // Neo Revelation
+  'neo4',    // Neo Destiny
+  'ecard1',  // Expedition Base Set
+  'ecard2',  // Aquapolis
+  'ecard3',  // Skyridge
+])
+
+// card_id format is "{setId}-{number}" (e.g. "base1-4", "jungle-51", "neo2-12")
+function cardSupports1stEd(cardId) {
+  const setId = (cardId ?? '').split('-')[0].toLowerCase()
+  return FIRST_ED_SET_IDS.has(setId)
+}
+
 // ─── Main dashboard ──────────────────────────────────────────────────────────
 export default function WishlistDashboard({ user, onToast, onGoExplore, onBinderChange }) {
   const [items,     setItems]     = useState([])
@@ -492,6 +517,7 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
   const [copied,    setCopied]    = useState(false)
   const [activeTab,        setActiveTab]        = useState('collection')  // 'collection' | 'binder' | 'trainers'
   const [followedTrainers, setFollowedTrainers] = useState([])
+  // (edition toggle visibility is now determined statically by cardSupports1stEd — no runtime Sets needed)
 
   // ── Binder state ──────────────────────────────────────────────────────────
   const [binders,         setBinders]         = useState([])
@@ -607,6 +633,20 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
 
   useEffect(() => { fetchWishlist() }, [user])
 
+  // ── Derived totals — useMemo so they update the instant `items` changes.
+  // MUST live here, before any early returns, to satisfy the Rules of Hooks.
+  const totalItems = items.length
+  const ownedItems = items.filter(i => i.owned).length
+  const totalValue = useMemo(() => {
+    const total = items.reduce((sum, i) => sum + (Number(i.market_price) || 0), 0)
+    console.log('New Total Calculated:', total)
+    return total
+  }, [items])
+  const ownedValue = useMemo(
+    () => items.filter(i => i.owned).reduce((sum, i) => sum + (Number(i.market_price) || 0), 0),
+    [items]
+  )
+
   async function togglePublic() {
     const next = !isPublic
     setIsPublic(next)          // optimistic — UI responds instantly
@@ -652,28 +692,44 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
   async function toggleEdition(cardId, currentEdition) {
     const next = currentEdition === '1st' ? 'unlimited' : '1st'
 
-    // Optimistic label flip so the UI feels instant
+    // Snapshot current price so the catch block can fully revert both fields
+    const originalPrice = items.find(i => i.card_id === cardId)?.market_price ?? null
+
+    // Optimistic label flip only (price unknown until TCG API responds)
     setItems(prev => prev.map(i => i.card_id === cardId ? { ...i, edition: next } : i))
 
     try {
-      // Fetch this card's full TCGPlayer price breakdown to get the edition-correct market price.
-      // card_id IS the TCG API id (e.g. "base1-4"), so we can look it up directly.
+      // ── Step 1: fetch edition-correct price from TCG API ─────────────────────
       const res = await fetch(`https://api.pokemontcg.io/v2/cards/${cardId}?select=tcgplayer`)
       const { data: tcgCard } = await res.json()
       const prices = tcgCard?.tcgplayer?.prices ?? {}
+      console.log('Raw TCGPlayer Prices:', prices)
 
-      // Pick the price variant that matches the selected edition.
-      // 1st Edition keys: '1stEditionHolofoil', '1stEditionNormal'
-      // Unlimited keys: 'holofoil', 'reverseHolofoil', 'normal'
-      const editionPrice = next === '1st'
-        ? (prices['1stEditionHolofoil']?.market ?? prices['1stEditionNormal']?.market ?? null)
-        : (prices.holofoil?.market ?? prices.reverseHolofoil?.market ?? prices.normal?.market ?? null)
+      // Strict price resolution — NO cross-edition fallback.
+      // 1st Ed:    only 1stEdition* keys are considered. If none exist, price is null.
+      // Unlimited: holofoil → reverseHolofoil → normal → any key
+      let newPrice    = null
+      let selectedKey = null
 
-      const updates = { edition: next }
-      if (editionPrice != null) {
-        updates.market_price = editionPrice
-        setItems(prev => prev.map(i => i.card_id === cardId ? { ...i, market_price: editionPrice } : i))
+      if (next === '1st') {
+        // Try explicit keys first (priority order), then any remaining 1stEdition* key
+        const priority = ['1stEditionHolofoil', '1stEditionNormal', '1stEditionNormal Foil']
+        const found = priority.find(k => prices[k]?.market != null)
+          ?? Object.keys(prices).find(k => k.startsWith('1stEdition') && prices[k]?.market != null)
+        if (found) { selectedKey = found; newPrice = prices[found].market }
+      } else {
+        const unlimitedKeys = ['holofoil', 'reverseHolofoil', 'normal']
+        const found = unlimitedKeys.find(k => prices[k]?.market != null)
+          ?? Object.keys(prices).find(k => prices[k]?.market != null)
+        if (found) { selectedKey = found; newPrice = prices[found].market }
       }
+
+      console.log(`Selected Price Key: ${selectedKey ?? 'none'} → $${newPrice ?? 'N/A'}`)
+      console.log(`[toggleEdition] card=${cardId} edition=${next} price=${newPrice}`)
+
+      // ── Step 2: blocking Supabase write — always send both columns ───────────
+      const updates = { edition: next }
+      if (newPrice != null) updates.market_price = newPrice
 
       const { error } = await supabase
         .from('wishlists')
@@ -681,11 +737,32 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
         .eq('user_id', user.id)
         .eq('card_id', cardId)
 
-      if (error) throw error
+      if (error) {
+        console.error('[toggleEdition] Supabase update failed:', error)
+        throw error
+      }
+
+      console.log('DB Update Success for card:', cardId)
+
+      // ── Step 3: push the new price into local state immediately so useMemo
+      // recalculates the total NOW, then reconcile with DB source of truth ────
+      const updatedItems = items.map(i =>
+        i.card_id === cardId
+          ? { ...i, edition: next, ...(newPrice != null ? { market_price: newPrice } : {}) }
+          : i
+      )
+      setItems([...updatedItems])   // new array reference forces useMemo to re-run
+      await fetchWishlist()         // then pull authoritative data from DB
+
       onToast(next === '1st' ? '⭐ Switched to 1st Edition!' : 'Switched to Unlimited')
-    } catch {
-      // Revert both the label and any price we may have set
-      setItems(prev => prev.map(i => i.card_id === cardId ? { ...i, edition: currentEdition } : i))
+    } catch (err) {
+      console.error('[toggleEdition] error:', err)
+      // Full revert: restore both edition label AND original market_price
+      setItems(prev => prev.map(i =>
+        i.card_id === cardId
+          ? { ...i, edition: currentEdition, ...(originalPrice != null ? { market_price: originalPrice } : {}) }
+          : i
+      ))
       onToast('Could not update edition 😿')
     }
   }
@@ -818,11 +895,6 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
       </div>
     )
   }
-
-  const totalItems  = items.length
-  const ownedItems  = items.filter(i => i.owned).length
-  const totalValue  = items.reduce((s, i) => s + (i.market_price ?? 0), 0)
-  const ownedValue  = items.filter(i => i.owned).reduce((s, i) => s + (i.market_price ?? 0), 0)
 
   return (
     <>
@@ -1166,9 +1238,9 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
 
               <div className="p-2 text-center">
                 <p className="text-sm font-bold text-gray-700 truncate">{item.name}</p>
-                {item.market_price > 0 && (
+                {Number(item.market_price) > 0 && (
                   <p className="text-xs font-semibold text-pink-600 bg-pink-100 px-2 py-0.5 rounded-full inline-block mb-1">
-                    ${item.market_price.toFixed(2)}
+                    ${Number(item.market_price).toFixed(2)}
                   </p>
                 )}
                 {/* Owned toggle */}
@@ -1184,8 +1256,8 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
                   {item.owned ? '✅ I own this!' : '🌸 I own this'}
                 </motion.button>
 
-                {/* Edition toggle — owned cards only. Fetches & updates the edition-correct price. */}
-                {item.owned && (
+                {/* Edition toggle — only for WotC-era sets that actually had 1st Edition print runs */}
+                {item.owned && cardSupports1stEd(item.card_id) && (
                   <div className="flex gap-0.5 mt-1.5 bg-gray-100 rounded-lg p-0.5">
                     <button
                       onClick={() => (item.edition ?? 'unlimited') !== 'unlimited' && toggleEdition(item.card_id, item.edition ?? 'unlimited')}

@@ -3,13 +3,15 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { supabase } from '../lib/supabase'
 
 export default function Auth({ user, username }) {
-  const [open,      setOpen]      = useState(false)
-  const [isSignUp,  setIsSignUp]  = useState(false)
-  const [email,     setEmail]     = useState('')
-  const [password,  setPassword]  = useState('')
-  const [confirmed, setConfirmed] = useState(false)
-  const [loading,   setLoading]   = useState(false)
-  const [error,     setError]     = useState(null)
+  const [open,         setOpen]         = useState(false)
+  const [isSignUp,     setIsSignUp]     = useState(false)
+  const [isForgot,     setIsForgot]     = useState(false)
+  const [email,        setEmail]        = useState('')
+  const [password,     setPassword]     = useState('')
+  const [confirmed,    setConfirmed]    = useState(false)
+  const [resetSent,    setResetSent]    = useState(false)
+  const [loading,      setLoading]      = useState(false)
+  const [error,        setError]        = useState(null)
 
   const emailRef = useRef(null)
 
@@ -22,19 +24,47 @@ export default function Auth({ user, username }) {
 
   function openModal() {
     setIsSignUp(false)
+    setIsForgot(false)
     setEmail('')
     setPassword('')
     setError(null)
     setConfirmed(false)
+    setResetSent(false)
     setOpen(true)
   }
 
   function switchMode(toSignUp) {
     setIsSignUp(toSignUp)
+    setIsForgot(false)
     setEmail('')
     setPassword('')
     setError(null)
     setConfirmed(false)
+    setResetSent(false)
+  }
+
+  function openForgot() {
+    setIsForgot(true)
+    setError(null)
+    setResetSent(false)
+  }
+
+  function backToLogin() {
+    setIsForgot(false)
+    setResetSent(false)
+    setError(null)
+  }
+
+  async function handleForgotPassword(e) {
+    e.preventDefault()
+    setLoading(true)
+    setError(null)
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: window.location.origin,
+    })
+    setLoading(false)
+    if (error) { setError(error.message); return }
+    setResetSent(true)
   }
 
   async function handleSubmit(e) {
@@ -106,40 +136,96 @@ export default function Auth({ user, username }) {
               className="bg-white/90 backdrop-blur-md rounded-3xl shadow-2xl p-8 w-full max-w-sm text-center"
             >
               <h2 className="text-2xl font-bold text-pink-500 mb-1">
-                {isSignUp ? 'Create account 🌷' : 'Welcome back! 🌸'}
+                {isForgot ? 'Reset Password 🔑' : isSignUp ? 'Create account 🌷' : 'Welcome back! 🌸'}
               </h2>
               <p className="text-sm text-gray-400 mb-5">
-                {isSignUp
+                {isForgot
+                  ? "We'll email you a link to reset your password"
+                  : isSignUp
                   ? 'Pick an email and password to get started'
                   : 'Sign in with your email and password'}
               </p>
 
-              {/* Toggle */}
-              <div className="flex rounded-2xl bg-pink-50 p-1 mb-5 gap-1">
-                <button
-                  type="button"
-                  onClick={() => switchMode(false)}
-                  className={`flex-1 py-1.5 rounded-xl text-xs font-semibold transition-all
-                    ${!isSignUp
-                      ? 'bg-pink-400 text-white shadow-sm'
-                      : 'text-gray-400 hover:text-pink-400'}`}
-                >
-                  Log In
-                </button>
-                <button
-                  type="button"
-                  onClick={() => switchMode(true)}
-                  className={`flex-1 py-1.5 rounded-xl text-xs font-semibold transition-all
-                    ${isSignUp
-                      ? 'bg-pink-400 text-white shadow-sm'
-                      : 'text-gray-400 hover:text-pink-400'}`}
-                >
-                  Sign Up
-                </button>
-              </div>
+              {/* Toggle — hidden on forgot password screen */}
+              {!isForgot && (
+                <div className="flex rounded-2xl bg-pink-50 p-1 mb-5 gap-1">
+                  <button
+                    type="button"
+                    onClick={() => switchMode(false)}
+                    className={`flex-1 py-1.5 rounded-xl text-xs font-semibold transition-all
+                      ${!isSignUp
+                        ? 'bg-pink-400 text-white shadow-sm'
+                        : 'text-gray-400 hover:text-pink-400'}`}
+                  >
+                    Log In
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => switchMode(true)}
+                    className={`flex-1 py-1.5 rounded-xl text-xs font-semibold transition-all
+                      ${isSignUp
+                        ? 'bg-pink-400 text-white shadow-sm'
+                        : 'text-gray-400 hover:text-pink-400'}`}
+                  >
+                    Sign Up
+                  </button>
+                </div>
+              )}
 
-              {/* Signup confirmation */}
-              {confirmed ? (
+              {/* Forgot password view */}
+              {isForgot ? (
+                resetSent ? (
+                  <div className="text-pink-500 font-semibold text-center">
+                    Check your inbox! 📬<br />
+                    <span className="text-gray-400 text-sm font-normal">
+                      We've sent a password reset link to {email}.
+                    </span>
+                    <button
+                      type="button"
+                      onClick={backToLogin}
+                      className="block w-full mt-4 text-xs text-pink-400 hover:text-pink-600"
+                    >
+                      ← Back to Login
+                    </button>
+                  </div>
+                ) : (
+                  <form onSubmit={handleForgotPassword} className="flex flex-col gap-3">
+                    <p className="text-sm text-gray-400 mb-1">
+                      Enter your email and we'll send you a reset link.
+                    </p>
+                    <input
+                      ref={emailRef}
+                      type="email"
+                      placeholder="your@email.com"
+                      value={email}
+                      onChange={e => setEmail(e.target.value)}
+                      autoComplete="email"
+                      required
+                      className="border border-pink-200 rounded-2xl px-4 py-2.5 text-sm
+                                 focus:outline-none focus:ring-2 focus:ring-pink-300
+                                 text-gray-600 bg-pink-50/50"
+                    />
+                    {error && (
+                      <p className="text-red-400 text-xs text-left px-1">{error}</p>
+                    )}
+                    <button
+                      type="submit"
+                      disabled={loading}
+                      className="bg-pink-400 hover:bg-pink-500 text-white font-semibold
+                                 py-2.5 rounded-2xl transition-colors disabled:opacity-60"
+                    >
+                      {loading ? 'Sending…' : 'Send Reset Email 📬'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={backToLogin}
+                      className="text-xs text-gray-400 hover:text-gray-600"
+                    >
+                      ← Back to Login
+                    </button>
+                  </form>
+                )
+              ) : confirmed ? (
                 <div className="text-pink-500 font-semibold">
                   Almost there! ✨<br />
                   <span className="text-gray-400 text-sm font-normal">
@@ -174,6 +260,15 @@ export default function Auth({ user, username }) {
                   />
                   {error && (
                     <p className="text-red-400 text-xs text-left px-1">{error}</p>
+                  )}
+                  {!isSignUp && (
+                    <button
+                      type="button"
+                      onClick={openForgot}
+                      className="text-xs text-pink-400 hover:text-pink-600 text-right -mt-1"
+                    >
+                      Forgot password?
+                    </button>
                   )}
                   <button
                     type="submit"

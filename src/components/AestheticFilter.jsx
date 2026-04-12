@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 
 // ─── Vibe definitions ─────────────────────────────────────────────────────────
 const VIBES = [
+  { id: 'home',        label: 'Home 🏠',               color: 'bg-pink-100 text-pink-600' },
   { id: 'all',         label: 'All Cards 🌐',          color: 'bg-sky-100 text-sky-700' },
   { id: 'girlypop',    label: 'Girlypop 🌸',           color: 'bg-pink-200 text-pink-700' },
   { id: 'space',       label: 'Space ✨',               color: 'bg-indigo-200 text-indigo-700' },
@@ -11,7 +12,7 @@ const VIBES = [
   { id: 'darkfairy',   label: 'Dark Fairy 🖤',          color: 'bg-purple-200 text-purple-700' },
   { id: 'nature',      label: 'Nature 🌱',              color: 'bg-emerald-200 text-emerald-700' },
   { id: 'fullart',     label: 'Full Art 🎨',            color: 'bg-fuchsia-200 text-fuchsia-700' },
-  { id: 'trainers',   label: 'Trainers 🃏',            color: 'bg-orange-100 text-orange-600'  },
+  { id: 'trainers',   label: 'Trainers & Supports 🃏',  color: 'bg-orange-100 text-orange-600'  },
 ]
 
 // ─── Sets cache — memory + localStorage with 24-hour TTL ─────────────────────
@@ -94,8 +95,8 @@ function AestheticFilter({ active, onChange, setQuery, onSetQuery, user }) {
 
   function handleVibe(id) {
     onSetQuery(null)
-    // Toggling the active pill off snaps back to girlypop, never leaves a null state
-    onChange(id === active ? 'girlypop' : id)
+    // Toggling the active pill off snaps back to home, never leaves a null state
+    onChange(id === active ? 'home' : id)
   }
 
   function handleSeriesClick(series) {

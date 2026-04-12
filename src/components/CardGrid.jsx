@@ -19,7 +19,7 @@ export const SORT_OPTIONS = [
 // name-based vibes use `names` arrays — all are OR'd together for consistent results
 const VIBE_QUERIES = {
   girlypop:    { names: ['cleffa', 'sylveon', 'alcremie', 'jigglypuff', 'togepi', 'snubbull', 'togekiss', 'clefairy', 'chansey', 'happiny', 'mew', 'eevee'] },
-  trainers:    { query: 'supertype:Trainer OR subtypes:Supporter OR subtypes:Item OR subtypes:Stadium OR subtypes:"Pokémon Tool"' },
+  trainers:    { query: '(supertype:trainer OR subtypes:item OR subtypes:supporter OR subtypes:stadium)' },
   // Space: named space Pokémon + background-aware flavor/set keywords to catch non-space Pokémon
   // depicted in starry/lunar/cosmic scenes (e.g. Clefairy on a moonlit mountain).
   space: { query: '((name:lunala OR name:cosmog OR name:cosmoem OR name:minior OR name:jirachi OR name:elgyem OR name:beheeyem OR name:deoxys OR name:solrock OR name:lunatone OR name:cresselia OR name:stakataka OR name:nihilego OR name:solgaleo) OR set.name:"Cosmic Eclipse" OR flavorText:space OR flavorText:galaxy OR flavorText:moon OR flavorText:meteor OR flavorText:celestial OR flavorText:cosmic OR flavorText:lunar)' },
@@ -73,7 +73,11 @@ function sortCards(cards, sort) {
         return pa - pb
       })
     case 'alpha':   return arr.sort((a, b) => a.name.localeCompare(b.name))
-    case 'newest':  return arr.sort((a, b) => (b.set?.releaseDate ?? '').localeCompare(a.set?.releaseDate ?? ''))
+    case 'newest':  return arr.sort((a, b) => {
+      const da = new Date(a.set?.releaseDate || '1900/01/01')
+      const db = new Date(b.set?.releaseDate || '1900/01/01')
+      return db - da   // newest first; cards with no date sink to the bottom
+    })
     default:        return arr   // 'oldest' is the stable API fetch order — no sort needed
   }
 }
@@ -166,13 +170,15 @@ function SortToolbar({ sortBy, onSortChange }) {
   )
 }
 
-function CardModal({ card, user, onToast, onClose, activeBinderId }) {
-  const [saving, setSaving] = useState(false)
-  const [saved,  setSaved]  = useState(false)
-  const prices    = card.tcgplayer?.prices ?? {}
-  const priceRows = Object.entries(prices).filter(([, v]) => v?.market)
+function CardModal({ card, user, onToast, onClose, activeBinderId, collectionIds, ownedIds, onCardAdded, onCardRemoved }) {
+  const [saving,   setSaving]   = useState(false)
+  const [removing, setRemoving] = useState(false)
+  const prices     = card.tcgplayer?.prices ?? {}
+  const priceRows  = Object.entries(prices).filter(([, v]) => v?.market)
+  const inList     = collectionIds?.has(card.id)   // in wishlist OR collection
+  const isOwned    = ownedIds?.has(card.id)        // specifically marked owned
 
-  async function addToWishlist() {
+  async function addCard(owned) {
     if (!user) return
     setSaving(true)
     const payload = {
@@ -181,15 +187,29 @@ function CardModal({ card, user, onToast, onClose, activeBinderId }) {
       name:         card.name,
       image:        card.images?.small,
       market_price: getBestPrice(prices),
+      owned,
     }
-    // Route to the active binder if one is selected in the Dashboard
     if (activeBinderId) payload.binder_id = activeBinderId
-
     const { error } = await supabase
       .from('wishlists')
       .upsert(payload, { onConflict: 'user_id,card_id' })
     setSaving(false)
-    if (!error) { setSaved(true); onToast('Saved to Wishlist & Collection! ✨📦') }
+    if (!error) {
+      onCardAdded?.(card.id, owned)
+      onToast(owned ? 'Added to Collection! ✨📦' : 'Added to Wishlist! 💖')
+    }
+  }
+
+  async function removeCard() {
+    if (!user) return
+    setRemoving(true)
+    const { error } = await supabase
+      .from('wishlists')
+      .delete()
+      .eq('user_id', user.id)
+      .eq('card_id', card.id)
+    setRemoving(false)
+    if (!error) { onCardRemoved?.(card.id); onToast(isOwned ? 'Removed from Collection 🗑️' : 'Removed from Wishlist 🗑️') }
   }
 
   return (
@@ -200,10 +220,21 @@ function CardModal({ card, user, onToast, onClose, activeBinderId }) {
       onClick={onClose}
     >
       <motion.div
-        className="bg-white/85 backdrop-blur-md rounded-3xl shadow-2xl p-6 max-w-sm w-full my-auto"
+        className="bg-white/85 backdrop-blur-md rounded-3xl shadow-2xl p-6 max-w-sm w-full my-auto relative"
         initial={{ scale: 0.85, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.85, opacity: 0 }}
         onClick={e => e.stopPropagation()}
       >
+        {/* Close button — top-right, always reachable */}
+        <button
+          onClick={onClose}
+          className="absolute top-4 right-4 z-10 w-8 h-8 rounded-full bg-white/70 hover:bg-white
+                     text-gray-400 hover:text-gray-600 flex items-center justify-center
+                     shadow-sm transition-colors text-base leading-none"
+          aria-label="Close"
+        >
+          ✕
+        </button>
+
         <img src={card.images?.large ?? card.images?.small} alt={card.name}
              className="w-full rounded-2xl mb-4 shadow-md" />
         <h2 className="text-xl font-bold text-pink-500 mb-0.5">{card.name}</h2>
@@ -222,14 +253,42 @@ function CardModal({ card, user, onToast, onClose, activeBinderId }) {
 
         <div className="flex flex-col gap-2">
           {user ? (
-            <button
-              onClick={addToWishlist}
-              disabled={saving || saved}
-              className="bg-rose-400 hover:bg-rose-500 disabled:opacity-60 text-white
-                         font-semibold py-2 rounded-2xl transition-colors"
-            >
-              {saved ? 'Saved! ✨📦' : saving ? 'Saving…' : '✨ Add to Wishlist & Collection'}
-            </button>
+            inList ? (
+              /* Already saved — show which bucket it's in + remove option */
+              <>
+                <p className="text-center text-xs font-semibold text-gray-400">
+                  {isOwned ? '✅ In your Collection' : '💖 In your Wishlist'}
+                </p>
+                <button
+                  onClick={removeCard}
+                  disabled={removing}
+                  className="border border-red-300 text-red-500 hover:bg-red-50
+                             font-semibold py-2 rounded-2xl transition-colors disabled:opacity-60"
+                >
+                  {removing ? 'Removing…' : isOwned ? '🗑️ Remove from Collection' : '🗑️ Remove from Wishlist'}
+                </button>
+              </>
+            ) : (
+              /* Not yet saved — two distinct action buttons */
+              <div className="flex gap-2">
+                <button
+                  onClick={() => addCard(false)}
+                  disabled={saving}
+                  className="flex-1 bg-violet-100 hover:bg-violet-200 text-violet-700
+                             font-semibold py-2 rounded-2xl transition-colors disabled:opacity-60"
+                >
+                  {saving ? '…' : '💖 Wishlist'}
+                </button>
+                <button
+                  onClick={() => addCard(true)}
+                  disabled={saving}
+                  className="flex-1 bg-emerald-400 hover:bg-emerald-500 text-white
+                             font-semibold py-2 rounded-2xl transition-colors disabled:opacity-60"
+                >
+                  {saving ? '…' : '✨ Collection'}
+                </button>
+              </div>
+            )
           ) : (
             <p className="text-center text-xs text-gray-400">Login to save cards to your Wishlist & Collection 💖</p>
           )}
@@ -240,9 +299,6 @@ function CardModal({ card, user, onToast, onClose, activeBinderId }) {
               View on TCGPlayer
             </a>
           )}
-          <button onClick={onClose} className="text-sm text-gray-400 hover:text-gray-600 mt-1">
-            Close
-          </button>
         </div>
       </motion.div>
     </motion.div>
@@ -250,7 +306,7 @@ function CardModal({ card, user, onToast, onClose, activeBinderId }) {
 }
 
 // ─── Main grid ────────────────────────────────────────────────────────────────
-function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, user, onToast, activeBinderId }) {
+function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, user, onToast, activeBinderId, collectionIds, ownedIds, onCardAdded, onCardRemoved }) {
   const [cards,    setCards]    = useState([])
   const [page,     setPage]     = useState(1)
   const [hasMore,  setHasMore]  = useState(false)
@@ -283,7 +339,12 @@ function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, user, on
     const q = buildTcgQuery(vibe, srch, sq)
     // Always fetch in stable oldest-first order — all sort options are applied locally.
     // number + subtypes added so variant badges ("1st Ed", "#4/102") render without a second fetch
-    let url = `https://api.pokemontcg.io/v2/cards?page=${pg}&pageSize=${PAGE_SIZE}&orderBy=${encodeURIComponent('set.releaseDate')}&select=id,name,images,set,number,subtypes,rarity,tcgplayer,cardmarket`
+    // Map local sort option to the API's orderBy field.
+    // Price sorts have no API equivalent — fetch newest-first and re-sort locally.
+    const apiOrder = sort === 'oldest' ? 'set.releaseDate'
+                   : sort === 'alpha'  ? 'name'
+                   : '-set.releaseDate'   // newest, price-high, price-low
+    let url = `https://api.pokemontcg.io/v2/cards?page=${pg}&pageSize=${PAGE_SIZE}&orderBy=${encodeURIComponent(apiOrder)}&select=id,name,images,set,number,subtypes,rarity,tcgplayer,cardmarket`
     if (q) url += `&q=${encodeURIComponent(q)}`
 
     console.log("Final API Query:", q)
@@ -296,6 +357,7 @@ function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, user, on
 
       const data = await res.json()
       const incoming = data.data ?? []
+      if (pg === 1) console.log('First card release date:', incoming[0]?.set?.releaseDate)
       const more = incoming.length === PAGE_SIZE
 
       // Merge pages into raw (unsorted) list, update cache, then apply local sort for display
@@ -324,35 +386,41 @@ function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, user, on
     if (reqIdRef.current === reqId) setLoading(false)
   }, [])
 
-  // Filter change: serve from cache if available (no flicker), otherwise fetch.
-  // sortBy is intentionally excluded — sort changes are handled by the effect below.
+  // Filter OR sort change: re-fetch or serve from cache.
+  // sortBy is included so switching Oldest ↔ Newest triggers a new API call with the
+  // correct orderBy. For price/alpha sorts the API result is the same (newest-first)
+  // and local re-sort handles it — but we still bust the cache so the data stays fresh.
   useEffect(() => {
     const hasFilter = activeVibe || setQuery || search
     if (!hasFilter) return
 
     const key = buildCacheKey(activeVibe, search, setQuery)
     activeKeyRef.current = key
+
+    // Date sorts change the API orderBy → stale cache would be in the wrong server order,
+    // so evict the entry and force a fresh fetch.
+    const isDateSort = sortBy === 'oldest' || sortBy === 'newest'
+    if (isDateSort) delete cacheRef.current[key]
+
     const cached = cacheRef.current[key]
 
-    // Always cancel any in-flight request when the filter changes — even on a cache hit.
-    // Without this, a slow fetch for the previous filter could arrive late and overwrite
-    // the cards we're about to restore from cache ("ghost data" jump).
+    // Always cancel any in-flight request when filter/sort changes.
     abortRef.current?.abort()
     reqIdRef.current++
 
     if (cached) {
-      // Cache hit: restore instantly with current sort applied — zero network, zero flicker
+      // Cache hit (non-date sorts): re-sort locally — zero network, zero flicker
       setCards(sortCards(cached.rawCards, sortBy))
       setPage(cached.page)
       setHasMore(cached.hasMore)
       setLoading(false)
     } else {
-      // Cache miss: fresh fetch
+      // Cache miss or date-sort bust: fresh fetch with current API orderBy
       setPage(1)
       setCards([])
       fetchCards(activeVibe, search, setQuery, sortBy, 1)
     }
-  }, [activeVibe, search, setQuery, fetchCards]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [activeVibe, search, setQuery, sortBy, fetchCards]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Sort change: re-sort cached raw cards locally — instantaneous, no network call
   useEffect(() => {
@@ -365,6 +433,38 @@ function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, user, on
     const next = page + 1
     setPage(next)
     fetchCards(activeVibe, search, setQuery, sortBy, next)
+  }
+
+  // owned = false → Wishlist; owned = true → Collection
+  async function quickAdd(e, card, owned) {
+    e.stopPropagation()
+    if (!user) { onToast('Login to save cards 💖'); return }
+    if (collectionIds?.has(card.id)) { onToast('Already saved! Tap the card to manage it ✅'); return }
+    const prices  = card.tcgplayer?.prices ?? {}
+    const payload = {
+      user_id:      user.id,
+      card_id:      card.id,
+      name:         card.name,
+      image:        card.images?.small,
+      market_price: getBestPrice(prices),
+      owned,
+    }
+    if (activeBinderId) payload.binder_id = activeBinderId
+    const { error } = await supabase
+      .from('wishlists')
+      .upsert(payload, { onConflict: 'user_id,card_id' })
+    if (!error) { onCardAdded?.(card.id, owned); onToast(owned ? 'Added to Collection! ✨📦' : 'Added to Wishlist! 💖') }
+  }
+
+  async function quickRemove(e, card) {
+    e.stopPropagation()
+    if (!user) return
+    const { error } = await supabase
+      .from('wishlists')
+      .delete()
+      .eq('user_id', user.id)
+      .eq('card_id', card.id)
+    if (!error) { onCardRemoved?.(card.id); onToast('Removed from Collection 🗑️') }
   }
 
   if (!activeVibe && !setQuery && !search) {
@@ -385,24 +485,88 @@ function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, user, on
         initial="hidden" animate="show"
         variants={{ hidden: {}, show: { transition: { staggerChildren: 0.04 } } }}
       >
-        {cards.map(card => (
-          <motion.div
-            key={card.id}
-            className="cursor-pointer rounded-2xl overflow-hidden shadow-md"
-            style={{ background: 'rgba(255,255,255,0.45)', backdropFilter: 'blur(10px)', border: '1px solid rgba(255,255,255,0.6)', userSelect: 'none', WebkitUserSelect: 'none', WebkitTouchCallout: 'none', touchAction: 'manipulation' }}
-            variants={{ hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0 } }}
-            whileHover={{ scale: 1.05, boxShadow: '0 12px 30px rgba(255,182,193,0.5)' }}
-            onClick={() => setSelected(card)}
-          >
-            <img src={card.images?.small} alt={card.name} className="w-full" loading="lazy" />
-            <div className="p-2 text-center">
-              <p className="text-sm font-bold text-gray-700 truncate">{card.name}</p>
-              <p className="text-xs text-gray-400 truncate">{card.set?.name}</p>
-              <VariantBadges card={card} />
-              <PriceTag prices={card.tcgplayer?.prices} />
-            </div>
-          </motion.div>
-        ))}
+        {cards.map(card => {
+          const inList  = collectionIds?.has(card.id)
+          const isOwned = ownedIds?.has(card.id)
+          return (
+            <motion.div
+              key={card.id}
+              className="cursor-pointer rounded-2xl overflow-hidden shadow-md relative"
+              style={{
+                background: isOwned
+                  ? 'rgba(236,253,245,0.7)'
+                  : inList
+                  ? 'rgba(238,233,255,0.7)'
+                  : 'rgba(255,255,255,0.45)',
+                backdropFilter: 'blur(10px)',
+                border: isOwned
+                  ? '1.5px solid #6ee7b7'
+                  : inList
+                  ? '1.5px solid #a78bfa'
+                  : '1px solid rgba(255,255,255,0.6)',
+                userSelect: 'none', WebkitUserSelect: 'none', WebkitTouchCallout: 'none', touchAction: 'manipulation',
+              }}
+              variants={{ hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0 } }}
+              whileHover={{ scale: 1.05, boxShadow: '0 12px 30px rgba(255,182,193,0.5)' }}
+              onClick={() => setSelected(card)}
+            >
+              {/* Status badge — top-left */}
+              {inList && (
+                <span className={`absolute top-1.5 left-1.5 z-10 text-[9px] font-bold
+                                  px-1.5 py-0.5 rounded-full leading-tight shadow-sm
+                                  ${isOwned
+                                    ? 'bg-emerald-500/90 text-white'
+                                    : 'bg-violet-500/90 text-white'
+                                  }`}>
+                  {isOwned ? '✅ Owned' : '💖 Wishlist'}
+                </span>
+              )}
+
+              {/* Remove button — top-right (only when in list) */}
+              {inList && (
+                <button
+                  onClick={e => quickRemove(e, card)}
+                  className="absolute top-1.5 right-1.5 z-10 w-6 h-6 rounded-full flex items-center
+                             justify-center text-xs font-bold shadow-sm transition-colors leading-none
+                             bg-white/80 hover:bg-red-400 hover:text-white text-red-400"
+                  title="Remove from Collection"
+                >
+                  −
+                </button>
+              )}
+
+              <img src={card.images?.small} alt={card.name} className="w-full" loading="lazy" />
+              <div className="p-2 text-center">
+                <p className="text-sm font-bold text-gray-700 truncate">{card.name}</p>
+                <p className="text-xs text-gray-400 truncate">{card.set?.name}</p>
+                <VariantBadges card={card} />
+                <PriceTag prices={card.tcgplayer?.prices} />
+
+                {/* Dual quick-add buttons — only when not yet saved */}
+                {!inList && (
+                  <div className="flex gap-1 mt-1.5" onClick={e => e.stopPropagation()}>
+                    <button
+                      onClick={e => quickAdd(e, card, false)}
+                      className="flex-1 text-[10px] font-semibold py-1 rounded-xl
+                                 bg-violet-100 hover:bg-violet-200 text-violet-700 transition-colors"
+                      title="Add to Wishlist"
+                    >
+                      💖 Wishlist
+                    </button>
+                    <button
+                      onClick={e => quickAdd(e, card, true)}
+                      className="flex-1 text-[10px] font-semibold py-1 rounded-xl
+                                 bg-emerald-100 hover:bg-emerald-200 text-emerald-700 transition-colors"
+                      title="Add to Collection"
+                    >
+                      ✨ Owned
+                    </button>
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          )
+        })}
       </motion.div>
 
       {loading && cards.length === 0 && (
@@ -435,7 +599,7 @@ function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, user, on
 
       <AnimatePresence>
         {selected && (
-          <CardModal card={selected} user={user} onToast={onToast} onClose={() => setSelected(null)} activeBinderId={activeBinderId} />
+          <CardModal card={selected} user={user} onToast={onToast} onClose={() => setSelected(null)} activeBinderId={activeBinderId} collectionIds={collectionIds} ownedIds={ownedIds} onCardAdded={onCardAdded} onCardRemoved={onCardRemoved} />
         )}
       </AnimatePresence>
     </>

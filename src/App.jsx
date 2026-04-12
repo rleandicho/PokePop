@@ -3,6 +3,7 @@ import { supabase }        from './lib/supabase'
 import AestheticFilter     from './components/AestheticFilter'
 import CardGrid            from './components/CardGrid'
 import WishlistDashboard   from './components/WishlistDashboard'
+import HomePage            from './components/HomePage'
 import Auth                from './components/Auth'
 import Toast               from './components/Toast'
 import UsernameSetup       from './components/UsernameSetup'
@@ -13,28 +14,30 @@ export default function App() {
   const [profile,        setProfile]        = useState(null)   // { id, username } | null
   const [profileReady,   setProfileReady]   = useState(false)  // has fetch completed?
   const [skippedSetup,   setSkippedSetup]   = useState(false)  // user clicked "maybe later"
-  const [activeVibe,     setActiveVibe]     = useState('girlypop')
+  const [activeVibe,     setActiveVibe]     = useState('home')
   const [setQuery,       setSetQuery]       = useState(null)   // raw TCG query fragment
-  const [sortBy,         setSortBy]         = useState('oldest')
+  const [sortBy,         setSortBy]         = useState('newest')
   const [search,         setSearch]         = useState('')
   const [searchInput,    setSearchInput]    = useState('')
   const [toast,          setToast]          = useState('')
   const [activeBinderId, setActiveBinderId] = useState(null)   // tracks selected binder in Dashboard
+  const [collectionIds,  setCollectionIds]  = useState(new Set()) // all card IDs in wishlists table
+  const [ownedIds,       setOwnedIds]       = useState(new Set()) // subset where owned = true
 
   // ── Auth + profile ──────────────────────────────────────────────────────────
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
       const u = data.session?.user ?? null
       setUser(u)
-      if (u) fetchProfile(u.id)
+      if (u) { fetchProfile(u.id); fetchCollectionIds(u.id) }
       else   setProfileReady(true)
     })
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, session) => {
       const u = session?.user ?? null
       setUser(u)
-      if (u) fetchProfile(u.id)
-      else  { setProfile(null); setProfileReady(true) }
+      if (u) { fetchProfile(u.id); fetchCollectionIds(u.id) }
+      else  { setProfile(null); setProfileReady(true); setCollectionIds(new Set()); setOwnedIds(new Set()) }
     })
     return () => subscription.unsubscribe()
   }, [])
@@ -48,6 +51,27 @@ export default function App() {
       .maybeSingle()
     setProfile(data ?? null)
     setProfileReady(true)
+  }
+
+  async function fetchCollectionIds(userId) {
+    const { data } = await supabase
+      .from('wishlists')
+      .select('card_id, owned')
+      .eq('user_id', userId)
+    const rows = data ?? []
+    setCollectionIds(new Set(rows.map(r => r.card_id)))
+    setOwnedIds(new Set(rows.filter(r => r.owned).map(r => r.card_id)))
+  }
+
+  // owned = false → wishlist entry; owned = true → collection entry
+  function handleCardAdded(cardId, owned = false) {
+    setCollectionIds(prev => new Set([...prev, cardId]))
+    if (owned) setOwnedIds(prev => new Set([...prev, cardId]))
+  }
+
+  function handleCardRemoved(cardId) {
+    setCollectionIds(prev => { const n = new Set(prev); n.delete(cardId); return n })
+    setOwnedIds(prev => { const n = new Set(prev); n.delete(cardId); return n })
   }
 
   function handleUsernameSaved(username) {
@@ -66,23 +90,23 @@ export default function App() {
     const q = searchInput.trim()
     setSearch(q)
     if (q) { setActiveVibe(null); setSetQuery(null) }
-    else    setActiveVibe('girlypop')
+    else    setActiveVibe('home')
   }
 
   function clearSearch() {
     setSearchInput('')
     setSearch('')
-    setActiveVibe('girlypop')
+    setActiveVibe('home')
     setSetQuery(null)
   }
 
   // ── Filter helpers ──────────────────────────────────────────────────────────
   function handleVibeChange(vibe) {
-    // If vibe is toggled off (null), fall back to girlypop — never leave a blank state
+    // If vibe is toggled off (null), fall back to home — never leave a blank state
     setSearch('')
     setSearchInput('')
     setSetQuery(null)
-    setActiveVibe(vibe ?? 'girlypop')
+    setActiveVibe(vibe ?? 'home')
   }
 
   function handleSetQuery(q) {
@@ -92,6 +116,7 @@ export default function App() {
   }
 
   const showToast     = useCallback((msg) => setToast(msg), [])
+  const isHome        = activeVibe === 'home'
   const isWishlist    = activeVibe === 'wishlist'
   // Show modal when: logged in, profile fetch done, no username set, user hasn't skipped
   const needsUsername = user && profileReady && !profile?.username && !skippedSetup
@@ -153,7 +178,14 @@ export default function App() {
 
       {/* ── Main content ────────────────────────────────────────────────── */}
       <main className="max-w-6xl mx-auto pb-16">
-        {isWishlist ? (
+        {isHome ? (
+          <HomePage
+            user={user}
+            collectionIds={collectionIds}
+            ownedIds={ownedIds}
+            onNavigate={vibe => { setActiveVibe(vibe); setSetQuery(null); setSearch(''); setSearchInput('') }}
+          />
+        ) : isWishlist ? (
           <WishlistDashboard
             user={user}
             onToast={showToast}
@@ -171,6 +203,10 @@ export default function App() {
             user={user}
             onToast={showToast}
             activeBinderId={activeBinderId}
+            collectionIds={collectionIds}
+            ownedIds={ownedIds}
+            onCardAdded={handleCardAdded}
+            onCardRemoved={handleCardRemoved}
           />
         )}
       </main>
