@@ -17,8 +17,6 @@ export default function App() {
   const [activeVibe,     setActiveVibe]     = useState('home')
   const [setQuery,       setSetQuery]       = useState(null)   // raw TCG query fragment
   const [sortBy,         setSortBy]         = useState('newest')
-  const [search,         setSearch]         = useState('')
-  const [searchInput,    setSearchInput]    = useState('')
   const [toast,          setToast]          = useState('')
   const [activeBinderId, setActiveBinderId] = useState(null)   // tracks selected binder in Dashboard
   const [collectionIds,  setCollectionIds]  = useState(new Set()) // all card IDs in wishlists table
@@ -84,27 +82,14 @@ export default function App() {
     }
   }
 
-  // ── Search ──────────────────────────────────────────────────────────────────
-  function handleSearch(e) {
-    e.preventDefault()
-    const q = searchInput.trim()
-    setSearch(q)
-    if (q) { setActiveVibe(null); setSetQuery(null) }
-    else    setActiveVibe('home')
-  }
-
-  function clearSearch() {
-    setSearchInput('')
-    setSearch('')
+  // ── Filter helpers ──────────────────────────────────────────────────────────
+  function goHome() {
     setActiveVibe('home')
     setSetQuery(null)
   }
 
-  // ── Filter helpers ──────────────────────────────────────────────────────────
   function handleVibeChange(vibe) {
     // If vibe is toggled off (null), fall back to home — never leave a blank state
-    setSearch('')
-    setSearchInput('')
     setSetQuery(null)
     setActiveVibe(vibe ?? 'home')
   }
@@ -130,51 +115,30 @@ export default function App() {
       )}
 
       {/* ── Header ─────────────────────────────────────────────────────── */}
-      <header className="text-center pt-8 pb-2 px-4 space-y-3">
-        <h1 className="text-4xl sm:text-5xl font-bold text-pink-500 drop-shadow-sm tracking-tight">
+      <header className="text-center pt-8 pb-2 px-4 space-y-2">
+        <button
+          onClick={goHome}
+          className="text-4xl sm:text-5xl font-bold text-pink-500 drop-shadow-sm tracking-tight
+                     cursor-pointer bg-transparent border-none p-0 hover:opacity-80 transition-opacity"
+        >
           Poképop 🌸
-        </h1>
+        </button>
         <p className="text-pink-400 font-medium text-sm">
           Discover Pokémon cards by vibe ✨
         </p>
-
-        {/* Search bar */}
-        <form onSubmit={handleSearch} className="flex justify-center gap-2 max-w-sm mx-auto">
-          <input
-            type="text"
-            value={searchInput}
-            onChange={e => setSearchInput(e.target.value)}
-            placeholder="Search any Pokémon…"
-            className="flex-1 border border-pink-200 bg-white/70 rounded-2xl px-4 py-2
-                       text-sm text-gray-600 placeholder-pink-300
-                       focus:outline-none focus:ring-2 focus:ring-pink-300"
-          />
-          {search ? (
-            <button type="button" onClick={clearSearch}
-                    className="bg-white/70 hover:bg-white text-pink-400 font-semibold
-                               px-4 py-2 rounded-2xl border border-pink-200 text-sm transition-all">
-              ✕ Clear
-            </button>
-          ) : (
-            <button type="submit"
-                    className="bg-pink-400 hover:bg-pink-500 text-white font-semibold
-                               px-4 py-2 rounded-2xl text-sm transition-all">
-              Search
-            </button>
-          )}
-        </form>
-
         <Auth user={user} username={profile?.username} />
       </header>
 
-      {/* ── Filters ─────────────────────────────────────────────────────── */}
-      <AestheticFilter
-        active={activeVibe}
-        onChange={handleVibeChange}
-        setQuery={setQuery}
-        onSetQuery={handleSetQuery}
-        user={user}
-      />
+      {/* ── Filters — hidden on the home page ──────────────────────────── */}
+      {!isHome && (
+        <AestheticFilter
+          active={activeVibe}
+          onChange={handleVibeChange}
+          setQuery={setQuery}
+          onSetQuery={handleSetQuery}
+          user={user}
+        />
+      )}
 
       {/* ── Main content ────────────────────────────────────────────────── */}
       <main className="max-w-6xl mx-auto pb-16">
@@ -183,7 +147,7 @@ export default function App() {
             user={user}
             collectionIds={collectionIds}
             ownedIds={ownedIds}
-            onNavigate={vibe => { setActiveVibe(vibe); setSetQuery(null); setSearch(''); setSearchInput('') }}
+            onNavigate={vibe => { setActiveVibe(vibe); setSetQuery(null) }}
           />
         ) : isWishlist ? (
           <WishlistDashboard
@@ -194,9 +158,8 @@ export default function App() {
           />
         ) : (
           <CardGrid
-            key={`${activeVibe ?? ''}|${setQuery ?? ''}|${search}`}
+            key={`${activeVibe ?? ''}|${setQuery ?? ''}`}
             activeVibe={activeVibe}
-            search={search}
             setQuery={setQuery}
             sortBy={sortBy}
             onSortChange={setSortBy}

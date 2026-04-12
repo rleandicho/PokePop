@@ -483,31 +483,6 @@ function NewBinderModal({ onSave, onClose }) {
   )
 }
 
-// ─── 1st Edition set allow-list ───────────────────────────────────────────────
-// Only WotC-era English sets had 1st Edition print runs.
-// Base Set 2 (base4) and Legendary Collection (base6) are explicitly excluded — no 1st Ed prints.
-const FIRST_ED_SET_IDS = new Set([
-  'base1',   // Base Set
-  'base2',   // Jungle
-  'base3',   // Fossil
-  'base5',   // Team Rocket
-  'gym1',    // Gym Heroes
-  'gym2',    // Gym Challenge
-  'neo1',    // Neo Genesis
-  'neo2',    // Neo Discovery
-  'neo3',    // Neo Revelation
-  'neo4',    // Neo Destiny
-  'ecard1',  // Expedition Base Set
-  'ecard2',  // Aquapolis
-  'ecard3',  // Skyridge
-])
-
-// card_id format is "{setId}-{number}" (e.g. "base1-4", "jungle-51", "neo2-12")
-function cardSupports1stEd(cardId) {
-  const setId = (cardId ?? '').split('-')[0].toLowerCase()
-  return FIRST_ED_SET_IDS.has(setId)
-}
-
 // ─── Main dashboard ──────────────────────────────────────────────────────────
 export default function WishlistDashboard({ user, onToast, onGoExplore, onBinderChange }) {
   const [items,     setItems]     = useState([])
@@ -517,7 +492,7 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
   const [copied,    setCopied]    = useState(false)
   const [activeTab,        setActiveTab]        = useState('collection')  // 'collection' | 'binder' | 'trainers'
   const [followedTrainers, setFollowedTrainers] = useState([])
-  // (edition toggle visibility is now determined statically by cardSupports1stEd — no runtime Sets needed)
+  // 1st Edition is determined by card_id suffix ("-1st") — no toggle, no runtime Sets needed
 
   // ── Binder state ──────────────────────────────────────────────────────────
   const [binders,         setBinders]         = useState([])
@@ -633,18 +608,20 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
 
   useEffect(() => { fetchWishlist() }, [user])
 
-  // ── Derived totals — useMemo so they update the instant `items` changes.
-  // MUST live here, before any early returns, to satisfy the Rules of Hooks.
-  const totalItems = items.length
-  const ownedItems = items.filter(i => i.owned).length
-  const totalValue = useMemo(() => {
-    const total = items.reduce((sum, i) => sum + (Number(i.market_price) || 0), 0)
-    console.log('New Total Calculated:', total)
+  // ── Derived arrays + totals — all useMemo, all before early returns (Rules of Hooks).
+  const ownedItemsList    = useMemo(() => items.filter(i =>  i.owned), [items])
+  const wishlistItemsList = useMemo(() => items.filter(i => !i.owned), [items])
+  const totalCount        = items.length
+  const ownedCount        = ownedItemsList.length
+  const wishlistCount     = wishlistItemsList.length
+  const collectionValue   = useMemo(() => {
+    const total = ownedItemsList.reduce((sum, i) => sum + (Number(i.market_price) || 0), 0)
+    console.log('Collection Value:', total)
     return total
-  }, [items])
-  const ownedValue = useMemo(
-    () => items.filter(i => i.owned).reduce((sum, i) => sum + (Number(i.market_price) || 0), 0),
-    [items]
+  }, [ownedItemsList])
+  const wishlistValue = useMemo(
+    () => wishlistItemsList.reduce((sum, i) => sum + (Number(i.market_price) || 0), 0),
+    [wishlistItemsList]
   )
 
   async function togglePublic() {
@@ -686,84 +663,6 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
       }
     } else {
       copyShareLink()
-    }
-  }
-
-  async function toggleEdition(cardId, currentEdition) {
-    const next = currentEdition === '1st' ? 'unlimited' : '1st'
-
-    // Snapshot current price so the catch block can fully revert both fields
-    const originalPrice = items.find(i => i.card_id === cardId)?.market_price ?? null
-
-    // Optimistic label flip only (price unknown until TCG API responds)
-    setItems(prev => prev.map(i => i.card_id === cardId ? { ...i, edition: next } : i))
-
-    try {
-      // ── Step 1: fetch edition-correct price from TCG API ─────────────────────
-      const res = await fetch(`https://api.pokemontcg.io/v2/cards/${cardId}?select=tcgplayer`)
-      const { data: tcgCard } = await res.json()
-      const prices = tcgCard?.tcgplayer?.prices ?? {}
-      console.log('Raw TCGPlayer Prices:', prices)
-
-      // Strict price resolution — NO cross-edition fallback.
-      // 1st Ed:    only 1stEdition* keys are considered. If none exist, price is null.
-      // Unlimited: holofoil → reverseHolofoil → normal → any key
-      let newPrice    = null
-      let selectedKey = null
-
-      if (next === '1st') {
-        // Try explicit keys first (priority order), then any remaining 1stEdition* key
-        const priority = ['1stEditionHolofoil', '1stEditionNormal', '1stEditionNormal Foil']
-        const found = priority.find(k => prices[k]?.market != null)
-          ?? Object.keys(prices).find(k => k.startsWith('1stEdition') && prices[k]?.market != null)
-        if (found) { selectedKey = found; newPrice = prices[found].market }
-      } else {
-        const unlimitedKeys = ['holofoil', 'reverseHolofoil', 'normal']
-        const found = unlimitedKeys.find(k => prices[k]?.market != null)
-          ?? Object.keys(prices).find(k => prices[k]?.market != null)
-        if (found) { selectedKey = found; newPrice = prices[found].market }
-      }
-
-      console.log(`Selected Price Key: ${selectedKey ?? 'none'} → $${newPrice ?? 'N/A'}`)
-      console.log(`[toggleEdition] card=${cardId} edition=${next} price=${newPrice}`)
-
-      // ── Step 2: blocking Supabase write — always send both columns ───────────
-      const updates = { edition: next }
-      if (newPrice != null) updates.market_price = newPrice
-
-      const { error } = await supabase
-        .from('wishlists')
-        .update(updates)
-        .eq('user_id', user.id)
-        .eq('card_id', cardId)
-
-      if (error) {
-        console.error('[toggleEdition] Supabase update failed:', error)
-        throw error
-      }
-
-      console.log('DB Update Success for card:', cardId)
-
-      // ── Step 3: push the new price into local state immediately so useMemo
-      // recalculates the total NOW, then reconcile with DB source of truth ────
-      const updatedItems = items.map(i =>
-        i.card_id === cardId
-          ? { ...i, edition: next, ...(newPrice != null ? { market_price: newPrice } : {}) }
-          : i
-      )
-      setItems([...updatedItems])   // new array reference forces useMemo to re-run
-      await fetchWishlist()         // then pull authoritative data from DB
-
-      onToast(next === '1st' ? '⭐ Switched to 1st Edition!' : 'Switched to Unlimited')
-    } catch (err) {
-      console.error('[toggleEdition] error:', err)
-      // Full revert: restore both edition label AND original market_price
-      setItems(prev => prev.map(i =>
-        i.card_id === cardId
-          ? { ...i, edition: currentEdition, ...(originalPrice != null ? { market_price: originalPrice } : {}) }
-          : i
-      ))
-      onToast('Could not update edition 😿')
     }
   }
 
@@ -895,6 +794,81 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
       </div>
     )
   }
+
+  // ── Shared card tile — used by both Collection and Wishlist grids ────────────
+  const renderTile = (item) => (
+    <motion.div
+      key={item.card_id}
+      layout
+      variants={{ hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0 } }}
+      exit={{ opacity: 0, scale: 0.85 }}
+      className="rounded-2xl overflow-hidden shadow-md relative"
+      style={{
+        background:    item.owned ? 'rgba(236,253,245,0.7)' : 'rgba(238,233,255,0.55)',
+        backdropFilter: 'blur(10px)',
+        border:        item.owned ? '1.5px solid #6ee7b7'  : '1.5px solid #a78bfa',
+      }}
+    >
+      <button
+        onClick={() => removeCard(item.card_id)}
+        className="absolute top-1.5 right-1.5 z-10 w-6 h-6 rounded-full bg-white/70
+                   text-gray-400 hover:text-red-400 hover:bg-white text-xs leading-none
+                   flex items-center justify-center shadow-sm transition-colors"
+        title="Remove"
+      >✕</button>
+
+      <img src={item.image} alt={item.name} className="w-full" loading="lazy" />
+
+      <div className="p-2 text-center">
+        <p className="text-sm font-bold text-gray-700 truncate">{item.name}</p>
+
+        {Number(item.market_price) > 0 && (
+          <p className="text-xs font-semibold text-pink-600 bg-pink-100 px-2 py-0.5 rounded-full inline-block mb-1">
+            ${Number(item.market_price).toFixed(2)}
+          </p>
+        )}
+
+        {item.card_id?.endsWith('-1st') && (
+          <span className="inline-block text-[10px] font-bold bg-amber-400 text-white
+                           border border-amber-500 px-2 py-0.5 rounded-full mb-1 shadow-sm">
+            ⭐ 1st Edition
+          </span>
+        )}
+
+        <motion.button
+          whileTap={{ scale: 0.92 }}
+          onClick={() => toggleOwned(item.card_id, item.owned)}
+          className={`w-full text-xs font-semibold py-1.5 rounded-xl transition-all mt-1
+            ${item.owned
+              ? 'bg-emerald-400 text-white hover:bg-emerald-500'
+              : 'bg-white/70 text-gray-400 hover:bg-pink-50 hover:text-pink-500 border border-gray-200'
+            }`}
+        >
+          {item.owned ? '✅ I own this!' : '🌸 I own this'}
+        </motion.button>
+
+        {item.owned && binders.length > 0 ? (
+          <select
+            value={item.binder_id ?? ''}
+            onChange={e => moveCardToBinder(item.card_id, e.target.value)}
+            className="mt-2 w-full text-sm font-bold text-white border-2 border-violet-500
+                       rounded-xl px-3 py-2.5 cursor-pointer transition-all
+                       focus:outline-none focus:ring-2 focus:ring-violet-400 hover:border-violet-400"
+            style={{ background: 'linear-gradient(135deg, #4c1d95, #5b21b6)' }}
+          >
+            <option value="" style={{ background: '#1e1b4b' }}>📦 No binder</option>
+            {binders.map(b => (
+              <option key={b.id} value={b.id} style={{ background: '#1e1b4b' }}>{b.name}</option>
+            ))}
+          </select>
+        ) : !item.owned ? (
+          <p className="mt-1.5 text-[10px] text-center text-violet-400 font-medium tracking-wide">
+            💖 Wishlisted
+          </p>
+        ) : null}
+      </div>
+    </motion.div>
+  )
 
   return (
     <>
@@ -1093,14 +1067,14 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
 
       {/* ── Stats grid ─────────────────────────────────────────────── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 p-4">
-        <StatCard icon="💖" label="Total Cards"      value={totalItems}  color="pink"  />
-        <StatCard icon="💰" label="Total Value"      value={totalValue}  color="blue"  prefix="$" decimals={2} />
-        <StatCard icon="🌟" label="Value Collected"  value={ownedValue}  color="mint"  prefix="$" decimals={2} />
+        <StatCard icon="📦" label="Collection Value" value={collectionValue} color="mint"  prefix="$" decimals={2} />
+        <StatCard icon="✨" label="Wishlist Value"    value={wishlistValue}   color="blue"  prefix="$" decimals={2} />
+        <StatCard icon="💖" label="Total Cards"       value={totalCount}      color="pink"  />
         <div className="rounded-2xl border border-violet-200 bg-gradient-to-br from-violet-100/80 to-purple-100/60 backdrop-blur-md p-4 shadow-sm">
           <p className="text-2xl mb-1">✅</p>
           <p className="text-xs text-gray-400 font-medium uppercase tracking-wide mb-0.5">Collection Progress</p>
-          <p className="text-2xl font-bold text-gray-700">{ownedItems}<span className="text-base text-gray-400">/{totalItems}</span></p>
-          <ProgressBar owned={ownedItems} total={totalItems} />
+          <p className="text-2xl font-bold text-gray-700">{ownedCount}<span className="text-base text-gray-400">/{totalCount}</span></p>
+          <ProgressBar owned={ownedCount} total={totalCount} />
         </div>
       </div>
 
@@ -1201,113 +1175,41 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
       {/* ── Top 3 ──────────────────────────────────────────────────── */}
       <HighRollers items={items} />
 
-      {/* ── Card grid ──────────────────────────────────────────────── */}
-      <motion.div
-        className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 p-4"
-        initial="hidden" animate="show"
-        variants={{ hidden: {}, show: { transition: { staggerChildren: 0.04 } } }}
-      >
-        <AnimatePresence>
-          {items.map(item => (
-            <motion.div
-              key={item.card_id}
-              layout
-              variants={{ hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0 } }}
-              exit={{ opacity: 0, scale: 0.85 }}
-              className="rounded-2xl overflow-hidden shadow-md relative"
-              style={{
-                background: item.owned
-                  ? 'rgba(236,253,245,0.7)'
-                  : 'rgba(255,255,255,0.45)',
-                backdropFilter: 'blur(10px)',
-                border: item.owned ? '1.5px solid #6ee7b7' : '1px solid rgba(255,255,255,0.6)',
-              }}
-            >
-              {/* Remove button */}
-              <button
-                onClick={() => removeCard(item.card_id)}
-                className="absolute top-1.5 right-1.5 z-10 w-6 h-6 rounded-full bg-white/70
-                           text-gray-400 hover:text-red-400 hover:bg-white text-xs leading-none
-                           flex items-center justify-center shadow-sm transition-colors"
-                title="Remove from Wishlist & Collection"
-              >
-                ✕
-              </button>
+      {/* ── 📦 My Collection ────────────────────────────────────────── */}
+      {ownedItemsList.length > 0 && <>
+        <div className="flex items-center gap-2 px-4 pt-4 pb-1">
+          <span className="text-base">📦</span>
+          <h3 className="text-sm font-bold text-gray-700">My Collection</h3>
+          <span className="text-[11px] font-semibold bg-emerald-100 text-emerald-600 px-2 py-0.5 rounded-full">
+            {ownedCount}
+          </span>
+        </div>
+        <motion.div
+          className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 p-4"
+          initial="hidden" animate="show"
+          variants={{ hidden: {}, show: { transition: { staggerChildren: 0.04 } } }}
+        >
+          <AnimatePresence>{ownedItemsList.map(renderTile)}</AnimatePresence>
+        </motion.div>
+      </>}
 
-              <img src={item.image} alt={item.name} className="w-full" loading="lazy" />
-
-              <div className="p-2 text-center">
-                <p className="text-sm font-bold text-gray-700 truncate">{item.name}</p>
-                {Number(item.market_price) > 0 && (
-                  <p className="text-xs font-semibold text-pink-600 bg-pink-100 px-2 py-0.5 rounded-full inline-block mb-1">
-                    ${Number(item.market_price).toFixed(2)}
-                  </p>
-                )}
-                {/* Owned toggle */}
-                <motion.button
-                  whileTap={{ scale: 0.92 }}
-                  onClick={() => toggleOwned(item.card_id, item.owned)}
-                  className={`w-full text-xs font-semibold py-1.5 rounded-xl transition-all mt-1
-                    ${item.owned
-                      ? 'bg-emerald-400 text-white hover:bg-emerald-500'
-                      : 'bg-white/70 text-gray-400 hover:bg-pink-50 hover:text-pink-500 border border-gray-200'
-                    }`}
-                >
-                  {item.owned ? '✅ I own this!' : '🌸 I own this'}
-                </motion.button>
-
-                {/* Edition toggle — only for WotC-era sets that actually had 1st Edition print runs */}
-                {item.owned && cardSupports1stEd(item.card_id) && (
-                  <div className="flex gap-0.5 mt-1.5 bg-gray-100 rounded-lg p-0.5">
-                    <button
-                      onClick={() => (item.edition ?? 'unlimited') !== 'unlimited' && toggleEdition(item.card_id, item.edition ?? 'unlimited')}
-                      className={`flex-1 text-[10px] font-semibold py-0.5 rounded-md transition-all
-                        ${(item.edition ?? 'unlimited') === 'unlimited'
-                          ? 'bg-white text-gray-700 shadow-sm'
-                          : 'text-gray-400 hover:text-gray-600'
-                        }`}
-                    >
-                      Unlimited
-                    </button>
-                    <button
-                      onClick={() => (item.edition ?? 'unlimited') !== '1st' && toggleEdition(item.card_id, item.edition ?? 'unlimited')}
-                      className={`flex-1 text-[10px] font-semibold py-0.5 rounded-md transition-all
-                        ${(item.edition ?? 'unlimited') === '1st'
-                          ? 'bg-amber-400 text-white shadow-sm'
-                          : 'text-gray-400 hover:text-gray-600'
-                        }`}
-                    >
-                      ⭐ 1st Ed
-                    </button>
-                  </div>
-                )}
-
-                {/* Binder placement — owned cards only */}
-                {item.owned && binders.length > 0 ? (
-                  <select
-                    value={item.binder_id ?? ''}
-                    onChange={e => moveCardToBinder(item.card_id, e.target.value)}
-                    className="mt-2 w-full text-sm font-bold text-white border-2 border-violet-500
-                               rounded-xl px-3 py-2.5 cursor-pointer transition-all
-                               focus:outline-none focus:ring-2 focus:ring-violet-400
-                               hover:border-violet-400"
-                    style={{ background: 'linear-gradient(135deg, #4c1d95, #5b21b6)' }}
-                  >
-                    <option value="" style={{ background: '#1e1b4b' }}>📦 No binder</option>
-                    {binders.map(b => (
-                      <option key={b.id} value={b.id} style={{ background: '#1e1b4b' }}>{b.name}</option>
-                    ))}
-                  </select>
-                ) : !item.owned ? (
-                  <p className="mt-1.5 text-[10px] text-center text-pink-300 font-medium tracking-wide">
-                    💖 Wishlisted
-                  </p>
-                ) : null}
-              </div>
-            </motion.div>
-          ))}
-        </AnimatePresence>
-      </motion.div>
+      {/* ── ✨ My Wishlist ────────────────────────────────────────────── */}
+      {wishlistItemsList.length > 0 && <>
+        <div className="flex items-center gap-2 px-4 pt-4 pb-1">
+          <span className="text-base">✨</span>
+          <h3 className="text-sm font-bold text-gray-700">My Wishlist</h3>
+          <span className="text-[11px] font-semibold bg-violet-100 text-violet-600 px-2 py-0.5 rounded-full">
+            {wishlistCount}
+          </span>
+        </div>
+        <motion.div
+          className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 p-4"
+          initial="hidden" animate="show"
+          variants={{ hidden: {}, show: { transition: { staggerChildren: 0.04 } } }}
+        >
+          <AnimatePresence>{wishlistItemsList.map(renderTile)}</AnimatePresence>
+        </motion.div>
+      </>}
 
       </>}  {/* end items.length > 0 */}
       </>)}  {/* end activeTab === 'collection' */}
