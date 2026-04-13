@@ -16,8 +16,12 @@ const VIBES = [
 ]
 
 // ─── Sets cache — memory + localStorage with 24-hour TTL ─────────────────────
-const LS_KEY = 'pokepop_sets_v1'
-const TTL_MS = 24 * 60 * 60 * 1000
+const LS_KEY  = 'pokepop_sets_v4'   // bumped: POP Series + McDonald's added to promo group
+const TTL_MS  = 24 * 60 * 60 * 1000
+const PROMO_KEY   = 'Promos'
+// Catches: sets named with "Promo/Promos", cards with PROMO subtype (older WotC/DP era),
+// POP Series tournament promos, and McDonald's Happy Meal promo sets.
+const PROMO_QUERY = '(set.name:"*Promo*" OR subtypes:PROMO OR set.name:"*POP Series*" OR set.name:"*McDonald*")'
 
 let setsCache = null   // in-memory reference to avoid re-parsing localStorage
 
@@ -44,23 +48,27 @@ async function fetchSets() {
   const data = await res.json()
   const sets = data.data ?? []
 
-  // Group ALL sets by series — sets without a series fall under 'Other'
+  // Group ALL sets by series — promo/special sets go into a dedicated Promos group
   const grouped = {}
   for (const s of sets) {
-    const key = s.series?.trim() || 'Other'
+    const n = s.name?.toLowerCase() ?? ''
+    const isPromo = n.includes('promo') || n.includes('pop series') || n.includes('mcdonald')
+    const key = isPromo ? PROMO_KEY : (s.series?.trim() || 'Other')
     if (!grouped[key]) grouped[key] = []
     grouped[key].push(s)
   }
 
-  // Sort sets within each series newest → oldest
+  // Sort sets within each group newest → oldest
   for (const key of Object.keys(grouped)) {
     grouped[key].sort((a, b) => new Date(b.releaseDate) - new Date(a.releaseDate))
   }
 
   // Sort series headers by their newest set's releaseDate (newest series first)
-  const order = Object.keys(grouped).sort((a, b) =>
-    new Date(grouped[b][0].releaseDate) - new Date(grouped[a][0].releaseDate)
-  )
+  // Pin Promos right after the most recent main series
+  const mainOrder = Object.keys(grouped)
+    .filter(k => k !== PROMO_KEY)
+    .sort((a, b) => new Date(grouped[b][0].releaseDate) - new Date(grouped[a][0].releaseDate))
+  const order = grouped[PROMO_KEY] ? [mainOrder[0], PROMO_KEY, ...mainOrder.slice(1)] : mainOrder
 
   setsCache = { grouped, order }
 
@@ -103,7 +111,7 @@ function AestheticFilter({ active, onChange, setQuery, onSetQuery, user }) {
     // Do NOT call onChange(null) — clearing vibe would trigger handleVibeChange
     // in App.jsx which wipes the search term, breaking hybrid queries.
     setExpandedSeries(expandedSeries === series ? null : series)
-    const q = `set.series:"${series}"`
+    const q = series === PROMO_KEY ? PROMO_QUERY : `set.series:"${series}"`
     onSetQuery(setQuery === q ? null : q)
   }
 
@@ -113,7 +121,7 @@ function AestheticFilter({ active, onChange, setQuery, onSetQuery, user }) {
     onSetQuery(setQuery === q ? null : q)
   }
 
-  const activeSeriesQuery = setQuery?.startsWith('set.series:') ? setQuery : null
+  const activeSeriesQuery = (setQuery?.startsWith('set.series:') || setQuery === PROMO_QUERY) ? setQuery : null
   const activeSetQuery    = setQuery?.startsWith('set.id:')     ? setQuery : null
 
   return (
@@ -186,7 +194,7 @@ function AestheticFilter({ active, onChange, setQuery, onSetQuery, user }) {
               {setGroups.order.map(series => {
                 const sets        = setGroups.grouped[series] ?? []
                 const isExpanded  = expandedSeries === series
-                const seriesQ     = `set.series:"${series}"`
+                const seriesQ     = series === PROMO_KEY ? PROMO_QUERY : `set.series:"${series}"`
                 const isSeriesAct = activeSeriesQuery === seriesQ
 
                 return (

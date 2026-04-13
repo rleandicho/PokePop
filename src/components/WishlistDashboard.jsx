@@ -755,14 +755,14 @@ function WishlistCardModal({ item, onClose }) {
 }
 
 // ─── Main dashboard ──────────────────────────────────────────────────────────
-export default function WishlistDashboard({ user, onToast, onGoExplore, onBinderChange }) {
+export default function WishlistDashboard({ user, onToast, onGoExplore, onBinderChange, initialTab = 'collection' }) {
   const [items,        setItems]        = useState([])
   const [loading,      setLoading]      = useState(true)
   const [selectedItem, setSelectedItem] = useState(null)
   const [isPublic,  setIsPublic]  = useState(false)
   const [toggling,  setToggling]  = useState(false)
   const [copied,    setCopied]    = useState(false)
-  const [activeTab,        setActiveTab]        = useState('collection')  // 'collection' | 'wishlist' | 'binder' | 'trainers'
+  const [activeTab,        setActiveTab]        = useState(initialTab)  // 'collection' | 'wishlist' | 'binder' | 'trainers'
   const [followedTrainers, setFollowedTrainers] = useState([])
   // 1st Edition is determined by card_id suffix ("-1st") — no toggle, no runtime Sets needed
 
@@ -770,6 +770,8 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
   const [binders,         setBinders]         = useState([])
   const [selectedBinder,  setSelectedBinder]  = useState(null)  // { id, name, color, coverColor, pageStyle }
   const [showNewBinder,   setShowNewBinder]   = useState(false)
+  const [renamingId,      setRenamingId]      = useState(null)  // binder id currently being renamed
+  const [renameInput,     setRenameInput]     = useState('')
   const [showSettings,    setShowSettings]    = useState(false)
   const [refreshing,      setRefreshing]      = useState(false)
   const [refreshProgress, setRefreshProgress] = useState({ done: 0, total: 0 })
@@ -779,6 +781,7 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
   // ── Pagination ────────────────────────────────────────────────────────────
   const [collectionPage, setCollectionPage] = useState(1)
   const [wishlistPage,   setWishlistPage]   = useState(1)
+  const [cardSearch,     setCardSearch]     = useState('')
 
   // Notify App whenever the active binder changes (so CardGrid can route new cards here)
   useEffect(() => { onBinderChange?.(selectedBinder?.id ?? null) }, [selectedBinder])
@@ -796,7 +799,7 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
         //   ALTER TABLE wishlists ADD COLUMN IF NOT EXISTS edition TEXT NOT NULL DEFAULT 'unlimited';
         .select('card_id, name, image, owned, market_price, mid_price, low_price, manual_price, slot_index, binder_id, edition, is_chase, quantity')
         .eq('user_id', user.id)
-        .order('slot_index', { ascending: true, nullsFirst: false }),
+        .order('created_at', { ascending: false }),
       supabase
         .from('profiles')
         .select('is_public')
@@ -904,6 +907,19 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
     () => wishlistItemsList.reduce((acc, i) => acc + getDisplayPrice(i), 0),
     [wishlistItemsList]
   )
+
+  // Search-filtered views
+  const filteredOwnedItems = useMemo(() => {
+    if (!cardSearch.trim()) return ownedItemsList
+    const q = cardSearch.toLowerCase()
+    return ownedItemsList.filter(i => i.name?.toLowerCase().includes(q))
+  }, [ownedItemsList, cardSearch])
+
+  const filteredWishlistItems = useMemo(() => {
+    if (!cardSearch.trim()) return wishlistItemsList
+    const q = cardSearch.toLowerCase()
+    return wishlistItemsList.filter(i => i.name?.toLowerCase().includes(q))
+  }, [wishlistItemsList, cardSearch])
 
   async function togglePublic() {
     const next = !isPublic
@@ -1182,6 +1198,21 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
     onToast('Binder deleted — cards moved to inbox 📥')
   }
 
+  async function renameBinder(binderId, newName) {
+    const trimmed = newName.trim()
+    if (!trimmed) return
+    // Optimistic update
+    setBinders(prev => prev.map(b => b.id === binderId ? { ...b, name: trimmed } : b))
+    setSelectedBinder(prev => prev?.id === binderId ? { ...prev, name: trimmed } : prev)
+    setRenamingId(null)
+    await supabase
+      .from('binders')
+      .update({ name: trimmed })
+      .eq('id', binderId)
+      .eq('user_id', user.id)
+    onToast(`Binder renamed to "${trimmed}" ✏️`)
+  }
+
   async function moveCardToBinder(cardId, binderId) {
     // Optimistic update
     setItems(prev => prev.map(i =>
@@ -1430,17 +1461,31 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
       {/* ── Tab bar ────────────────────────────────────────────────── */}
       <div className="flex justify-center items-center gap-2 px-4 pt-2 pb-4 flex-wrap">
         {[
-          { id: 'collection', label: 'Collection 📦' },
-          { id: 'wishlist',   label: 'Wishlist ✨' },
-          { id: 'binder',     label: 'Virtual Binder 📒' },
-          { id: 'trainers',   label: `Following 👥${followedTrainers.length ? ` · ${followedTrainers.length}` : ''}` },
+          {
+            id:       'cards',
+            label:    'My Cards 📦',
+            isActive: activeTab === 'collection' || activeTab === 'wishlist',
+            action:   () => { if (activeTab !== 'collection' && activeTab !== 'wishlist') { setActiveTab('collection') } setCollectionPage(1); setWishlistPage(1) },
+          },
+          {
+            id:       'binder',
+            label:    'Virtual Binder 📒',
+            isActive: activeTab === 'binder',
+            action:   () => { setActiveTab('binder'); setCollectionPage(1); setWishlistPage(1) },
+          },
+          {
+            id:       'trainers',
+            label:    `Following 👥${followedTrainers.length ? ` · ${followedTrainers.length}` : ''}`,
+            isActive: activeTab === 'trainers',
+            action:   () => { setActiveTab('trainers'); setCollectionPage(1); setWishlistPage(1) },
+          },
         ].map(tab => (
           <motion.button
             key={tab.id}
             whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }}
-            onClick={() => { setActiveTab(tab.id); setCollectionPage(1); setWishlistPage(1) }}
+            onClick={tab.action}
             className={`px-5 py-2 rounded-full text-sm font-semibold transition-all border shadow-sm
-              ${activeTab === tab.id
+              ${tab.isActive
                 ? 'bg-pink-400 text-white border-pink-400 shadow-pink-200'
                 : 'bg-white/60 text-gray-500 border-gray-200 hover:bg-white/80'
               }`}
@@ -1491,6 +1536,65 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
         <ChaseCards items={items} />
       </>}
 
+      {/* ── Collection / Wishlist sub-nav ──────────────────────────── */}
+      {(activeTab === 'collection' || activeTab === 'wishlist') && (
+        <div className="px-4 pt-1 pb-2 space-y-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            <motion.button
+              whileTap={{ scale: 0.96 }}
+              onClick={() => { setActiveTab('collection'); setCollectionPage(1) }}
+              className={`flex items-center gap-1.5 px-4 py-1.5 rounded-full text-sm font-semibold
+                         border transition-all shadow-sm
+                         ${activeTab === 'collection'
+                           ? 'bg-emerald-400 text-white border-emerald-400'
+                           : 'bg-white/60 text-gray-500 border-gray-200 hover:bg-white/80'
+                         }`}
+            >
+              📦 Collection
+              <span className={`text-[11px] font-bold px-1.5 py-0.5 rounded-full leading-none
+                ${activeTab === 'collection' ? 'bg-white/30 text-white' : 'bg-emerald-100 text-emerald-600'}`}>
+                {ownedCount}
+              </span>
+            </motion.button>
+            <motion.button
+              whileTap={{ scale: 0.96 }}
+              onClick={() => { setActiveTab('wishlist'); setWishlistPage(1) }}
+              className={`flex items-center gap-1.5 px-4 py-1.5 rounded-full text-sm font-semibold
+                         border transition-all shadow-sm
+                         ${activeTab === 'wishlist'
+                           ? 'bg-violet-400 text-white border-violet-400'
+                           : 'bg-white/60 text-gray-500 border-gray-200 hover:bg-white/80'
+                         }`}
+            >
+              ✨ Wishlist
+              <span className={`text-[11px] font-bold px-1.5 py-0.5 rounded-full leading-none
+                ${activeTab === 'wishlist' ? 'bg-white/30 text-white' : 'bg-violet-100 text-violet-600'}`}>
+                {wishlistCount}
+              </span>
+            </motion.button>
+          </div>
+          <div className="relative">
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm pointer-events-none">🔍</span>
+            <input
+              type="text"
+              value={cardSearch}
+              onChange={e => { setCardSearch(e.target.value); setCollectionPage(1); setWishlistPage(1) }}
+              placeholder={`Search ${activeTab === 'collection' ? 'collection' : 'wishlist'}…`}
+              className="w-full pl-8 pr-8 py-2 text-sm rounded-full border border-gray-200
+                         bg-white/70 focus:bg-white focus:outline-none focus:ring-2 focus:ring-pink-300
+                         placeholder-gray-300 text-gray-600 transition-all"
+            />
+            {cardSearch && (
+              <button
+                onClick={() => setCardSearch('')}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-300 hover:text-gray-500
+                           text-xs leading-none transition-colors"
+              >✕</button>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* ── Binder tab ─────────────────────────────────────────────── */}
       {activeTab === 'binder' && (
         <>
@@ -1518,23 +1622,52 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
                           color:       '#4b5563',
                         }}
                   >
-                    {/* Select button */}
-                    <button
+                    {/* Color dot + name / inline rename input */}
+                    <span
+                      className="w-4 h-4 rounded-full flex-shrink-0 shadow-sm cursor-pointer"
+                      style={{ background: isActive ? 'rgba(255,255,255,0.8)' : col }}
                       onClick={() => setSelectedBinder(b)}
-                      className="flex items-center gap-2.5 focus:outline-none"
-                    >
-                      <span
-                        className="w-4 h-4 rounded-full flex-shrink-0 shadow-sm"
-                        style={{ background: isActive ? 'rgba(255,255,255,0.8)' : col }}
+                    />
+
+                    {renamingId === b.id ? (
+                      <input
+                        autoFocus
+                        value={renameInput}
+                        onChange={e => setRenameInput(e.target.value)}
+                        onKeyDown={e => {
+                          if (e.key === 'Enter')  renameBinder(b.id, renameInput)
+                          if (e.key === 'Escape') setRenamingId(null)
+                        }}
+                        onBlur={() => renameBinder(b.id, renameInput || b.name)}
+                        className="w-28 bg-white/30 text-white placeholder-white/60 text-sm font-bold
+                                   rounded-lg px-2 py-0.5 focus:outline-none focus:ring-2 focus:ring-white/60"
                       />
-                      {b.name}
-                    </button>
+                    ) : (
+                      <button
+                        onClick={() => setSelectedBinder(b)}
+                        className="focus:outline-none truncate max-w-[120px]"
+                      >
+                        {b.name}
+                      </button>
+                    )}
+
+                    {/* Pencil rename — active binder only */}
+                    {isActive && renamingId !== b.id && (
+                      <button
+                        onClick={() => { setRenamingId(b.id); setRenameInput(b.name) }}
+                        className="w-6 h-6 rounded-full flex items-center justify-center
+                                   bg-white/20 hover:bg-white/40 text-white text-xs transition-all"
+                        title="Rename binder"
+                      >
+                        ✏️
+                      </button>
+                    )}
 
                     {/* Delete × */}
-                    {binders.length > 1 && (
+                    {binders.length > 1 && renamingId !== b.id && (
                       <button
                         onClick={() => deleteBinder(b.id)}
-                        className={`ml-1 w-8 h-8 rounded-full flex items-center justify-center
+                        className={`w-8 h-8 rounded-full flex items-center justify-center
                                    text-lg font-bold leading-none transition-all
                                    ${isActive
                                      ? 'bg-white/20 hover:bg-red-500/80 text-white'
@@ -1653,27 +1786,20 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
 
       {/* ── 📦 My Collection ────────────────────────────────────────── */}
       {ownedItemsList.length > 0 && (() => {
-        const totalColPages  = Math.ceil(ownedItemsList.length / ITEMS_PER_PAGE)
-        const collectionSlice = ownedItemsList.slice(
+        if (filteredOwnedItems.length === 0) return (
+          <p className="text-center text-gray-300 font-semibold mt-8 mb-4">
+            No cards match "{cardSearch}" ✨
+          </p>
+        )
+        const totalColPages   = Math.ceil(filteredOwnedItems.length / ITEMS_PER_PAGE)
+        const collectionSlice = filteredOwnedItems.slice(
           (collectionPage - 1) * ITEMS_PER_PAGE,
           collectionPage * ITEMS_PER_PAGE
         )
         return (
           <>
-            <div className="flex items-center gap-2 px-4 pt-4 pb-1">
-              <span className="text-base">📦</span>
-              <h3 className="text-sm font-bold text-gray-700">My Collection</h3>
-              <span className="text-[11px] font-semibold bg-emerald-100 text-emerald-600 px-2 py-0.5 rounded-full">
-                {ownedCount}
-              </span>
-              {totalColPages > 1 && (
-                <span className="text-[11px] text-gray-400 ml-auto">
-                  Page {collectionPage}/{totalColPages}
-                </span>
-              )}
-            </div>
             <motion.div
-              key={`col-page-${collectionPage}`}
+              key={`col-page-${collectionPage}-${cardSearch}`}
               className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 p-4"
               initial="hidden" animate="show"
               variants={{ hidden: {}, show: { transition: { staggerChildren: 0.04 } } }}
@@ -1710,27 +1836,20 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
               </motion.button>
             </div>
           ) : (() => {
-            const totalWishPages = Math.ceil(wishlistItemsList.length / ITEMS_PER_PAGE)
-            const wishlistSlice  = wishlistItemsList.slice(
+            if (filteredWishlistItems.length === 0) return (
+              <p className="text-center text-gray-300 font-semibold mt-8 mb-4">
+                No cards match "{cardSearch}" 💜
+              </p>
+            )
+            const totalWishPages = Math.ceil(filteredWishlistItems.length / ITEMS_PER_PAGE)
+            const wishlistSlice  = filteredWishlistItems.slice(
               (wishlistPage - 1) * ITEMS_PER_PAGE,
               wishlistPage * ITEMS_PER_PAGE
             )
             return (
               <>
-                <div className="flex items-center gap-2 px-4 pt-4 pb-1">
-                  <span className="text-base">✨</span>
-                  <h3 className="text-sm font-bold text-gray-700">My Wishlist</h3>
-                  <span className="text-[11px] font-semibold bg-violet-100 text-violet-600 px-2 py-0.5 rounded-full">
-                    {wishlistCount}
-                  </span>
-                  {totalWishPages > 1 && (
-                    <span className="text-[11px] text-gray-400 ml-auto">
-                      Page {wishlistPage}/{totalWishPages}
-                    </span>
-                  )}
-                </div>
                 <motion.div
-                  key={`wish-page-${wishlistPage}`}
+                  key={`wish-page-${wishlistPage}-${cardSearch}`}
                   className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 p-4"
                   initial="hidden" animate="show"
                   variants={{ hidden: {}, show: { transition: { staggerChildren: 0.04 } } }}

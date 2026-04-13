@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase }        from './lib/supabase'
 import AestheticFilter     from './components/AestheticFilter'
 import CardGrid            from './components/CardGrid'
@@ -19,6 +19,7 @@ export default function App() {
   const [sortBy,         setSortBy]         = useState('newest')
   const [toast,          setToast]          = useState('')
   const [activeBinderId, setActiveBinderId] = useState(null)   // tracks selected binder in Dashboard
+  const [wishlistTab,    setWishlistTab]    = useState('collection') // which tab opens when navigating to wishlist
   const [collectionIds,  setCollectionIds]  = useState(new Set()) // all card IDs in wishlists table
   const [ownedIds,       setOwnedIds]       = useState(new Set()) // subset where owned = true
 
@@ -103,6 +104,14 @@ export default function App() {
   const showToast     = useCallback((msg) => setToast(msg), [])
   const isHome        = activeVibe === 'home'
   const isWishlist    = activeVibe === 'wishlist'
+
+  // ── Back-to-top visibility ──────────────────────────────────────────────────
+  const [showBackTop, setShowBackTop] = useState(false)
+  useEffect(() => {
+    const onScroll = () => setShowBackTop(window.scrollY > 400)
+    window.addEventListener('scroll', onScroll, { passive: true })
+    return () => window.removeEventListener('scroll', onScroll)
+  }, [])
   // Show modal when: logged in, profile fetch done, no username set, user hasn't skipped
   const needsUsername = user && profileReady && !profile?.username && !skippedSetup
 
@@ -147,14 +156,20 @@ export default function App() {
             user={user}
             collectionIds={collectionIds}
             ownedIds={ownedIds}
-            onNavigate={vibe => { setActiveVibe(vibe); setSetQuery(null) }}
+            onNavigate={(vibe, tab = 'collection') => {
+              setActiveVibe(vibe)
+              setSetQuery(null)
+              setWishlistTab(tab)
+            }}
           />
         ) : isWishlist ? (
           <WishlistDashboard
+            key={wishlistTab}
             user={user}
             onToast={showToast}
             onGoExplore={() => { setActiveVibe('girlypop'); setSetQuery(null) }}
             onBinderChange={setActiveBinderId}
+            initialTab={wishlistTab}
           />
         ) : (
           <CardGrid
@@ -175,6 +190,22 @@ export default function App() {
       </main>
 
       <Toast message={toast} onDone={() => setToast('')} />
+
+      {/* ── Back to top ────────────────────────────────────────────────── */}
+      {showBackTop && (
+        <button
+          onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+          className="fixed bottom-20 right-4 z-50 sm:bottom-16 sm:right-5
+                     w-9 h-9 flex items-center justify-center
+                     bg-white/80 hover:bg-white text-pink-400 hover:text-pink-500
+                     rounded-full border border-pink-200 shadow-md
+                     transition-all hover:scale-110 active:scale-95 text-sm"
+          title="Back to top"
+          aria-label="Back to top"
+        >
+          ↑
+        </button>
+      )}
 
       {/* ── Ko-fi FAB — fixed bottom-right on desktop, footer link on mobile ── */}
       <a

@@ -44,8 +44,8 @@ export default function HomePage({ user, collectionIds, ownedIds, onNavigate }) 
             ? 'Your Pokémon card collection, beautifully curated.'
             : 'Browse 10,000+ Pokémon cards filtered by aesthetic — no account needed.'}
         </p>
-        <div className="flex flex-wrap justify-center gap-3">
-          {user ? (
+        {user && (
+          <div className="flex flex-wrap justify-center gap-3">
             <motion.button
               whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.97 }}
               onClick={() => onNavigate('wishlist')}
@@ -54,17 +54,8 @@ export default function HomePage({ user, collectionIds, ownedIds, onNavigate }) 
             >
               My Collection 📦
             </motion.button>
-          ) : (
-            <motion.button
-              whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.97 }}
-              onClick={() => onNavigate('all')}
-              className="bg-white hover:bg-sky-50 text-sky-500 font-semibold
-                         px-6 py-2.5 rounded-full border border-sky-200 shadow-sm transition-all text-sm"
-            >
-              Browse All 🌐
-            </motion.button>
-          )}
-        </div>
+          </div>
+        )}
       </motion.div>
 
       {/* ── Stats row — only shown when logged in and have cards ──────────── */}
@@ -74,17 +65,34 @@ export default function HomePage({ user, collectionIds, ownedIds, onNavigate }) 
           className="grid grid-cols-3 gap-3"
         >
           {[
-            { label: 'Total Saved', value: totalCards,    emoji: '🗂️', bg: 'bg-sky-50',     border: 'border-sky-200',     text: 'text-sky-600' },
-            { label: 'Owned',       value: ownedCards,    emoji: '✅', bg: 'bg-emerald-50', border: 'border-emerald-200', text: 'text-emerald-600' },
-            { label: 'Wishlist',    value: wishlistCards, emoji: '💖', bg: 'bg-violet-50',  border: 'border-violet-200',  text: 'text-violet-600' },
-          ].map(s => (
-            <div key={s.label}
-                 className={`${s.bg} ${s.border} border rounded-2xl p-3 sm:p-4 text-center shadow-sm`}>
-              <p className="text-xl sm:text-2xl mb-0.5">{s.emoji}</p>
-              <p className={`text-xl sm:text-2xl font-bold ${s.text}`}>{s.value}</p>
-              <p className="text-[11px] text-gray-400 font-medium">{s.label}</p>
-            </div>
-          ))}
+            { label: 'Total Saved', value: totalCards,    emoji: '🗂️', bg: 'bg-sky-50',     border: 'border-sky-200',     text: 'text-sky-600',     tab: null },
+            { label: 'Owned',       value: ownedCards,    emoji: '✅', bg: 'bg-emerald-50', border: 'border-emerald-200', text: 'text-emerald-600', tab: 'collection' },
+            { label: 'Wishlist',    value: wishlistCards, emoji: '💖', bg: 'bg-violet-50',  border: 'border-violet-200',  text: 'text-violet-600',  tab: 'wishlist' },
+          ].map(s => {
+            const inner = (
+              <>
+                <p className="text-xl sm:text-2xl mb-0.5">{s.emoji}</p>
+                <p className={`text-xl sm:text-2xl font-bold ${s.text}`}>{s.value}</p>
+                <p className="text-[11px] text-gray-400 font-medium">{s.label}</p>
+              </>
+            )
+            return s.tab ? (
+              <motion.button
+                key={s.label}
+                whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.97 }}
+                onClick={() => onNavigate('wishlist', s.tab)}
+                className={`${s.bg} ${s.border} border rounded-2xl p-3 sm:p-4 text-center shadow-sm
+                            transition-all hover:shadow-md cursor-pointer`}
+              >
+                {inner}
+              </motion.button>
+            ) : (
+              <div key={s.label}
+                   className={`${s.bg} ${s.border} border rounded-2xl p-3 sm:p-4 text-center shadow-sm`}>
+                {inner}
+              </div>
+            )
+          })}
         </motion.div>
       )}
 
