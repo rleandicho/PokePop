@@ -137,7 +137,6 @@ function PriceTag({ card }) {
   // All cards have market_price set at fetch time — no getBestPrice fallback needed.
   const val = card.market_price
   if (card._is1stEd) {
-    console.log("Rendering PriceTag for:", card.id, "Price:", val)
     return (
       <span className={`text-xs font-semibold px-2 py-0.5 rounded-full
         ${val ? 'text-amber-700 bg-amber-100' : 'text-gray-400 bg-gray-100'}`}>
@@ -177,6 +176,65 @@ function VariantBadges({ card }) {
   )
 }
 
+// ─── Pagination bar ───────────────────────────────────────────────────────────
+function PaginationBar({ currentPage, totalPages, onPageChange }) {
+  if (totalPages <= 1) return null
+
+  const pages = []
+  for (let i = 1; i <= totalPages; i++) {
+    if (i === 1 || i === totalPages || (i >= currentPage - 1 && i <= currentPage + 1)) {
+      pages.push(i)
+    } else if (pages[pages.length - 1] !== '...') {
+      pages.push('...')
+    }
+  }
+
+  return (
+    <div className="flex items-center justify-center gap-1.5 py-6 flex-wrap">
+      <motion.button
+        whileTap={{ scale: 0.93 }}
+        onClick={() => onPageChange(currentPage - 1)}
+        disabled={currentPage === 1}
+        className="px-3 py-1.5 rounded-full text-sm font-semibold border transition-all
+                   bg-white/60 border-gray-200 text-gray-500 hover:bg-white/80
+                   disabled:opacity-30 disabled:cursor-not-allowed"
+      >
+        ← Prev
+      </motion.button>
+
+      {pages.map((p, i) =>
+        p === '...' ? (
+          <span key={`e-${i}`} className="text-gray-400 px-1 text-sm">…</span>
+        ) : (
+          <motion.button
+            key={p}
+            whileTap={{ scale: 0.93 }}
+            onClick={() => onPageChange(p)}
+            className={`w-9 h-9 rounded-full text-sm font-semibold border transition-all
+              ${p === currentPage
+                ? 'bg-pink-400 text-white border-pink-400 shadow-sm'
+                : 'bg-white/60 text-gray-500 border-gray-200 hover:bg-white/80'
+              }`}
+          >
+            {p}
+          </motion.button>
+        )
+      )}
+
+      <motion.button
+        whileTap={{ scale: 0.93 }}
+        onClick={() => onPageChange(currentPage + 1)}
+        disabled={currentPage === totalPages}
+        className="px-3 py-1.5 rounded-full text-sm font-semibold border transition-all
+                   bg-white/60 border-gray-200 text-gray-500 hover:bg-white/80
+                   disabled:opacity-30 disabled:cursor-not-allowed"
+      >
+        Next →
+      </motion.button>
+    </div>
+  )
+}
+
 function SortToolbar({ sortBy, onSortChange }) {
   return (
     <div className="flex justify-end items-center flex-wrap px-4 pt-2 pb-1 gap-2">
@@ -205,12 +263,21 @@ function SortToolbar({ sortBy, onSortChange }) {
 function CardModal({ card, user, onToast, onClose, activeBinderId, collectionIds, ownedIds, onCardAdded, onCardRemoved }) {
   const [saving,   setSaving]   = useState(false)
   const [removing, setRemoving] = useState(false)
+  // Start with the small image (already in cache from the grid tile) so the modal
+  // opens instantly. Preload the large image in the background and swap when ready.
+  const [imgSrc, setImgSrc] = useState(card.images?.small)
+  useEffect(() => {
+    if (!card.images?.large || card.images.large === card.images.small) return
+    const img = new Image()
+    img.onload = () => setImgSrc(card.images.large)
+    img.src = card.images.large
+  }, [card.images?.large]) // eslint-disable-line react-hooks/exhaustive-deps
   const prices     = card.tcgplayer?.prices ?? {}
   // 1st Ed variant: only show 1stEdition price rows so the modal matches the grid tile.
-  // Regular card: show all available price rows.
+  // Regular card: exclude 1stEdition* tiers so unlimited cards never display 1st Ed prices.
   const priceRows  = card._is1stEd
     ? Object.entries(prices).filter(([k, v]) => k.startsWith('1stEdition') && v?.market)
-    : Object.entries(prices).filter(([, v]) => v?.market)
+    : Object.entries(prices).filter(([k, v]) => !k.startsWith('1stEdition') && v?.market)
   const inList     = collectionIds?.has(card.id)   // in wishlist OR collection
   const isOwned    = ownedIds?.has(card.id)        // specifically marked owned
 
@@ -253,16 +320,15 @@ function CardModal({ card, user, onToast, onClose, activeBinderId, collectionIds
   return (
     <motion.div
       className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-y-auto"
-      style={{ background: 'rgba(255,209,220,0.6)', backdropFilter: 'blur(8px)' }}
+      style={{ background: 'rgba(255,209,220,0.78)' }}
       initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
       onClick={onClose}
     >
       <motion.div
-        className="bg-white/85 backdrop-blur-md rounded-3xl shadow-2xl p-6 max-w-sm w-full my-auto relative"
+        className="bg-white rounded-3xl shadow-2xl p-6 max-w-sm w-full my-auto relative"
         initial={{ scale: 0.85, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.85, opacity: 0 }}
         onClick={e => e.stopPropagation()}
       >
-        {/* Close button — top-right, always reachable */}
         <button
           onClick={onClose}
           className="absolute top-4 right-4 z-10 w-8 h-8 rounded-full bg-white/70 hover:bg-white
@@ -273,7 +339,7 @@ function CardModal({ card, user, onToast, onClose, activeBinderId, collectionIds
           ✕
         </button>
 
-        <img src={card.images?.large ?? card.images?.small} alt={card.name}
+        <img src={imgSrc} alt={card.name}
              className="w-full rounded-2xl mb-4 shadow-md" />
         <h2 className="text-xl font-bold text-pink-500 mb-0.5">{card.name}</h2>
         <p className="text-sm text-gray-400 mb-3">{card.set?.name} · {card.rarity}</p>
@@ -343,22 +409,100 @@ function CardModal({ card, user, onToast, onClose, activeBinderId, collectionIds
   )
 }
 
+// ─── Card tile ────────────────────────────────────────────────────────────────
+// memo: only re-renders when inList/isOwned change for this specific card.
+// quickAdd/quickRemove are useCallback-stable so memo comparisons hold.
+const CardTile = memo(function CardTile({ card, inList, isOwned, quickAdd, quickRemove, setSelected }) {
+  return (
+    <motion.div
+      className="cursor-pointer rounded-2xl overflow-hidden shadow-md relative"
+      style={{
+        // Opaque backgrounds instead of backdropFilter:blur — same look, far cheaper to paint
+        background: isOwned
+          ? 'rgba(236,253,245,0.95)'
+          : inList
+          ? 'rgba(238,233,255,0.95)'
+          : card._is1stEd
+          ? 'rgba(255,251,235,0.97)'
+          : 'rgba(255,255,255,0.92)',
+        border: isOwned
+          ? '1.5px solid #6ee7b7'
+          : inList
+          ? '1.5px solid #a78bfa'
+          : card._is1stEd
+          ? '1.5px solid #fbbf24'
+          : '1px solid rgba(255,255,255,0.6)',
+        userSelect: 'none', WebkitUserSelect: 'none', WebkitTouchCallout: 'none', touchAction: 'manipulation',
+      }}
+      variants={{ hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0 } }}
+      whileHover={{ scale: 1.04 }}
+      onClick={() => setSelected(card)}
+    >
+      {inList && (
+        <span className={`absolute top-1.5 left-1.5 z-10 text-[9px] font-bold
+                          px-1.5 py-0.5 rounded-full leading-tight shadow-sm
+                          ${isOwned ? 'bg-emerald-500/90 text-white' : 'bg-violet-500/90 text-white'}`}>
+          {isOwned ? '✅ Owned' : '💖 Wishlist'}
+        </span>
+      )}
+      {inList && (
+        <button
+          onClick={e => quickRemove(e, card)}
+          className="absolute top-1.5 right-1.5 z-10 w-6 h-6 rounded-full flex items-center
+                     justify-center text-xs font-bold shadow-sm transition-colors leading-none
+                     bg-white/80 hover:bg-red-400 hover:text-white text-red-400"
+          title="Remove from Collection"
+        >
+          −
+        </button>
+      )}
+      <img src={card.images?.small} alt={card.name} className="w-full" loading="lazy" />
+      <div className="p-2 text-center">
+        <p className="text-sm font-bold text-gray-700 truncate">{card.name}</p>
+        <p className="text-xs text-gray-400 truncate">{card.set?.name}</p>
+        <VariantBadges card={card} />
+        <PriceTag card={card} />
+        {!inList && (
+          <div className="flex gap-1 mt-1.5" onClick={e => e.stopPropagation()}>
+            <button
+              onClick={e => quickAdd(e, card, false)}
+              className="flex-1 text-[10px] font-semibold py-1 rounded-xl
+                         bg-violet-100 hover:bg-violet-200 text-violet-700 transition-colors"
+              title="Add to Wishlist"
+            >
+              💖 Wishlist
+            </button>
+            <button
+              onClick={e => quickAdd(e, card, true)}
+              className="flex-1 text-[10px] font-semibold py-1 rounded-xl
+                         bg-emerald-100 hover:bg-emerald-200 text-emerald-700 transition-colors"
+              title="Add to Collection"
+            >
+              ✨ Owned
+            </button>
+          </div>
+        )}
+      </div>
+    </motion.div>
+  )
+})
+
 // ─── Main grid ────────────────────────────────────────────────────────────────
 function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, user, onToast, activeBinderId, collectionIds, ownedIds, onCardAdded, onCardRemoved }) {
-  const [cards,    setCards]    = useState([])
-  const [page,     setPage]     = useState(1)
-  const [hasMore,  setHasMore]  = useState(false)
+  const [cards,      setCards]      = useState([])
+  const [page,       setPage]       = useState(1)
+  const [totalPages, setTotalPages] = useState(0)
   // Start as true when a filter is already active so skeletons show on the very first paint
   const [loading,  setLoading]  = useState(() => !!(activeVibe || setQuery || search))
   const [selected, setSelected] = useState(null)
 
   const abortRef     = useRef(null)
   const reqIdRef     = useRef(0)    // increments with every new request; stale responses check this
-  // Per-filter cache: cacheKey → { rawCards, page, hasMore }
+  // Per-filter cache: cacheKey → { rawCards, page, totalPages }
   // Raw cards are in stable API order (oldest-first); sorting is applied on top locally.
   const cacheRef     = useRef({})
   const cacheKeysRef = useRef([])   // insertion-order key list for CACHE_LIMIT eviction
-  const activeKeyRef = useRef(null) // tracks which cache entry loadMore should write to
+  const activeKeyRef = useRef(null) // tracks which filter combination is currently active
 
   // ── Inline debounced search ─────────────────────────────────────────────────
   // inlineSearch  — raw value bound to SearchBar (updates every keystroke)
@@ -417,8 +561,6 @@ function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, user, on
     let url = `https://api.pokemontcg.io/v2/cards?page=${pg}&pageSize=${PAGE_SIZE}&orderBy=${encodeURIComponent(apiOrder)}&select=id,name,images,set,number,subtypes,rarity,tcgplayer,cardmarket`
     if (q) url += `&q=${encodeURIComponent(q)}`
 
-    console.log("Final API Query:", q)
-
     try {
       const res = await fetch(url, { signal })
 
@@ -427,8 +569,7 @@ function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, user, on
 
       const data = await res.json()
       const incoming = data.data ?? []
-      if (pg === 1) console.log('First card release date:', incoming[0]?.set?.releaseDate)
-      const more = incoming.length === PAGE_SIZE
+      const total = Math.ceil((data.totalCount ?? 0) / PAGE_SIZE)
 
       // ── Edition split — expand WotC-era cards into Unlimited + 1st Ed variants ──
       // The 1st Ed copy gets a -1st suffix on its ID so it is treated as a distinct
@@ -437,10 +578,18 @@ function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, user, on
       for (const card of incoming) {
         const tcg = card.tcgplayer?.prices
 
-        // UNLIMITED — strictly holofoil / reverseHolofoil / normal, never 1stEdition* keys
-        const priceUnl = tcg?.holofoil?.market || tcg?.reverseHolofoil?.market || tcg?.normal?.market || null
-        const midUnl   = tcg?.holofoil?.mid    || tcg?.reverseHolofoil?.mid    || tcg?.normal?.mid    || null
-        const lowUnl   = tcg?.holofoil?.low    || tcg?.reverseHolofoil?.low    || tcg?.normal?.low    || null
+        // UNLIMITED — pick the best non-1stEdition tier (same priority as getBestPrice)
+        // and read market/mid/low from it so all three come from the same tier.
+        const unlTier = (
+          (tcg?.holofoil?.market        != null && tcg.holofoil)        ||
+          (tcg?.reverseHolofoil?.market != null && tcg.reverseHolofoil) ||
+          (tcg?.normal?.market          != null && tcg.normal)          ||
+          Object.entries(tcg ?? {}).find(([k, v]) => !k.startsWith('1stEdition') && v?.market != null)?.[1] ||
+          null
+        )
+        const priceUnl = unlTier?.market ?? null
+        const midUnl   = unlTier?.mid    ?? null
+        const lowUnl   = unlTier?.low    ?? null
 
         // 1ST ED — strictly these two keys, never falls back to Unlimited
         const price1st = tcg?.['1stEditionHolofoil']?.market || tcg?.['1stEditionNormal']?.market || null
@@ -467,14 +616,12 @@ function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, user, on
             mid_price:    mid1st   ?? midUnl,
             low_price:    low1st   ?? lowUnl,
           }
-          console.log("Variant Spawned:", { id: variant.id, price: variant.market_price, fallback: price1st == null })
           expanded.push(variant)
         }
       }
 
-      // Merge pages into raw (unsorted) list, update cache, then apply local sort for display
-      const prevRaw  = cacheRef.current[key]?.rawCards ?? []
-      const rawCards = pg === 1 ? expanded : [...prevRaw, ...expanded]
+      // Store only the current page — no accumulation across pages
+      const rawCards = expanded
 
       // Write to cache with LRU eviction — cap at CACHE_LIMIT unique filter combinations
       const keyList = cacheKeysRef.current
@@ -485,13 +632,13 @@ function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, user, on
         delete cacheRef.current[evicted]
       }
       keyList.push(key)
-      cacheRef.current[key] = { rawCards, page: pg, hasMore: more }
+      cacheRef.current[key] = { rawCards, page: pg, totalPages: total }
 
       setCards(sortCards(rawCards, sort))
-      setHasMore(more)
+      setTotalPages(total)
     } catch (err) {
       if (err.name === 'AbortError') return   // intentional cancel — leave loading state alone
-      setHasMore(false)
+      setTotalPages(0)
     }
 
     // Only clear loading if this is still the active request
@@ -523,8 +670,8 @@ function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, user, on
     if (cached) {
       // Cache hit (non-date sorts): re-sort locally — zero network, zero flicker
       setCards(sortCards(cached.rawCards, sortBy))
-      setPage(cached.page)
-      setHasMore(cached.hasMore)
+      setPage(1)
+      setTotalPages(cached.totalPages ?? 0)
       setLoading(false)
     } else {
       // Cache miss or date-sort bust: fresh fetch with current API orderBy
@@ -541,25 +688,19 @@ function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, user, on
     if (rawCards) setCards(sortCards(rawCards, sortBy))
   }, [sortBy])
 
-  function loadMore() {
-    const next = page + 1
-    setPage(next)
-    fetchCards(activeVibe, effectiveSearch, setQuery, sortBy, next)
-  }
-
-  // owned = false → Wishlist; owned = true → Collection
-  async function quickAdd(e, card, owned) {
+  // Stable references so CardTile memo comparisons don't break on every render
+  const quickAdd = useCallback(async (e, card, owned) => {
     e.stopPropagation()
     if (!user) { onToast('Login to save cards 💖'); return }
     if (collectionIds?.has(card.id)) { onToast('Already saved! Tap the card to manage it ✅'); return }
     const payload = {
       user_id:      user.id,
-      card_id:      card.id,                  // includes -1st suffix for 1st Ed variants
+      card_id:      card.id,
       name:         card._is1stEd ? `${card.name} ⭐` : card.name,
       image:        card.images?.small,
-      market_price: getCardPrice(card),        // edition-aware market price
-      mid_price:    card.mid_price    ?? null, // edition-aware mid price
-      low_price:    card.low_price    ?? null, // edition-aware low price
+      market_price: getCardPrice(card),
+      mid_price:    card.mid_price    ?? null,
+      low_price:    card.low_price    ?? null,
       owned,
     }
     if (activeBinderId) payload.binder_id = activeBinderId
@@ -567,9 +708,9 @@ function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, user, on
       .from('wishlists')
       .upsert(payload, { onConflict: 'user_id,card_id' })
     if (!error) { onCardAdded?.(card.id, owned); onToast(owned ? 'Added to Collection! ✨📦' : 'Added to Wishlist! 💖') }
-  }
+  }, [user, collectionIds, activeBinderId, onCardAdded, onToast]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  async function quickRemove(e, card) {
+  const quickRemove = useCallback(async (e, card) => {
     e.stopPropagation()
     if (!user) return
     const { error } = await supabase
@@ -578,7 +719,7 @@ function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, user, on
       .eq('user_id', user.id)
       .eq('card_id', card.id)
     if (!error) { onCardRemoved?.(card.id); onToast('Removed from Collection 🗑️') }
-  }
+  }, [user, onCardRemoved, onToast]) // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!activeVibe && !setQuery && !effectiveSearch) {
     return (
@@ -601,94 +742,19 @@ function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, user, on
         key={`${activeVibe}-${setQuery}-${effectiveSearch}`}
         className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 p-4"
         initial="hidden" animate="show"
-        variants={{ hidden: {}, show: { transition: { staggerChildren: 0.04 } } }}
+        variants={{ hidden: {}, show: { transition: { staggerChildren: 0.02 } } }}
       >
-        {cards.map(card => {
-          const inList  = collectionIds?.has(card.id)
-          const isOwned = ownedIds?.has(card.id)
-          return (
-            <motion.div
-              key={card.id}
-              className="cursor-pointer rounded-2xl overflow-hidden shadow-md relative"
-              style={{
-                background: isOwned
-                  ? 'rgba(236,253,245,0.7)'
-                  : inList
-                  ? 'rgba(238,233,255,0.7)'
-                  : card._is1stEd
-                  ? 'rgba(255,251,235,0.75)'   // warm amber tint for 1st Ed
-                  : 'rgba(255,255,255,0.45)',
-                backdropFilter: 'blur(10px)',
-                border: isOwned
-                  ? '1.5px solid #6ee7b7'
-                  : inList
-                  ? '1.5px solid #a78bfa'
-                  : card._is1stEd
-                  ? '1.5px solid #fbbf24'       // amber border for 1st Ed
-                  : '1px solid rgba(255,255,255,0.6)',
-                userSelect: 'none', WebkitUserSelect: 'none', WebkitTouchCallout: 'none', touchAction: 'manipulation',
-              }}
-              variants={{ hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0 } }}
-              whileHover={{ scale: 1.05, boxShadow: '0 12px 30px rgba(255,182,193,0.5)' }}
-              onClick={() => setSelected(card)}
-            >
-              {/* Status badge — top-left */}
-              {inList && (
-                <span className={`absolute top-1.5 left-1.5 z-10 text-[9px] font-bold
-                                  px-1.5 py-0.5 rounded-full leading-tight shadow-sm
-                                  ${isOwned
-                                    ? 'bg-emerald-500/90 text-white'
-                                    : 'bg-violet-500/90 text-white'
-                                  }`}>
-                  {isOwned ? '✅ Owned' : '💖 Wishlist'}
-                </span>
-              )}
-
-              {/* Remove button — top-right (only when in list) */}
-              {inList && (
-                <button
-                  onClick={e => quickRemove(e, card)}
-                  className="absolute top-1.5 right-1.5 z-10 w-6 h-6 rounded-full flex items-center
-                             justify-center text-xs font-bold shadow-sm transition-colors leading-none
-                             bg-white/80 hover:bg-red-400 hover:text-white text-red-400"
-                  title="Remove from Collection"
-                >
-                  −
-                </button>
-              )}
-
-              <img src={card.images?.small} alt={card.name} className="w-full" loading="lazy" />
-              <div className="p-2 text-center">
-                <p className="text-sm font-bold text-gray-700 truncate">{card.name}</p>
-                <p className="text-xs text-gray-400 truncate">{card.set?.name}</p>
-                <VariantBadges card={card} />
-                <PriceTag card={card} />
-
-                {/* Dual quick-add buttons — only when not yet saved */}
-                {!inList && (
-                  <div className="flex gap-1 mt-1.5" onClick={e => e.stopPropagation()}>
-                    <button
-                      onClick={e => quickAdd(e, card, false)}
-                      className="flex-1 text-[10px] font-semibold py-1 rounded-xl
-                                 bg-violet-100 hover:bg-violet-200 text-violet-700 transition-colors"
-                      title="Add to Wishlist"
-                    >
-                      💖 Wishlist
-                    </button>
-                    <button
-                      onClick={e => quickAdd(e, card, true)}
-                      className="flex-1 text-[10px] font-semibold py-1 rounded-xl
-                                 bg-emerald-100 hover:bg-emerald-200 text-emerald-700 transition-colors"
-                      title="Add to Collection"
-                    >
-                      ✨ Owned
-                    </button>
-                  </div>
-                )}
-              </div>
-            </motion.div>
-          )
-        })}
+        {cards.map(card => (
+          <CardTile
+            key={card.id}
+            card={card}
+            inList={collectionIds?.has(card.id) ?? false}
+            isOwned={ownedIds?.has(card.id) ?? false}
+            quickAdd={quickAdd}
+            quickRemove={quickRemove}
+            setSelected={setSelected}
+          />
+        ))}
       </motion.div>
 
       {loading && cards.length === 0 && (
@@ -706,17 +772,16 @@ function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, user, on
         </div>
       )}
 
-      {hasMore && !loading && (
-        <div className="flex justify-center pb-10">
-          <motion.button
-            whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.97 }}
-            onClick={loadMore}
-            className="bg-white/70 hover:bg-white/90 text-pink-500 font-semibold
-                       px-8 py-2.5 rounded-full shadow-md border border-pink-200 transition-all"
-          >
-            Load More ✨
-          </motion.button>
-        </div>
+      {!loading && (
+        <PaginationBar
+          currentPage={page}
+          totalPages={totalPages}
+          onPageChange={p => {
+            setPage(p)
+            fetchCards(activeVibe, effectiveSearch, setQuery, sortBy, p)
+            window.scrollTo({ top: 0, behavior: 'smooth' })
+          }}
+        />
       )}
 
       <AnimatePresence>

@@ -3,8 +3,7 @@ export default function CardSkeleton() {
     <div
       className="rounded-2xl overflow-hidden shadow-md animate-pulse"
       style={{
-        background: 'rgba(255,255,255,0.45)',
-        backdropFilter: 'blur(10px)',
+        background: 'rgba(255,255,255,0.9)',
         border: '1px solid rgba(255,255,255,0.6)',
       }}
     >

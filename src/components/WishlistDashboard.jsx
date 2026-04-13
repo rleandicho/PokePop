@@ -57,7 +57,7 @@ function StatCard({ label, value, prefix = '', suffix = '', decimals = 0, color 
   return (
     <motion.div
       initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}
-      className={`rounded-2xl border bg-gradient-to-br backdrop-blur-md p-4 shadow-sm ${palette[color]}`}
+      className={`rounded-2xl border bg-gradient-to-br p-4 shadow-sm ${palette[color]}`}
     >
       <p className="text-2xl mb-1">{icon}</p>
       <p className="text-xs text-gray-400 font-medium uppercase tracking-wide mb-0.5">{label}</p>
@@ -98,7 +98,7 @@ function HighRollers({ items }) {
   if (!top3.length) return null
 
   return (
-    <div className="mx-4 mb-4 p-4 rounded-2xl border border-yellow-200 bg-gradient-to-r from-yellow-50/80 to-amber-50/60 backdrop-blur-md shadow-sm">
+    <div className="mx-4 mb-4 p-4 rounded-2xl border border-yellow-200 bg-gradient-to-r from-yellow-50 to-amber-50 shadow-sm">
       <p className="text-xs font-semibold text-amber-500 uppercase tracking-wide mb-3">👑 Top High-Rollers</p>
       <div className="flex gap-3 justify-center flex-wrap">
         {top3.map((item, i) => (
@@ -122,6 +122,41 @@ function HighRollers({ items }) {
             <p className="text-xs font-bold text-gray-600 text-center max-w-[64px] truncate">{item.name}</p>
             <span className="text-xs font-semibold text-amber-600 bg-amber-100 px-2 py-0.5 rounded-full">
               ${getDisplayPrice(item).toFixed(2)}
+            </span>
+          </motion.div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// ─── Chase cards showcase ─────────────────────────────────────────────────────
+// Displays up to 3 user-designated chase cards. Shown on both the dashboard and
+// the public profile so visitors can see what a trainer is actively hunting.
+function ChaseCards({ items }) {
+  const chaseCards = items.filter(i => i.is_chase)
+  if (!chaseCards.length) return null
+
+  return (
+    <div className="mx-4 mb-4 p-4 rounded-2xl border border-pink-200 bg-gradient-to-r from-pink-50 to-rose-50 shadow-sm">
+      <p className="text-xs font-semibold text-pink-500 uppercase tracking-wide mb-3">🎯 Chase Cards</p>
+      <div className="flex gap-3 justify-center flex-wrap">
+        {chaseCards.map((item, i) => (
+          <motion.div
+            key={item.card_id}
+            initial={{ opacity: 0, scale: 0.8 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ delay: i * 0.1 }}
+            className="flex flex-col items-center gap-1"
+          >
+            <img
+              src={item.image}
+              alt={item.name}
+              className="w-16 rounded-xl shadow-md border-2 border-pink-300"
+            />
+            <p className="text-xs font-bold text-gray-600 text-center max-w-[64px] truncate">{item.name}</p>
+            <span className="text-[9px] font-semibold text-pink-500 bg-pink-100 px-2 py-0.5 rounded-full">
+              hunting
             </span>
           </motion.div>
         ))}
@@ -238,7 +273,7 @@ function TrainerCard({ trainer }) {
     <motion.div
       initial={{ opacity: 0, y: 16 }}
       animate={{ opacity: 1, y: 0 }}
-      className="rounded-2xl border border-pink-200 bg-white/50 backdrop-blur-md p-4 shadow-sm"
+      className="rounded-2xl border border-pink-200 bg-white p-4 shadow-sm"
     >
       {/* Header row */}
       <div className="flex items-center gap-2.5 mb-4">
@@ -298,8 +333,7 @@ function SupportCard() {
       whileTap={{ scale: 0.98 }}
       className="block rounded-2xl p-4 shadow-sm border border-amber-200 no-underline"
       style={{
-        background: 'linear-gradient(135deg, rgba(254,243,199,0.85) 0%, rgba(253,230,138,0.6) 50%, rgba(252,211,77,0.3) 100%)',
-        backdropFilter: 'blur(8px)',
+        background: 'linear-gradient(135deg, rgba(254,243,199,1) 0%, rgba(253,230,138,0.9) 50%, rgba(252,211,77,0.7) 100%)',
       }}
     >
       <div className="flex items-center gap-3">
@@ -361,12 +395,12 @@ function AccountSettingsModal({ user, onToast, onClose, isPublic, toggling, onTo
   return (
     <motion.div
       className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={{ background: 'rgba(255,209,220,0.55)', backdropFilter: 'blur(8px)' }}
+      style={{ background: 'rgba(255,209,220,0.78)' }}
       initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
       onClick={onClose}
     >
       <motion.div
-        className="bg-white/90 backdrop-blur-md rounded-3xl shadow-2xl p-6 max-w-sm w-full"
+        className="bg-white rounded-3xl shadow-2xl p-6 max-w-sm w-full"
         initial={{ scale: 0.88, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.88, opacity: 0 }}
         onClick={e => e.stopPropagation()}
       >
@@ -430,6 +464,29 @@ function AccountSettingsModal({ user, onToast, onClose, isPublic, toggling, onTo
               style={{ transform: isPublic ? 'translateX(1.25rem)' : 'translateX(0.125rem)' }}
             />
           </button>
+        </div>
+
+        {/* Guest View — preview your public profile */}
+        <div className="mb-5">
+          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1.5">
+            Guest View
+          </p>
+          {isPublic ? (
+            <a
+              href={`/share/${user.id}`}
+              target="_blank"
+              rel="noreferrer"
+              className="flex items-center justify-center gap-2 w-full bg-violet-50 hover:bg-violet-100
+                         text-violet-600 border border-violet-200 font-semibold text-sm
+                         py-2 rounded-xl transition-colors"
+            >
+              👁 Preview my profile
+            </a>
+          ) : (
+            <p className="text-xs text-gray-400 italic">
+              Enable Public Collection above to preview how others see your profile.
+            </p>
+          )}
         </div>
 
         {/* Refresh Prices */}
@@ -546,12 +603,12 @@ function NewBinderModal({ onSave, onClose }) {
   return (
     <motion.div
       className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={{ background: 'rgba(255,209,220,0.55)', backdropFilter: 'blur(8px)' }}
+      style={{ background: 'rgba(255,209,220,0.78)' }}
       initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
       onClick={onClose}
     >
       <motion.div
-        className="bg-white/90 backdrop-blur-md rounded-3xl shadow-2xl p-6 max-w-xs w-full"
+        className="bg-white rounded-3xl shadow-2xl p-6 max-w-xs w-full"
         initial={{ scale: 0.88, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.88, opacity: 0 }}
         onClick={e => e.stopPropagation()}
       >
@@ -626,10 +683,82 @@ function NewBinderModal({ onSave, onClose }) {
   )
 }
 
+// ─── Wishlist card detail modal ───────────────────────────────────────────────
+// Shows the saved image + all stored price tiers + a TCGPlayer search link.
+// Uses the image already in the browser cache (no extra network request).
+function WishlistCardModal({ item, onClose }) {
+  const is1st = item.card_id?.endsWith('-1st')
+  // Build a price breakdown from whatever data is stored in Supabase
+  const rows = [
+    item.manual_price && { label: 'Manual (Override)', value: item.manual_price },
+    item.market_price && { label: 'Market',            value: item.market_price },
+    item.mid_price    && { label: 'Mid',               value: item.mid_price    },
+    item.low_price    && { label: 'Low',               value: item.low_price    },
+  ].filter(Boolean)
+
+  return (
+    <motion.div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-y-auto"
+      style={{ background: 'rgba(255,209,220,0.78)' }}
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      onClick={onClose}
+    >
+      <motion.div
+        className="bg-white rounded-3xl shadow-2xl p-6 max-w-sm w-full my-auto relative"
+        initial={{ scale: 0.85, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.85, opacity: 0 }}
+        onClick={e => e.stopPropagation()}
+      >
+        <button
+          onClick={onClose}
+          className="absolute top-4 right-4 z-10 w-8 h-8 rounded-full bg-white/70 hover:bg-white
+                     text-gray-400 hover:text-gray-600 flex items-center justify-center
+                     shadow-sm transition-colors text-base leading-none"
+          aria-label="Close"
+        >✕</button>
+
+        <img src={item.image} alt={item.name} className="w-full rounded-2xl mb-4 shadow-md" />
+
+        <h2 className="text-xl font-bold text-pink-500 mb-0.5">{item.name}</h2>
+        {is1st && (
+          <span className="inline-block text-[10px] font-bold bg-amber-400 text-white
+                           border border-amber-500 px-2 py-0.5 rounded-full mb-2 shadow-sm">
+            ⭐ 1st Edition
+          </span>
+        )}
+        <p className="text-sm text-gray-400 mb-3">
+          {item.owned ? '📦 In your Collection' : '💖 On your Wishlist'}
+        </p>
+
+        {rows.length > 0 && (
+          <div className="mb-4 space-y-1 bg-pink-50 rounded-2xl p-3">
+            {rows.map(({ label, value }) => (
+              <div key={label} className="flex justify-between text-sm">
+                <span className="text-gray-500">{label}</span>
+                <span className="font-semibold text-pink-600">${Number(value).toFixed(2)}</span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <a
+          href={`https://www.tcgplayer.com/search/pokemon/product?q=${encodeURIComponent(item.name)}`}
+          target="_blank"
+          rel="noreferrer"
+          className="block text-center bg-pink-400 hover:bg-pink-500 text-white
+                     font-semibold py-2 rounded-2xl transition-colors"
+        >
+          View on TCGPlayer
+        </a>
+      </motion.div>
+    </motion.div>
+  )
+}
+
 // ─── Main dashboard ──────────────────────────────────────────────────────────
 export default function WishlistDashboard({ user, onToast, onGoExplore, onBinderChange }) {
-  const [items,     setItems]     = useState([])
-  const [loading,   setLoading]   = useState(true)
+  const [items,        setItems]        = useState([])
+  const [loading,      setLoading]      = useState(true)
+  const [selectedItem, setSelectedItem] = useState(null)
   const [isPublic,  setIsPublic]  = useState(false)
   const [toggling,  setToggling]  = useState(false)
   const [copied,    setCopied]    = useState(false)
@@ -665,7 +794,7 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
         .from('wishlists')
         // edition column: run migration before this works →
         //   ALTER TABLE wishlists ADD COLUMN IF NOT EXISTS edition TEXT NOT NULL DEFAULT 'unlimited';
-        .select('card_id, name, image, owned, market_price, mid_price, low_price, manual_price, slot_index, binder_id, edition')
+        .select('card_id, name, image, owned, market_price, mid_price, low_price, manual_price, slot_index, binder_id, edition, is_chase')
         .eq('user_id', user.id)
         .order('slot_index', { ascending: true, nullsFirst: false }),
       supabase
@@ -967,6 +1096,21 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
       .eq('card_id', cardId)
   }
 
+  async function toggleChase(cardId, currentVal) {
+    const newVal = !currentVal
+    if (newVal && items.filter(i => i.is_chase).length >= 3) {
+      onToast('Max 3 chase cards! Remove one first 🎯')
+      return
+    }
+    // Optimistic update — silently tolerates is_chase column not existing yet
+    setItems(prev => prev.map(i => i.card_id === cardId ? { ...i, is_chase: newVal } : i))
+    await supabase
+      .from('wishlists')
+      .update({ is_chase: newVal })
+      .eq('user_id', user.id)
+      .eq('card_id', cardId)
+  }
+
   async function removeCard(cardId) {
     setItems(prev => prev.filter(i => i.card_id !== cardId))
     await supabase.from('wishlists').delete().eq('user_id', user.id).eq('card_id', cardId)
@@ -1090,9 +1234,8 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
       exit={{ opacity: 0, scale: 0.85 }}
       className="rounded-2xl overflow-hidden shadow-md relative"
       style={{
-        background:    item.owned ? 'rgba(236,253,245,0.7)' : 'rgba(238,233,255,0.55)',
-        backdropFilter: 'blur(10px)',
-        border:        item.owned ? '1.5px solid #6ee7b7'  : '1.5px solid #a78bfa',
+        background: item.owned ? 'rgba(236,253,245,0.95)' : 'rgba(238,233,255,0.92)',
+        border:     item.owned ? '1.5px solid #6ee7b7'    : '1.5px solid #a78bfa',
       }}
     >
       <button
@@ -1103,7 +1246,13 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
         title="Remove"
       >✕</button>
 
-      <img src={item.image} alt={item.name} className="w-full" loading="lazy" />
+      <img
+        src={item.image}
+        alt={item.name}
+        className="w-full cursor-pointer"
+        loading="lazy"
+        onClick={() => setSelectedItem(item)}
+      />
 
       <div className="p-2 text-center">
         <p className="text-sm font-bold text-gray-700 truncate">{item.name}</p>
@@ -1162,16 +1311,22 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
                   1st Ed
                 </span>
               )}
-              {/* Pencil — only when no real TCGPlayer market price */}
-              {!hasMarket && (
+              {/* Pencil — always visible so users can override any price (including leaked 1st Ed prices) */}
+              {(() => {
+                const hasOverride = !!item.manual_price
+                const startVal = item.manual_price
+                  ? String(item.manual_price)
+                  : p > 0 ? p.toFixed(2) : ''
+                return (
                 <button
-                  onClick={() => { setEditingPriceId(item.card_id); setManualInput(item.manual_price ? String(item.manual_price) : '') }}
-                  className="text-gray-300 hover:text-pink-400 transition-colors leading-none"
-                  title="Set manual price"
+                  onClick={() => { setEditingPriceId(item.card_id); setManualInput(startVal) }}
+                  className={`transition-colors leading-none ${hasOverride ? 'text-violet-400 hover:text-violet-600' : 'text-gray-300 hover:text-pink-400'}`}
+                  title={hasOverride ? 'Edit your price override' : 'Set a manual price'}
                 >
                   ✏️
                 </button>
-              )}
+                )
+              })()}
             </div>
           )
         })()}
@@ -1193,6 +1348,19 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
             }`}
         >
           {item.owned ? '✅ I own this!' : '🌸 I own this'}
+        </motion.button>
+
+        <motion.button
+          whileTap={{ scale: 0.92 }}
+          onClick={() => toggleChase(item.card_id, item.is_chase)}
+          className={`w-full text-xs font-semibold py-1 rounded-xl transition-all mt-1
+            ${item.is_chase
+              ? 'bg-pink-100 text-pink-500 hover:bg-pink-200 border border-pink-300'
+              : 'bg-white/70 text-gray-300 hover:bg-pink-50 hover:text-pink-400 border border-gray-200'
+            }`}
+          title={item.is_chase ? 'Remove from chase cards' : 'Mark as a chase card (max 3)'}
+        >
+          {item.is_chase ? '🎯 Chasing!' : '🎯 Chase'}
         </motion.button>
 
         {item.owned && binders.length > 0 ? (
@@ -1217,8 +1385,6 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
       </div>
     </motion.div>
   )
-
-  console.log('Current Items:', items)
 
   return (
     <>
@@ -1275,7 +1441,7 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
           <StatCard icon="📦" label="Collection Value" value={collectionValue} color="mint"  prefix="$" decimals={2} />
           <StatCard icon="✨" label="Wishlist Value"    value={wishlistValue}   color="blue"  prefix="$" decimals={2} />
           <StatCard icon="💖" label="Total Cards"       value={totalCount}      color="pink"  />
-          <div className="rounded-2xl border border-violet-200 bg-gradient-to-br from-violet-100/80 to-purple-100/60 backdrop-blur-md p-4 shadow-sm">
+          <div className="rounded-2xl border border-violet-200 bg-gradient-to-br from-violet-100 to-purple-100 p-4 shadow-sm">
             <p className="text-2xl mb-1">✅</p>
             <p className="text-xs text-gray-400 font-medium uppercase tracking-wide mb-0.5">Collection Progress</p>
             <p className="text-2xl font-bold text-gray-700">{ownedCount}<span className="text-base text-gray-400">/{totalCount}</span></p>
@@ -1283,6 +1449,7 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
           </div>
         </div>
         <HighRollers items={ownedItemsList} />
+        <ChaseCards items={items} />
       </>}
 
       {/* ── Binder tab ─────────────────────────────────────────────── */}
@@ -1564,6 +1731,15 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
           <NewBinderModal
             onSave={createBinder}
             onClose={() => setShowNewBinder(false)}
+          />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {selectedItem && (
+          <WishlistCardModal
+            item={selectedItem}
+            onClose={() => setSelectedItem(null)}
           />
         )}
       </AnimatePresence>

@@ -216,7 +216,7 @@ function CardSlot({ item, isSelected, pageStyle, onClick, binders, onTransfer, c
                 {/* Dropdown */}
                 <div
                   className="absolute bottom-full mb-1.5 left-1/2 -translate-x-1/2 z-50
-                             bg-white/95 backdrop-blur-md rounded-2xl shadow-2xl
+                             bg-white rounded-2xl shadow-2xl
                              border border-pink-100 overflow-hidden"
                   style={{ minWidth: '120px' }}
                 >

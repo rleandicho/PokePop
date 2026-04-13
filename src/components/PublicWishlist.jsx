@@ -66,6 +66,79 @@ function PaginationBar({ currentPage, totalPages, onPageChange }) {
 // ─── Pagination constant ──────────────────────────────────────────────────────
 const ITEMS_PER_PAGE = 20
 
+// ─── High Rollers ─────────────────────────────────────────────────────────────
+function HighRollers({ items }) {
+  const top3 = [...items]
+    .filter(i => (i.manual_price || i.market_price || i.mid_price || i.low_price || 0) > 0)
+    .sort((a, b) => {
+      const pa = a.manual_price || a.market_price || a.mid_price || a.low_price || 0
+      const pb = b.manual_price || b.market_price || b.mid_price || b.low_price || 0
+      return pb - pa
+    })
+    .slice(0, 3)
+
+  if (!top3.length) return null
+
+  return (
+    <div className="max-w-md mx-auto px-4 pb-4">
+      <div className="p-4 rounded-2xl border border-yellow-200 bg-gradient-to-r from-yellow-50 to-amber-50 shadow-sm">
+        <p className="text-xs font-semibold text-amber-500 uppercase tracking-wide mb-3">👑 Top High-Rollers</p>
+        <div className="flex gap-3 justify-center flex-wrap">
+          {top3.map((item, i) => {
+            const p = item.manual_price || item.market_price || item.mid_price || item.low_price || 0
+            return (
+              <motion.div
+                key={item.card_id}
+                initial={{ opacity: 0, scale: 0.8 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ delay: i * 0.12 }}
+                className="flex flex-col items-center gap-1"
+              >
+                <div className="relative">
+                  {i === 0 && <span className="absolute -top-2 -right-2 text-base z-10">👑</span>}
+                  <img src={item.image} alt={item.name} className="w-16 rounded-xl shadow-md border-2 border-yellow-300" />
+                </div>
+                <p className="text-xs font-bold text-gray-600 text-center max-w-[64px] truncate">{item.name}</p>
+                <span className="text-xs font-semibold text-amber-600 bg-amber-100 px-2 py-0.5 rounded-full">
+                  ${p.toFixed(2)}
+                </span>
+              </motion.div>
+            )
+          })}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── Chase Cards ──────────────────────────────────────────────────────────────
+function ChaseCards({ items }) {
+  const chaseCards = items.filter(i => i.is_chase)
+  if (!chaseCards.length) return null
+  return (
+    <div className="max-w-md mx-auto px-4 pb-4">
+      <div className="p-4 rounded-2xl border border-pink-200 bg-gradient-to-r from-pink-50 to-rose-50 shadow-sm">
+        <p className="text-xs font-semibold text-pink-500 uppercase tracking-wide mb-3">🎯 Chase Cards</p>
+        <div className="flex gap-3 justify-center flex-wrap">
+          {chaseCards.map((item, i) => (
+            <motion.div
+              key={item.card_id}
+              initial={{ opacity: 0, scale: 0.8 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ delay: i * 0.1 }}
+              className="flex flex-col items-center gap-1"
+            >
+              <img src={item.image} alt={item.name} className="w-16 rounded-xl shadow-md border-2 border-pink-300" />
+              <p className="text-xs font-bold text-gray-600 text-center max-w-[64px] truncate">{item.name}</p>
+              <span className="text-[9px] font-semibold text-pink-500 bg-pink-100 px-2 py-0.5 rounded-full">hunting</span>
+            </motion.div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function PublicWishlist() {
   const { userId } = useParams()
 
@@ -116,7 +189,7 @@ export default function PublicWishlist() {
       const queries = [
         supabase
           .from('wishlists')
-          .select('card_id, name, image, owned, market_price, mid_price, low_price, slot_index, binder_id')
+          .select('card_id, name, image, owned, market_price, mid_price, low_price, manual_price, slot_index, binder_id, is_chase')
           .eq('user_id', userId)
           .order('slot_index', { ascending: true, nullsFirst: false }),
         supabase
@@ -229,16 +302,17 @@ export default function PublicWishlist() {
     )
   }
 
-  // ── Price fallback: market → mid → low → 0 ──────────────────────────────────
+  // ── Price fallback: manual → market → mid → low → 0 ─────────────────────────
   function getDisplayPrice(item) {
-    return item.market_price || item.mid_price || item.low_price || 0
+    return item.manual_price || item.market_price || item.mid_price || item.low_price || 0
   }
-  // Returns { value, label } so CardTile can show "(Mid)" / "(Low)" source hints
+  // Returns { value, label, isManual } so CardTile can show price source hints
   function getPriceInfo(item) {
-    if (item.market_price) return { value: item.market_price, label: '' }
-    if (item.mid_price)    return { value: item.mid_price,    label: 'Mid' }
-    if (item.low_price)    return { value: item.low_price,    label: 'Low' }
-    return { value: 0, label: '' }
+    if (item.manual_price) return { value: item.manual_price, label: '',    isManual: true  }
+    if (item.market_price) return { value: item.market_price, label: '',    isManual: false }
+    if (item.mid_price)    return { value: item.mid_price,    label: 'Mid', isManual: false }
+    if (item.low_price)    return { value: item.low_price,    label: 'Low', isManual: false }
+    return { value: 0, label: '', isManual: false }
   }
 
   // ── Derived values ────────────────────────────────────────────────────────
@@ -262,9 +336,8 @@ export default function PublicWishlist() {
         animate={{ opacity: 1, y: 0 }}
         className="rounded-2xl overflow-hidden shadow-md flex flex-col"
         style={{
-          background:     item.owned ? 'rgba(236,253,245,0.7)' : 'rgba(245,243,255,0.65)',
-          backdropFilter: 'blur(10px)',
-          border:         item.owned ? '1.5px solid #6ee7b7' : '1.5px solid #c4b5fd',
+          background: item.owned ? 'rgba(236,253,245,0.95)' : 'rgba(245,243,255,0.92)',
+          border:     item.owned ? '1.5px solid #6ee7b7'    : '1.5px solid #c4b5fd',
         }}
       >
         <div className="relative">
@@ -279,14 +352,20 @@ export default function PublicWishlist() {
         <div className="p-2 text-center flex flex-col flex-1">
           <p className="text-sm font-bold text-gray-700 truncate">{item.name}</p>
           {(() => {
-            const { value: p, label } = getPriceInfo(item)
+            const { value: p, label, isManual } = getPriceInfo(item)
             const is1st = item.card_id?.endsWith('-1st')
             return p > 0 ? (
               <div className="flex items-center justify-center gap-1 mb-1 flex-wrap">
-                <span className="text-xs font-semibold text-pink-600 bg-pink-100 px-2 py-0.5 rounded-full">
+                <span className={`text-xs font-semibold px-2 py-0.5 rounded-full
+                  ${isManual ? 'text-violet-600 bg-violet-100' : 'text-pink-600 bg-pink-100'}`}>
                   ${p.toFixed(2)}{label ? ` (${label})` : ''}
                 </span>
-                {is1st && (
+                {isManual && (
+                  <span className="text-[9px] font-semibold text-violet-500 bg-violet-50 border border-violet-200 px-1.5 py-0.5 rounded-full leading-none">
+                    ✏️ Custom
+                  </span>
+                )}
+                {is1st && !isManual && (
                   <span className="text-[9px] font-bold text-amber-600 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded-full leading-none">
                     1st Ed Price
                   </span>
@@ -321,8 +400,6 @@ export default function PublicWishlist() {
       </motion.div>
     )
   }
-
-  console.log('Current Items:', items)
 
   return (
     <Shell>
@@ -365,7 +442,7 @@ export default function PublicWishlist() {
       <div className="max-w-md mx-auto px-4 pb-4">
         <div className="grid grid-cols-2 gap-3">
           <div className="rounded-2xl p-4 text-center border border-emerald-200"
-               style={{ background: 'rgba(236,253,245,0.75)', backdropFilter: 'blur(8px)' }}>
+               style={{ background: 'rgba(236,253,245,0.95)' }}>
             <p className="text-xs font-semibold text-emerald-500 uppercase tracking-wide mb-1">
               Collection Value
             </p>
@@ -378,7 +455,7 @@ export default function PublicWishlist() {
           </div>
 
           <div className="rounded-2xl p-4 text-center border border-violet-200"
-               style={{ background: 'rgba(245,243,255,0.75)', backdropFilter: 'blur(8px)' }}>
+               style={{ background: 'rgba(245,243,255,0.92)' }}>
             <p className="text-xs font-semibold text-violet-500 uppercase tracking-wide mb-1">
               Wishlist Value
             </p>
@@ -391,6 +468,10 @@ export default function PublicWishlist() {
           </div>
         </div>
       </div>
+
+      {/* ── High Rollers + Chase Cards ─────────────────────────────────────── */}
+      <HighRollers items={items.filter(i => i.owned)} />
+      <ChaseCards items={items} />
 
       {/* ── Tab bar ────────────────────────────────────────────────────────── */}
       <div className="flex justify-center gap-2 px-4 pt-1 pb-3 flex-wrap">
