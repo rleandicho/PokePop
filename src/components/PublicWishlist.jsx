@@ -189,7 +189,7 @@ export default function PublicWishlist() {
       const queries = [
         supabase
           .from('wishlists')
-          .select('card_id, name, image, owned, market_price, mid_price, low_price, manual_price, slot_index, binder_id, is_chase')
+          .select('card_id, name, image, owned, market_price, mid_price, low_price, manual_price, slot_index, binder_id, is_chase, quantity')
           .eq('user_id', userId)
           .order('slot_index', { ascending: true, nullsFirst: false }),
         supabase
@@ -318,7 +318,7 @@ export default function PublicWishlist() {
   // ── Derived values ────────────────────────────────────────────────────────
   const collectionItems   = items.filter(i => i.owned)
   const wishlistItems     = items.filter(i => !i.owned)
-  const collectionValue   = collectionItems.reduce((s, i) => s + getDisplayPrice(i), 0)
+  const collectionValue   = collectionItems.reduce((s, i) => s + getDisplayPrice(i) * (i.quantity || 1), 0)
   const wishlistValue     = wishlistItems.reduce((s, i) => s + getDisplayPrice(i), 0)
   const isOwnProfile      = viewer?.id === userId
   const canFollow         = viewer && !isOwnProfile
@@ -346,6 +346,12 @@ export default function PublicWishlist() {
             <span className="absolute top-1.5 left-1.5 text-[10px] font-bold bg-amber-400 text-white
                              border border-amber-500 px-2 py-0.5 rounded-full shadow-sm leading-none">
               ⭐ 1st Edition
+            </span>
+          )}
+          {item.owned && (item.quantity || 1) > 1 && (
+            <span className="absolute bottom-1.5 right-1.5 text-[11px] font-bold bg-emerald-500 text-white
+                             px-1.5 py-0.5 rounded-full shadow leading-none">
+              ×{item.quantity}
             </span>
           )}
         </div>

@@ -794,7 +794,7 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
         .from('wishlists')
         // edition column: run migration before this works →
         //   ALTER TABLE wishlists ADD COLUMN IF NOT EXISTS edition TEXT NOT NULL DEFAULT 'unlimited';
-        .select('card_id, name, image, owned, market_price, mid_price, low_price, manual_price, slot_index, binder_id, edition, is_chase')
+        .select('card_id, name, image, owned, market_price, mid_price, low_price, manual_price, slot_index, binder_id, edition, is_chase, quantity')
         .eq('user_id', user.id)
         .order('slot_index', { ascending: true, nullsFirst: false }),
       supabase
@@ -894,9 +894,9 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
   const totalCount        = items.length
   const ownedCount        = ownedItemsList.length
   const wishlistCount     = wishlistItemsList.length
-  // Collection Value: strictly owned === true cards only
+  // Collection Value: strictly owned === true cards only, multiplied by quantity
   const collectionValue = useMemo(
-    () => ownedItemsList.reduce((acc, i) => acc + getDisplayPrice(i), 0),
+    () => ownedItemsList.reduce((acc, i) => acc + getDisplayPrice(i) * (i.quantity || 1), 0),
     [ownedItemsList]
   )
   // Wishlist Value: strictly owned === false cards only
@@ -1081,6 +1081,18 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
     }
   }
 
+  async function updateQuantity(cardId, delta) {
+    const item = items.find(i => i.card_id === cardId)
+    if (!item) return
+    const next = Math.max(1, (item.quantity || 1) + delta)
+    setItems(prev => prev.map(i => i.card_id === cardId ? { ...i, quantity: next } : i))
+    await supabase
+      .from('wishlists')
+      .update({ quantity: next })
+      .eq('user_id', user.id)
+      .eq('card_id', cardId)
+  }
+
   async function saveManualPrice(cardId) {
     const num = parseFloat(manualInput)
     const value = (!isNaN(num) && num > 0) ? num : null
@@ -1246,13 +1258,21 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
         title="Remove"
       >✕</button>
 
-      <img
-        src={item.image}
-        alt={item.name}
-        className="w-full cursor-pointer"
-        loading="lazy"
-        onClick={() => setSelectedItem(item)}
-      />
+      <div className="relative">
+        <img
+          src={item.image}
+          alt={item.name}
+          className="w-full cursor-pointer"
+          loading="lazy"
+          onClick={() => setSelectedItem(item)}
+        />
+        {item.owned && (item.quantity || 1) > 1 && (
+          <span className="absolute bottom-1.5 right-1.5 text-[11px] font-bold bg-emerald-500 text-white
+                           px-1.5 py-0.5 rounded-full shadow leading-none">
+            ×{item.quantity}
+          </span>
+        )}
+      </div>
 
       <div className="p-2 text-center">
         <p className="text-sm font-bold text-gray-700 truncate">{item.name}</p>
@@ -1349,6 +1369,25 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
         >
           {item.owned ? '✅ I own this!' : '🌸 I own this'}
         </motion.button>
+
+        {item.owned && (
+          <div className="flex items-center justify-center gap-2 mt-1.5">
+            <button
+              onClick={() => updateQuantity(item.card_id, -1)}
+              disabled={(item.quantity || 1) <= 1}
+              className="w-6 h-6 rounded-full bg-gray-100 hover:bg-gray-200 text-gray-500
+                         font-bold text-sm leading-none transition-colors disabled:opacity-30"
+            >−</button>
+            <span className="text-xs font-bold text-gray-600 min-w-[1.5rem] text-center">
+              {item.quantity || 1}
+            </span>
+            <button
+              onClick={() => updateQuantity(item.card_id, 1)}
+              className="w-6 h-6 rounded-full bg-gray-100 hover:bg-emerald-100 text-gray-500
+                         hover:text-emerald-600 font-bold text-sm leading-none transition-colors"
+            >+</button>
+          </div>
+        )}
 
         <motion.button
           whileTap={{ scale: 0.92 }}
