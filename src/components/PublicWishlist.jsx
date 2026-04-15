@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { supabase } from '../lib/supabase'
+import { fetchAllRows } from '../lib/fetchAllRows'
 import BinderView from './BinderView'
 
 // ─── Pagination bar ───────────────────────────────────────────────────────────
@@ -187,11 +188,13 @@ export default function PublicWishlist() {
       // nullsFirst: false → slot-indexed cards first, unpositioned cards fill gaps after.
       const checkFollow = currentUser && currentUser.id !== userId
       const queries = [
-        supabase
-          .from('wishlists')
-          .select('card_id, name, image, owned, market_price, mid_price, low_price, manual_price, slot_index, binder_id, is_chase, quantity')
-          .eq('user_id', userId)
-          .order('slot_index', { ascending: true, nullsFirst: false }),
+        fetchAllRows(() =>
+          supabase
+            .from('wishlists')
+            .select('card_id, name, image, owned, market_price, mid_price, low_price, manual_price, slot_index, binder_id, is_chase, quantity')
+            .eq('user_id', userId)
+            .order('slot_index', { ascending: true, nullsFirst: false })
+        ),
         supabase
           .from('binders')
           .select('id, name, color, page_style')
@@ -210,7 +213,7 @@ export default function PublicWishlist() {
         )
       }
 
-      const [{ data: wishlist }, { data: binderData }, followResult] = await Promise.all(queries)
+      const [wishlist, { data: binderData }, followResult] = await Promise.all(queries)
       setItems(wishlist ?? [])
 
       const loadedBinders = binderData ?? []

@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase }        from './lib/supabase'
+import { fetchAllRows }    from './lib/fetchAllRows'
 import AestheticFilter     from './components/AestheticFilter'
 import CardGrid            from './components/CardGrid'
 import WishlistDashboard   from './components/WishlistDashboard'
@@ -53,11 +54,12 @@ export default function App() {
   }
 
   async function fetchCollectionIds(userId) {
-    const { data } = await supabase
-      .from('wishlists')
-      .select('card_id, owned')
-      .eq('user_id', userId)
-    const rows = data ?? []
+    const rows = await fetchAllRows(() =>
+      supabase
+        .from('wishlists')
+        .select('card_id, owned')
+        .eq('user_id', userId)
+    )
     setCollectionIds(new Set(rows.map(r => r.card_id)))
     setOwnedIds(new Set(rows.filter(r => r.owned).map(r => r.card_id)))
   }

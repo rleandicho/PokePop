@@ -176,6 +176,32 @@ function VariantBadges({ card }) {
   )
 }
 
+function QuantityStepper({ value, onChange, compact = false }) {
+  return (
+    <div className={`flex items-center justify-center gap-2 ${compact ? 'mt-1' : 'mt-2 mb-1'}`}>
+      <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Qty</span>
+      <button
+        type="button"
+        onClick={() => onChange(Math.max(1, value - 1))}
+        disabled={value <= 1}
+        className="w-6 h-6 rounded-full bg-gray-100 hover:bg-gray-200 text-gray-500
+                   font-bold text-sm leading-none transition-colors disabled:opacity-30"
+      >
+        −
+      </button>
+      <span className="text-xs font-bold text-gray-600 min-w-[1.25rem] text-center">{value}</span>
+      <button
+        type="button"
+        onClick={() => onChange(value + 1)}
+        className="w-6 h-6 rounded-full bg-gray-100 hover:bg-emerald-100 text-gray-500
+                   hover:text-emerald-600 font-bold text-sm leading-none transition-colors"
+      >
+        +
+      </button>
+    </div>
+  )
+}
+
 // ─── Pagination bar ───────────────────────────────────────────────────────────
 function PaginationBar({ currentPage, totalPages, onPageChange }) {
   if (totalPages <= 1) return null
@@ -260,9 +286,10 @@ function SortToolbar({ sortBy, onSortChange }) {
   )
 }
 
-function CardModal({ card, user, onToast, onClose, activeBinderId, collectionIds, ownedIds, onCardAdded, onCardRemoved }) {
+function CardModal({ card, user, onToast, onClose, saveCard, collectionIds, ownedIds, onCardAdded, onCardRemoved }) {
   const [saving,   setSaving]   = useState(false)
   const [removing, setRemoving] = useState(false)
+  const [quantity, setQuantity] = useState(1)
   // Start with the small image (already in cache from the grid tile) so the modal
   // opens instantly. Preload the large image in the background and swap when ready.
   const [imgSrc, setImgSrc] = useState(card.images?.small)
@@ -281,23 +308,13 @@ function CardModal({ card, user, onToast, onClose, activeBinderId, collectionIds
   const inList     = collectionIds?.has(card.id)   // in wishlist OR collection
   const isOwned    = ownedIds?.has(card.id)        // specifically marked owned
 
-  async function addCard(owned) {
+  async function addCard(owned, qty = 1) {
     if (!user) return
     setSaving(true)
-    const payload = {
-      user_id:      user.id,
-      card_id:      card.id,                  // includes -1st suffix for 1st Ed variants
+    const { error, toast } = await saveCard(card, owned, qty)
+    /*
       name:         card._is1stEd ? `${card.name} ⭐` : card.name,
-      image:        card.images?.small,
-      market_price: getCardPrice(card),        // edition-aware market price
-      mid_price:    card.mid_price    ?? null, // edition-aware mid price
-      low_price:    card.low_price    ?? null, // edition-aware low price
-      owned,
-    }
-    if (activeBinderId) payload.binder_id = activeBinderId
-    const { error } = await supabase
-      .from('wishlists')
-      .upsert(payload, { onConflict: 'user_id,card_id' })
+    */
     setSaving(false)
     if (!error) {
       onCardAdded?.(card.id, owned)
@@ -363,6 +380,19 @@ function CardModal({ card, user, onToast, onClose, activeBinderId, collectionIds
                 <p className="text-center text-xs font-semibold text-gray-400">
                   {isOwned ? '✅ In your Collection' : '💖 In your Wishlist'}
                 </p>
+                <QuantityStepper value={quantity} onChange={setQuantity} />
+                <button
+                  onClick={() => addCard(true, quantity)}
+                  disabled={saving}
+                  className="bg-emerald-400 hover:bg-emerald-500 text-white
+                             font-semibold py-2 rounded-2xl transition-colors disabled:opacity-60"
+                >
+                  {saving
+                    ? 'Savingâ€¦'
+                    : isOwned
+                    ? `+ Add ${quantity} Cop${quantity === 1 ? 'y' : 'ies'}`
+                    : `Move to Collection Ã—${quantity}`}
+                </button>
                 <button
                   onClick={removeCard}
                   disabled={removing}
@@ -374,8 +404,10 @@ function CardModal({ card, user, onToast, onClose, activeBinderId, collectionIds
               </>
             ) : (
               /* Not yet saved — two distinct action buttons */
-              <div className="flex gap-2">
-                <button
+              <div className="space-y-2">
+                <QuantityStepper value={quantity} onChange={setQuantity} />
+                <div className="flex gap-2">
+                  <button
                   onClick={() => addCard(false)}
                   disabled={saving}
                   className="flex-1 bg-violet-100 hover:bg-violet-200 text-violet-700
@@ -384,13 +416,14 @@ function CardModal({ card, user, onToast, onClose, activeBinderId, collectionIds
                   {saving ? '…' : '💖 Wishlist'}
                 </button>
                 <button
-                  onClick={() => addCard(true)}
+                  onClick={() => addCard(true, quantity)}
                   disabled={saving}
                   className="flex-1 bg-emerald-400 hover:bg-emerald-500 text-white
                              font-semibold py-2 rounded-2xl transition-colors disabled:opacity-60"
                 >
                   {saving ? '…' : '✨ Collection'}
                 </button>
+                </div>
               </div>
             )
           ) : (
@@ -413,6 +446,8 @@ function CardModal({ card, user, onToast, onClose, activeBinderId, collectionIds
 // memo: only re-renders when inList/isOwned change for this specific card.
 // quickAdd/quickRemove are useCallback-stable so memo comparisons hold.
 const CardTile = memo(function CardTile({ card, inList, isOwned, quickAdd, quickRemove, setSelected }) {
+  const [ownedQty, setOwnedQty] = useState(1)
+
   return (
     <motion.div
       className="cursor-pointer rounded-2xl overflow-hidden shadow-md relative"
@@ -462,6 +497,21 @@ const CardTile = memo(function CardTile({ card, inList, isOwned, quickAdd, quick
         <p className="text-xs text-gray-400 truncate">{card.set?.name}</p>
         <VariantBadges card={card} />
         <PriceTag card={card} />
+        {(isOwned || !inList) && (
+          <div onClick={e => e.stopPropagation()}>
+            <QuantityStepper value={ownedQty} onChange={setOwnedQty} compact />
+          </div>
+        )}
+        {isOwned && (
+          <button
+            onClick={e => quickAdd(e, card, true, ownedQty)}
+            className="w-full mt-1 text-[10px] font-semibold py-1 rounded-xl
+                       bg-emerald-100 hover:bg-emerald-200 text-emerald-700 transition-colors"
+            title="Add more copies to Collection"
+          >
+            + {ownedQty} Cop{ownedQty === 1 ? 'y' : 'ies'}
+          </button>
+        )}
         {!inList && (
           <div className="flex gap-1 mt-1.5" onClick={e => e.stopPropagation()}>
             <button
@@ -473,7 +523,7 @@ const CardTile = memo(function CardTile({ card, inList, isOwned, quickAdd, quick
               💖 Wishlist
             </button>
             <button
-              onClick={e => quickAdd(e, card, true)}
+              onClick={e => quickAdd(e, card, true, ownedQty)}
               className="flex-1 text-[10px] font-semibold py-1 rounded-xl
                          bg-emerald-100 hover:bg-emerald-200 text-emerald-700 transition-colors"
               title="Add to Collection"
@@ -688,27 +738,72 @@ function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, user, on
     if (rawCards) setCards(sortCards(rawCards, sortBy))
   }, [sortBy])
 
-  // Stable references so CardTile memo comparisons don't break on every render
-  const quickAdd = useCallback(async (e, card, owned) => {
-    e.stopPropagation()
-    if (!user) { onToast('Login to save cards 💖'); return }
-    if (collectionIds?.has(card.id)) { onToast('Already saved! Tap the card to manage it ✅'); return }
+  const saveCard = useCallback(async (card, owned, quantity = 1) => {
+    if (!user) return { error: new Error('Not signed in'), toast: '' }
+
+    const normalizedQty = Math.max(1, quantity)
     const payload = {
       user_id:      user.id,
       card_id:      card.id,
-      name:         card._is1stEd ? `${card.name} ⭐` : card.name,
+      name:         card._is1stEd ? `${card.name} â­` : card.name,
       image:        card.images?.small,
       market_price: getCardPrice(card),
-      mid_price:    card.mid_price    ?? null,
-      low_price:    card.low_price    ?? null,
+      mid_price:    card.mid_price ?? null,
+      low_price:    card.low_price ?? null,
       owned,
     }
+    if (owned) payload.quantity = normalizedQty
     if (activeBinderId) payload.binder_id = activeBinderId
+
+    let toast = owned ? 'Added to Collection! âœ¨ðŸ“¦' : 'Added to Wishlist! ðŸ’–'
+
+    if (owned) {
+      const { data: existing, error: existingError } = await supabase
+        .from('wishlists')
+        .select('owned, quantity')
+        .eq('user_id', user.id)
+        .eq('card_id', card.id)
+        .maybeSingle()
+
+      if (existingError && existingError.code !== 'PGRST116') {
+        return { error: existingError, toast: '' }
+      }
+
+      if (existing?.owned) {
+        payload.quantity = (existing.quantity || 1) + normalizedQty
+        toast = normalizedQty === 1
+          ? 'Added another copy to Collection! âœ¨ðŸ“¦'
+          : `Added ${normalizedQty} more copies to Collection! âœ¨ðŸ“¦`
+      } else if (existing) {
+        toast = normalizedQty === 1
+          ? 'Moved to Collection! âœ¨ðŸ“¦'
+          : `Moved to Collection with ${normalizedQty} copies! âœ¨ðŸ“¦`
+      } else if (normalizedQty > 1) {
+        toast = `Added ${normalizedQty} copies to Collection! âœ¨ðŸ“¦`
+      }
+    }
+
     const { error } = await supabase
       .from('wishlists')
       .upsert(payload, { onConflict: 'user_id,card_id' })
+
+    return { error, toast }
+  }, [user, activeBinderId])
+
+  // Stable references so CardTile memo comparisons don't break on every render
+  const quickAdd = useCallback(async (e, card, owned, quantity = 1) => {
+    e.stopPropagation()
+    if (!user) { onToast('Login to save cards 💖'); return }
+    if (collectionIds?.has(card.id) && !owned) { onToast('Already saved! Tap the card to manage it ✅'); return }
+    const { error, toast } = await saveCard(card, owned, quantity)
+    /*
+      user_id:      user.id,
+      card_id:      card.id,
+      name:         card._is1stEd ? `${card.name} ⭐` : card.name,
     if (!error) { onCardAdded?.(card.id, owned); onToast(owned ? 'Added to Collection! ✨📦' : 'Added to Wishlist! 💖') }
-  }, [user, collectionIds, activeBinderId, onCardAdded, onToast]) // eslint-disable-line react-hooks/exhaustive-deps
+    */
+    if (!error) { onCardAdded?.(card.id, owned); onToast(toast) }
+  }, [user, collectionIds, onCardAdded, onToast, saveCard]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const quickRemove = useCallback(async (e, card) => {
     e.stopPropagation()
@@ -786,7 +881,7 @@ function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, user, on
 
       <AnimatePresence>
         {selected && (
-          <CardModal card={selected} user={user} onToast={onToast} onClose={() => setSelected(null)} activeBinderId={activeBinderId} collectionIds={collectionIds} ownedIds={ownedIds} onCardAdded={onCardAdded} onCardRemoved={onCardRemoved} />
+          <CardModal card={selected} user={user} onToast={onToast} onClose={() => setSelected(null)} saveCard={saveCard} collectionIds={collectionIds} ownedIds={ownedIds} onCardAdded={onCardAdded} onCardRemoved={onCardRemoved} />
         )}
       </AnimatePresence>
     </>

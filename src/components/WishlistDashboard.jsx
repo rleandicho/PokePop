@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { supabase } from '../lib/supabase'
+import { fetchAllRows } from '../lib/fetchAllRows'
 import BinderView from './BinderView'
 
 // ─── Pagination ───────────────────────────────────────────────────────────────
@@ -356,6 +357,9 @@ function SupportCard() {
 function AccountSettingsModal({ user, onToast, onClose, isPublic, toggling, onTogglePublic, refreshing, refreshProgress, onRefreshPrices }) {
   const [username,    setUsername]    = useState('')
   const [saving,      setSaving]      = useState(false)
+  const [newPassword, setNewPassword] = useState('')
+  const [confirmPass, setConfirmPass] = useState('')
+  const [passSaving,  setPassSaving]  = useState(false)
   const [deleteStep,  setDeleteStep]  = useState(0)   // 0=idle 1=confirm 2=final
   const [deleteInput, setDeleteInput] = useState('')
 
@@ -390,6 +394,29 @@ function AccountSettingsModal({ user, onToast, onClose, isPublic, toggling, onTo
     await supabase.from('profiles').delete().eq('id', user.id)
     await supabase.auth.signOut()
     onToast('Account deleted. Goodbye 💔')
+  }
+  async function changePassword() {
+    if (newPassword.length < 6) {
+      onToast('Password must be at least 6 characters.')
+      return
+    }
+    if (newPassword !== confirmPass) {
+      onToast('Passwords do not match.')
+      return
+    }
+
+    setPassSaving(true)
+    const { error } = await supabase.auth.updateUser({ password: newPassword })
+    setPassSaving(false)
+
+    if (error) {
+      onToast(error.message)
+      return
+    }
+
+    setNewPassword('')
+    setConfirmPass('')
+    onToast('Password updated.')
   }
 
   return (
@@ -434,6 +461,46 @@ function AccountSettingsModal({ user, onToast, onClose, isPublic, toggling, onTo
                          font-semibold text-sm px-4 rounded-xl transition-colors"
             >
               {saving ? '…' : 'Save'}
+            </motion.button>
+          </div>
+        </div>
+
+        <div className="mb-5">
+          <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1.5">
+            Change Password
+          </label>
+          <div className="space-y-2">
+            <input
+              type="password"
+              value={newPassword}
+              onChange={e => setNewPassword(e.target.value)}
+              placeholder="New password"
+              minLength={6}
+              autoComplete="new-password"
+              className="w-full bg-pink-50/60 border border-pink-200 rounded-xl px-3 py-2
+                         text-sm text-gray-700 placeholder-gray-300
+                         focus:outline-none focus:ring-2 focus:ring-pink-300"
+            />
+            <input
+              type="password"
+              value={confirmPass}
+              onChange={e => setConfirmPass(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && changePassword()}
+              placeholder="Confirm new password"
+              minLength={6}
+              autoComplete="new-password"
+              className="w-full bg-pink-50/60 border border-pink-200 rounded-xl px-3 py-2
+                         text-sm text-gray-700 placeholder-gray-300
+                         focus:outline-none focus:ring-2 focus:ring-pink-300"
+            />
+            <motion.button
+              whileTap={{ scale: 0.96 }}
+              onClick={changePassword}
+              disabled={passSaving || !newPassword || !confirmPass}
+              className="w-full bg-violet-400 hover:bg-violet-500 disabled:opacity-50 text-white
+                         font-semibold text-sm px-4 py-2 rounded-xl transition-colors"
+            >
+              {passSaving ? 'Updatingâ€¦' : 'Update Password'}
             </motion.button>
           </div>
         </div>
@@ -792,23 +859,27 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
     if (!user) return
 
     // Single round-trip: wishlist + profile + follow IDs + binders all at once
-    const [{ data: wishlist }, { data: prof }, { data: followData }, { data: binderData }] = await Promise.all([
-      supabase
-        .from('wishlists')
-        // edition column: run migration before this works →
-        //   ALTER TABLE wishlists ADD COLUMN IF NOT EXISTS edition TEXT NOT NULL DEFAULT 'unlimited';
-        .select('card_id, name, image, owned, market_price, mid_price, low_price, manual_price, slot_index, binder_id, edition, is_chase, quantity')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false }),
+    const [wishlist, { data: prof }, followData, { data: binderData }] = await Promise.all([
+      fetchAllRows(() =>
+        supabase
+          .from('wishlists')
+          // edition column: run migration before this works →
+          //   ALTER TABLE wishlists ADD COLUMN IF NOT EXISTS edition TEXT NOT NULL DEFAULT 'unlimited';
+          .select('card_id, name, image, owned, market_price, mid_price, low_price, manual_price, slot_index, binder_id, edition, is_chase, quantity')
+          .eq('user_id', user.id)
+          .order('created_at', { ascending: false })
+      ),
       supabase
         .from('profiles')
         .select('is_public')
         .eq('id', user.id)
         .maybeSingle(),
-      supabase
-        .from('follows')
-        .select('following_id')
-        .eq('follower_id', user.id),
+      fetchAllRows(() =>
+        supabase
+          .from('follows')
+          .select('following_id')
+          .eq('follower_id', user.id)
+      ),
       supabase
         .from('binders')
         .select('id, name, color, cover_color, page_style')
@@ -848,16 +919,18 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
     // Fetch followed trainers' profiles + top-3 priced cards in a second parallel round-trip
     const followedIds = (followData ?? []).map(f => f.following_id)
     if (followedIds.length > 0) {
-      const [{ data: followedProfiles }, { data: followedCards }] = await Promise.all([
+      const [{ data: followedProfiles }, followedCards] = await Promise.all([
         supabase
           .from('profiles')
           .select('id, username')
           .in('id', followedIds),
-        supabase
-          .from('wishlists')
-          .select('user_id, card_id, name, image, market_price, owned, created_at')
-          .in('user_id', followedIds)
-          .order('created_at', { ascending: false }),
+        fetchAllRows(() =>
+          supabase
+            .from('wishlists')
+            .select('user_id, card_id, name, image, market_price, owned, created_at')
+            .in('user_id', followedIds)
+            .order('created_at', { ascending: false })
+        ),
       ])
 
       // Group all fetched cards by user (already ordered by created_at DESC from DB)
@@ -1904,3 +1977,5 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
     </>
   )
 }
+
+
