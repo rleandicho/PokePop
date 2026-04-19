@@ -100,9 +100,9 @@ function ShowcaseCard({ item, badge, borderColor, delay }) {
     >
       <div className="relative">
         {badge}
-        <img src={item.image} alt={item.name} className={`w-14 rounded-xl shadow-md border-2 ${borderColor}`} />
+        <img src={item.image} alt={item.name} className={`w-12 rounded-xl shadow-md border-2 ${borderColor}`} />
       </div>
-      <p className="text-[10px] font-bold text-gray-600 text-center w-14 truncate">{item.name}</p>
+      <p className="text-[10px] font-bold text-gray-600 text-center w-12 truncate">{item.name}</p>
     </motion.div>
   )
 }
@@ -125,9 +125,9 @@ function ShowcasePanels({ ownedItems, allItems }) {
   const LIMIT = 3
 
   return (
-    <div className="px-4 mb-4 flex gap-3 overflow-x-auto scrollbar-none">
+    <div className="px-4 mb-4 flex gap-3">
       {hasHighRollers && (
-        <div className="flex-1 min-w-[140px] p-3 rounded-2xl border border-yellow-200 bg-gradient-to-b from-yellow-50 to-amber-50 shadow-sm">
+        <div className="flex-1 p-3 rounded-2xl border border-yellow-200 bg-gradient-to-b from-yellow-50 to-amber-50 shadow-sm min-w-0">
           <div className="flex items-center justify-between mb-2">
             <p className="text-[10px] font-semibold text-amber-500 uppercase tracking-wide">👑 High-Rollers</p>
             <span className="text-[9px] font-bold text-amber-400 bg-amber-100 rounded-full px-1.5 py-0.5">
@@ -149,7 +149,7 @@ function ShowcasePanels({ ownedItems, allItems }) {
       )}
 
       {hasChase && (
-        <div className="flex-1 min-w-[140px] p-3 rounded-2xl border border-pink-200 bg-gradient-to-b from-pink-50 to-rose-50 shadow-sm">
+        <div className="flex-1 p-3 rounded-2xl border border-pink-200 bg-gradient-to-b from-pink-50 to-rose-50 shadow-sm min-w-0">
           <div className="flex items-center justify-between mb-2">
             <p className="text-[10px] font-semibold text-pink-500 uppercase tracking-wide">🎯 Chase Cards</p>
             <span className={`text-[9px] font-bold rounded-full px-1.5 py-0.5
@@ -172,7 +172,7 @@ function ShowcasePanels({ ownedItems, allItems }) {
       )}
 
       {hasFavorites && (
-        <div className="flex-1 min-w-[140px] p-3 rounded-2xl border border-indigo-200 bg-gradient-to-b from-indigo-50 to-violet-50 shadow-sm">
+        <div className="flex-1 p-3 rounded-2xl border border-indigo-200 bg-gradient-to-b from-indigo-50 to-violet-50 shadow-sm min-w-0">
           <div className="flex items-center justify-between mb-2">
             <p className="text-[10px] font-semibold text-indigo-500 uppercase tracking-wide">⭐ Favourites</p>
             <span className={`text-[9px] font-bold rounded-full px-1.5 py-0.5
@@ -1756,11 +1756,11 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
 
       {/* ── Shared stats + HighRollers (collection & wishlist tabs only) ── */}
       {(activeTab === 'collection' || activeTab === 'wishlist') && items.length > 0 && <>
-        <div className="flex items-stretch gap-3 px-4 pb-4 overflow-x-auto scrollbar-none">
-          <div className="flex flex-col flex-1 min-w-[130px]"><StatCard icon="📦" label="Collection Value" value={collectionValue} color="mint"  prefix="$" decimals={2} /></div>
-          <div className="flex flex-col flex-1 min-w-[130px]"><StatCard icon="✨" label="Wishlist Value"    value={wishlistValue}   color="lilac" prefix="$" decimals={2} /></div>
-          <div className="flex flex-col flex-1 min-w-[130px]"><StatCard icon="💖" label="Total Cards"       value={totalCount}      color="pink"  /></div>
-          <div className="flex flex-col flex-1 min-w-[130px]"><StatCard icon="✅" label="Collection Progress" value={totalCount > 0 ? Math.round((ownedCount / totalCount) * 100) : 0} color="lilac" suffix="%" /></div>
+        <div className="grid grid-cols-2 gap-3 px-4 pb-4">
+          <StatCard icon="📦" label="Collection Value" value={collectionValue} color="mint"  prefix="$" decimals={2} />
+          <StatCard icon="✨" label="Wishlist Value"    value={wishlistValue}   color="lilac" prefix="$" decimals={2} />
+          <StatCard icon="💖" label="Total Cards"       value={totalCount}      color="pink"  />
+          <StatCard icon="✅" label="Collection Progress" value={totalCount > 0 ? Math.round((ownedCount / totalCount) * 100) : 0} color="lilac" suffix="%" />
         </div>
         <ShowcasePanels ownedItems={ownedItemsList} allItems={items} />
       </>}
