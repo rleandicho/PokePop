@@ -3,10 +3,9 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { supabase } from '../lib/supabase'
 import CardSkeleton from './CardSkeleton'
 import SearchBar from './SearchBar'
-import { FIRST_ED_SET_IDS, get1stEdPrice } from '../lib/sets'
 
 const PAGE_SIZE       = 20
-const PRICE_PAGE_SIZE = 100  // larger batch so price sorts have more priced cards to work with
+const PRICE_PAGE_SIZE = 250  // API maximum — gives the largest priced-card pool for price sorts
 const CACHE_LIMIT     = 10   // max unique filter combinations held in memory
 
 // ─── Sort options ─────────────────────────────────────────────────────────────
@@ -38,71 +37,65 @@ const VIBE_QUERIES = {
   dragons: { query: '(types:dragon OR name:dratini OR name:dragonair OR name:dragonite OR name:kingdra OR name:rayquaza OR name:flygon OR name:vibrava OR name:trapinch OR name:altaria OR name:bagon OR name:shelgon OR name:salamence OR name:latias OR name:latios OR name:gible OR name:gabite OR name:garchomp OR name:axew OR name:fraxure OR name:haxorus OR name:deino OR name:zweilous OR name:hydreigon OR name:druddigon)' },
 }
 
-// Unlimited-only price lookup — explicitly skips all 1stEdition* tiers so unlimited
-// cards never inherit 1st Ed prices (the "pricing leak" fix).
+// Pick the best available market price across all TCGPlayer tiers.
+// Used for grid display / sort — the specific version price is shown separately in the modal.
 function getBestPrice(prices = {}) {
   return (
-    prices.holofoil?.market ??
-    prices.reverseHolofoil?.market ??
-    prices.normal?.market ??
-    // Generic fallback: any non-1stEdition tier — safe for non-standard sets like Perfect Order
-    Object.entries(prices).find(([k, v]) => !k.startsWith('1stEdition') && v?.market != null)?.[1]?.market ??
-    0
+    Object.values(prices).find(v => v?.market != null)?.market ?? 0
   )
 }
 
-// Edition-aware price resolver.
-// 1st Ed cards check dedicated 1stEdition* tiers first, then fall back to Unlimited (Edition Swap).
-// Unlimited cards ONLY use getBestPrice — they never touch 1stEdition* keys.
 function getCardPrice(card) {
   if (card.market_price != null) return card.market_price
-  const prices = card.tcgplayer?.prices ?? {}
-  if (card._is1stEd) {
-    // Prefer the dedicated 1st Ed tier; fall back to Unlimited as a baseline
-    return (
-      prices['1stEditionHolofoil']?.market ??
-      prices['1stEditionNormal']?.market ??
-      getBestPrice(prices)
-    )
-  }
-  // Unlimited card: strictly non-1stEdition tiers
-  return getBestPrice(prices)
+  return getBestPrice(card.tcgplayer?.prices ?? {})
 }
 
-// Stable cache key based only on filter identity — excludes sortBy so sort changes are local-only
-function buildCacheKey(vibe, search, setQuery) {
-  return `${vibe ?? ''}|${search ?? ''}|${setQuery ?? ''}`
+// Human-readable labels for each TCGPlayer price tier key
+const TIER_LABELS = {
+  '1stEditionHolofoil': '1st Ed Holofoil',
+  '1stEditionNormal':   '1st Ed Normal',
+  'holofoil':           'Holofoil',
+  'reverseHolofoil':    'Reverse Holofoil',
+  'normal':             'Normal',
+}
+function tierLabel(key) {
+  return TIER_LABELS[key] ?? key.replace(/([A-Z])/g, ' $1').trim()
 }
 
-// All sorting is local. Fetch always uses a stable API order (oldest-first) as the raw baseline.
-// For price sorts, cards with no price data always sink to the bottom.
+// Cache key includes sort so each sort+filter combo has its own cache slot.
+// Switching sorts never re-uses data fetched under a different sort's API ordering.
+// v2: rebuilt after price-sort ordering fix (oldest-first for both price directions).
+function buildCacheKey(vibe, search, setQuery, sort) {
+  return `v2|${vibe ?? ''}|${search ?? ''}|${setQuery ?? ''}|${sort ?? ''}`
+}
+
 function sortCards(cards, sort) {
   const arr = [...cards]
-  switch (sort) {
-    case 'price-high':
-      return arr.sort((a, b) => {
-        const pa = getCardPrice(a), pb = getCardPrice(b)
-        if (!pa && !pb) return 0
-        if (!pa) return 1   // unpriced → bottom
-        if (!pb) return -1
-        return pb - pa
-      })
-    case 'price-low':
-      return arr.sort((a, b) => {
-        const pa = getCardPrice(a), pb = getCardPrice(b)
-        if (!pa && !pb) return 0
-        if (!pa) return 1   // unpriced → bottom
-        if (!pb) return -1
-        return pa - pb
-      })
-    case 'alpha':   return arr.sort((a, b) => a.name.localeCompare(b.name))
-    case 'newest':  return arr.sort((a, b) => {
+
+  if (sort === 'price-high' || sort === 'price-low') {
+    const priced   = arr.filter(c => getCardPrice(c) > 0)
+    const unpriced = arr.filter(c => getCardPrice(c) <= 0)
+    if (sort === 'price-high') {
+      priced.sort((a, b) => getCardPrice(b) - getCardPrice(a))
+    } else {
+      priced.sort((a, b) => getCardPrice(a) - getCardPrice(b))
+    }
+    return [...priced, ...unpriced]
+  }
+
+  if (sort === 'alpha') {
+    return arr.sort((a, b) => a.name.localeCompare(b.name))
+  }
+
+  if (sort === 'newest') {
+    return arr.sort((a, b) => {
       const da = new Date(a.set?.releaseDate || '1900/01/01')
       const db = new Date(b.set?.releaseDate || '1900/01/01')
-      return db - da   // newest first; cards with no date sink to the bottom
+      return db - da
     })
-    default:        return arr   // 'oldest' is the stable API fetch order — no sort needed
   }
+
+  return arr   // 'oldest' — API already returns oldest-first, no local sort needed
 }
 
 // Builds the q= string sent to the TCG API.
@@ -134,21 +127,8 @@ function buildTcgQuery(vibe, search, setQuery) {
 }
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
-// For 1st Ed cards: shows the 1st Ed price when available; falls back to the
-// Unlimited price as a baseline (Edition Swap). "N/A" shown only when neither
-// edition nor unlimited has any price data.
-// For regular cards: shows the best available Unlimited market price.
 function PriceTag({ card }) {
-  // All cards have market_price set at fetch time — no getBestPrice fallback needed.
   const val = card.market_price
-  if (card._is1stEd) {
-    return (
-      <span className={`text-xs font-semibold px-2 py-0.5 rounded-full
-        ${val ? 'text-amber-700 bg-amber-100' : 'text-gray-400 bg-gray-100'}`}>
-        {val ? `$${Number(val).toFixed(2)}` : 'N/A'}
-      </span>
-    )
-  }
   if (!val) return null
   return (
     <span className="text-xs font-semibold text-pink-600 bg-pink-100 px-2 py-0.5 rounded-full">
@@ -157,26 +137,14 @@ function PriceTag({ card }) {
   )
 }
 
-// Shows edition and card number badges so multiple printings are visually distinct.
-// _is1stEd comes from the edition-split expansion in fetchCards.
+// Shows the card number badge so multiple set printings are visually distinct.
 function VariantBadges({ card }) {
-  const is1stEd = card._is1stEd || card.subtypes?.includes('1st Edition')
-  const num     = card.number
-  if (!is1stEd && !num) return null
+  if (!card.number) return null
   return (
-    <div className="flex items-center justify-center gap-1 flex-wrap mt-0.5 mb-0.5">
-      {is1stEd && (
-        <span className="text-[9px] font-bold bg-amber-400 text-white
-                         px-1.5 py-0.5 rounded-full border border-amber-500 leading-tight shadow-sm">
-          ⭐ 1st Ed
-        </span>
-      )}
-      {num && (
-        <span className="text-[9px] text-gray-400 bg-gray-100
-                         px-1.5 py-0.5 rounded-full leading-tight">
-          #{num}
-        </span>
-      )}
+    <div className="flex items-center justify-center mt-0.5 mb-0.5">
+      <span className="text-[9px] text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded-full leading-tight">
+        #{card.number}
+      </span>
     </div>
   )
 }
@@ -295,31 +263,29 @@ function CardModal({ card, user, onToast, onClose, saveCard, collectionIds, owne
   const [saving,   setSaving]   = useState(false)
   const [removing, setRemoving] = useState(false)
   const [quantity, setQuantity] = useState(1)
-  // Start with the small image (already in cache from the grid tile) so the modal
-  // opens instantly. Preload the large image in the background and swap when ready.
-  const [imgSrc, setImgSrc] = useState(card.images?.small)
+  const [imgSrc,   setImgSrc]   = useState(card.images?.small)
+
   useEffect(() => {
     if (!card.images?.large || card.images.large === card.images.small) return
     const img = new Image()
     img.onload = () => setImgSrc(card.images.large)
     img.src = card.images.large
   }, [card.images?.large]) // eslint-disable-line react-hooks/exhaustive-deps
+
   const prices     = card.tcgplayer?.prices ?? {}
-  // 1st Ed variant: only show 1stEdition price rows so the modal matches the grid tile.
-  // Regular card: exclude 1stEdition* tiers so unlimited cards never display 1st Ed prices.
-  const priceRows  = card._is1stEd
-    ? Object.entries(prices).filter(([k, v]) => k.startsWith('1stEdition') && v?.market)
-    : Object.entries(prices).filter(([k, v]) => !k.startsWith('1stEdition') && v?.market)
-  const inList     = collectionIds?.has(card.id)   // in wishlist OR collection
-  const isOwned    = ownedIds?.has(card.id)        // specifically marked owned
+  // All tiers that have a market price — shown in the breakdown and drive the version picker
+  const priceRows  = Object.entries(prices).filter(([, v]) => v?.market != null)
+  const inList     = collectionIds?.has(card.id)
+  const isOwned    = ownedIds?.has(card.id)
+
+  // Version picker: default to whichever tier has the best market price
+  const defaultVersion = priceRows.length > 0 ? priceRows[0][0] : ''
+  const [version, setVersion] = useState(defaultVersion)
 
   async function addCard(owned, qty = 1) {
     if (!user) return
     setSaving(true)
-    const { error, toast } = await saveCard(card, owned, qty)
-    /*
-      name:         card._is1stEd ? `${card.name} ⭐` : card.name,
-    */
+    const { error, toast } = await saveCard(card, owned, qty, version)
     setSaving(false)
     if (!error) {
       onCardAdded?.(card.id, owned)
@@ -366,14 +332,52 @@ function CardModal({ card, user, onToast, onClose, saveCard, collectionIds, owne
         <h2 className="text-xl font-bold text-pink-500 mb-0.5">{card.name}</h2>
         <p className="text-sm text-gray-400 mb-3">{card.set?.name} · {card.rarity}</p>
 
+        {/* ── Price tiers — tap a row to select the version when saving ── */}
         {priceRows.length > 0 && (
-          <div className="mb-4 space-y-1 bg-pink-50/60 rounded-2xl p-3">
-            {priceRows.map(([variant, p]) => (
-              <div key={variant} className="flex justify-between text-sm">
-                <span className="text-gray-500 capitalize">{variant.replace(/([A-Z])/g, ' $1')}</span>
-                <span className="font-semibold text-pink-600">${p.market?.toFixed(2)}</span>
-              </div>
-            ))}
+          <div className="mb-3 rounded-2xl overflow-hidden border border-pink-100">
+            <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide px-3 pt-2.5 pb-1">
+              {card.rarity ? `${card.rarity} · ` : ''}TCGPlayer Prices
+              {user && !inList && <span className="ml-1 text-pink-400 normal-case font-normal">(tap to select version)</span>}
+            </p>
+            {priceRows.map(([key, p]) => {
+              const selected = version === key
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => user && !inList ? setVersion(key) : undefined}
+                  className={`w-full flex justify-between items-center px-3 py-2 text-sm transition-colors
+                    ${selected && user && !inList
+                      ? 'bg-pink-100 border-l-2 border-pink-400'
+                      : 'bg-white hover:bg-pink-50/60'
+                    }`}
+                >
+                  <span className={`font-medium ${selected && user && !inList ? 'text-pink-600' : 'text-gray-600'}`}>
+                    {tierLabel(key)}
+                  </span>
+                  <div className="flex gap-3 text-right items-center">
+                    {p.market != null && (
+                      <span className={`font-bold ${selected && user && !inList ? 'text-pink-500' : 'text-gray-700'}`}>
+                        ${p.market.toFixed(2)}
+                      </span>
+                    )}
+                    {p.mid != null && <span className="text-[11px] text-gray-400">mid ${p.mid.toFixed(2)}</span>}
+                    {p.low != null && <span className="text-[11px] text-gray-400">low ${p.low.toFixed(2)}</span>}
+                    {selected && user && !inList && <span className="text-pink-400 text-xs">✓</span>}
+                  </div>
+                </button>
+              )
+            })}
+            {user && !inList && (
+              <button
+                type="button"
+                onClick={() => setVersion('')}
+                className={`w-full text-left px-3 py-2 text-sm transition-colors
+                  ${!version ? 'bg-pink-100 border-l-2 border-pink-400 text-pink-600 font-medium' : 'bg-white hover:bg-pink-50/60 text-gray-400'}`}
+              >
+                Unspecified {!version && <span className="text-pink-400 text-xs ml-1">✓</span>}
+              </button>
+            )}
           </div>
         )}
 
@@ -393,10 +397,10 @@ function CardModal({ card, user, onToast, onClose, saveCard, collectionIds, owne
                              font-semibold py-2 rounded-2xl transition-colors disabled:opacity-60"
                 >
                   {saving
-                    ? 'Savingâ€¦'
+                    ? 'Saving…'
                     : isOwned
                     ? `+ Add ${quantity} Cop${quantity === 1 ? 'y' : 'ies'}`
-                    : `Move to Collection Ã—${quantity}`}
+                    : `Move to Collection ×${quantity}`}
                 </button>
                 <button
                   onClick={removeCard}
@@ -456,7 +460,7 @@ const CardTile = memo(function CardTile({ card, inList, isOwned, quickAdd, quick
   return (
     <motion.div
       className={`cursor-pointer rounded-2xl overflow-hidden shadow-md relative ${
-        isOwned ? 'tile-owned' : inList ? 'tile-wishlist' : card._is1stEd ? 'tile-first-ed' : 'tile-default'
+        isOwned ? 'tile-owned' : inList ? 'tile-wishlist' : 'tile-default'
       }`}
       style={{
         userSelect: 'none', WebkitUserSelect: 'none', WebkitTouchCallout: 'none', touchAction: 'manipulation',
@@ -589,7 +593,7 @@ function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, user, on
   }
 
   const fetchCards = useCallback(async (vibe, srch, sq, sort, pg) => {
-    const key = buildCacheKey(vibe, srch, sq)
+    const key = buildCacheKey(vibe, srch, sq, sort)
     activeKeyRef.current = key
 
     // Cancel any in-flight request
@@ -603,15 +607,16 @@ function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, user, on
     setLoading(true)
 
     const q = buildTcgQuery(vibe, srch, sq)
-    // Always fetch in stable oldest-first order — all sort options are applied locally.
-    // number + subtypes added so variant badges ("1st Ed", "#4/102") render without a second fetch
-    // Map local sort option to the API's orderBy field.
-    // Price sorts have no API equivalent — fetch newest-first and re-sort locally.
-    const apiOrder = sort === 'oldest' ? 'set.releaseDate'
-                   : sort === 'alpha'  ? 'name'
-                   : '-set.releaseDate'   // newest, price-high, price-low
-    // Price sorts use a larger page to ensure we get enough priced cards in the result set
-    // (newest cards often lack TCGPlayer prices, so 20 cards can yield mostly $0 rows)
+    // API ordering strategy per sort mode:
+    //   oldest/price-low/price-high → oldest release date first.
+    //     Oldest cards have near-complete TCGPlayer coverage, so local price sorting
+    //     yields a batch where almost every card is priced. Newest-first is avoided for
+    //     price sorts because brand-new cards often lack pricing entirely.
+    //   newest → newest release date first (no price involvement)
+    //   alpha  → alphabetical by name from API
+    const apiOrder = sort === 'newest'  ? '-set.releaseDate'
+                   : sort === 'alpha'   ? 'name'
+                   : 'set.releaseDate'   // oldest, price-high, price-low → oldest-first
     const isPriceSort  = sort === 'price-high' || sort === 'price-low'
     const effectivePSz = isPriceSort ? PRICE_PAGE_SIZE : PAGE_SIZE
     let url = `https://api.pokemontcg.io/v2/cards?page=${pg}&pageSize=${effectivePSz}&orderBy=${encodeURIComponent(apiOrder)}&select=id,name,images,set,number,subtypes,rarity,tcgplayer,cardmarket`
@@ -627,56 +632,18 @@ function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, user, on
       const incoming = data.data ?? []
       const total = Math.ceil((data.totalCount ?? 0) / effectivePSz)
 
-      // ── Edition split — expand WotC-era cards into Unlimited + 1st Ed variants ──
-      // The 1st Ed copy gets a -1st suffix on its ID so it is treated as a distinct
-      // card everywhere (collection tracking, DB key, price lookup, etc.)
+      // Attach the best available market price to each card for sort/display.
+      // All TCGPlayer tier prices remain on card.tcgplayer.prices for the modal breakdown.
       const expanded = []
       for (const card of incoming) {
-        const tcg = card.tcgplayer?.prices
-
-        // UNLIMITED — pick the best non-1stEdition tier (same priority as getBestPrice)
-        // and read market/mid/low from it so all three come from the same tier.
-        const unlTier = (
-          (tcg?.holofoil?.market        != null && tcg.holofoil)        ||
-          (tcg?.reverseHolofoil?.market != null && tcg.reverseHolofoil) ||
-          (tcg?.normal?.market          != null && tcg.normal)          ||
-          Object.entries(tcg ?? {}).find(([k, v]) => !k.startsWith('1stEdition') && v?.market != null)?.[1] ||
-          null
-        )
-        const priceUnl = unlTier?.market ?? null
-        const midUnl   = unlTier?.mid    ?? null
-        const lowUnl   = unlTier?.low    ?? null
-
-        // 1ST ED — strictly these two keys, never falls back to Unlimited
-        const price1st = tcg?.['1stEditionHolofoil']?.market || tcg?.['1stEditionNormal']?.market || null
-        const mid1st   = tcg?.['1stEditionHolofoil']?.mid    || tcg?.['1stEditionNormal']?.mid    || null
-        const low1st   = tcg?.['1stEditionHolofoil']?.low    || tcg?.['1stEditionNormal']?.low    || null
-
-        // UPDATE ORIGINAL CARD — attach all three price points so payloads are complete
-        card.market_price = priceUnl
-        card.mid_price    = midUnl
-        card.low_price    = lowUnl
-
+        const tcg   = card.tcgplayer?.prices ?? {}
+        const best  = Object.values(tcg).find(v => v?.market != null)
+        card.market_price = best?.market ?? null
+        card.mid_price    = best?.mid    ?? null
+        card.low_price    = best?.low    ?? null
         expanded.push(card)
-
-        // CREATE VARIANT — spawn for every confirmed WotC set.
-        // Edition Swap: falls back to Unlimited price when no dedicated 1st Ed tier exists.
-        if (FIRST_ED_SET_IDS.has(card.set?.id)) {
-          // Edition Swap: if TCGPlayer has no dedicated 1st Ed tier, use Unlimited as a
-          // price baseline so cards never show "N/A". The amber badge still marks them.
-          const variant = {
-            ...card,
-            id:           `${card.id}-1st`,
-            _is1stEd:     true,
-            market_price: price1st ?? priceUnl,
-            mid_price:    mid1st   ?? midUnl,
-            low_price:    low1st   ?? lowUnl,
-          }
-          expanded.push(variant)
-        }
       }
 
-      // Store only the current page — no accumulation across pages
       const rawCards = expanded
 
       // Write to cache with LRU eviction — cap at CACHE_LIMIT unique filter combinations
@@ -701,38 +668,29 @@ function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, user, on
     if (reqIdRef.current === reqId) setLoading(false)
   }, [])
 
-  // Filter OR sort change: re-fetch or serve from cache.
-  // sortBy is included so switching Oldest ↔ Newest triggers a new API call with the
-  // correct orderBy. For price/alpha sorts the API result is the same (newest-first)
-  // and local re-sort handles it — but we still bust the cache so the data stays fresh.
+  // Filter or sort change: serve from cache or fetch fresh.
+  // Sort is part of the cache key so switching sorts never re-uses another sort's data.
   useEffect(() => {
     const hasFilter = activeVibe || setQuery || effectiveSearch
     if (!hasFilter) return
 
-    const key = buildCacheKey(activeVibe, effectiveSearch, setQuery)
+    const key = buildCacheKey(activeVibe, effectiveSearch, setQuery, sortBy)
     activeKeyRef.current = key
 
-    // Date sorts change the API orderBy → stale cache would be in the wrong server order.
-    // Price sorts use a different pageSize → cached 20-card results are insufficient.
-    // Both cases need a fresh fetch rather than re-sorting stale cache data.
-    const isDateSort  = sortBy === 'oldest' || sortBy === 'newest'
-    const isPriceSort = sortBy === 'price-high' || sortBy === 'price-low'
-    if (isDateSort || isPriceSort) delete cacheRef.current[key]
-
-    const cached = cacheRef.current[key]
-
-    // Always cancel any in-flight request when filter/sort changes.
+    // Cancel any in-flight request when filter/sort changes.
     abortRef.current?.abort()
     reqIdRef.current++
 
+    const cached = cacheRef.current[key]
+
     if (cached) {
-      // Cache hit (non-date sorts): re-sort locally — zero network, zero flicker
+      // Cache hit: serve immediately, no network request
       setCards(sortCards(cached.rawCards, sortBy))
       setPage(1)
       setTotalPages(cached.totalPages ?? 0)
       setLoading(false)
     } else {
-      // Cache miss or date-sort bust: fresh fetch with current API orderBy
+      // Cache miss: fresh fetch with the correct API ordering for this sort
       setPage(1)
       setCards([])
       fetchCards(activeVibe, effectiveSearch, setQuery, sortBy, 1)
@@ -740,23 +698,24 @@ function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, user, on
   }, [activeVibe, effectiveSearch, setQuery, sortBy, fetchCards]) // eslint-disable-line react-hooks/exhaustive-deps
 
 
-  const saveCard = useCallback(async (card, owned, quantity = 1) => {
+  const saveCard = useCallback(async (card, owned, quantity = 1, edition = '') => {
     if (!user) return { error: new Error('Not signed in'), toast: '' }
 
     const normalizedQty = Math.max(1, quantity)
     const payload = {
       user_id:      user.id,
       card_id:      card.id,
-      name:         card._is1stEd ? `${card.name} â­` : card.name,
+      name:         card.name,
       image:        card.images?.small,
-      market_price: getCardPrice(card),
-      mid_price:    card.mid_price ?? null,
-      low_price:    card.low_price ?? null,
+      market_price: (edition && card.tcgplayer?.prices?.[edition]?.market) ?? getCardPrice(card),
+      mid_price:    (edition && card.tcgplayer?.prices?.[edition]?.mid)    ?? card.mid_price ?? null,
+      low_price:    (edition && card.tcgplayer?.prices?.[edition]?.low)    ?? card.low_price ?? null,
       owned,
+      edition:      edition || null,
     }
     if (owned) payload.quantity = normalizedQty
 
-    let toast = owned ? 'Added to Collection! âœ¨ðŸ“¦' : 'Added to Wishlist! ðŸ’–'
+    let toast = owned ? 'Added to Collection! ✨📦' : 'Added to Wishlist! 💖'
 
     if (owned) {
       const { data: existing, error: existingError } = await supabase
@@ -773,14 +732,14 @@ function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, user, on
       if (existing?.owned) {
         payload.quantity = (existing.quantity || 1) + normalizedQty
         toast = normalizedQty === 1
-          ? 'Added another copy to Collection! âœ¨ðŸ“¦'
-          : `Added ${normalizedQty} more copies to Collection! âœ¨ðŸ“¦`
+          ? 'Added another copy to Collection! ✨📦'
+          : `Added ${normalizedQty} more copies to Collection! ✨📦`
       } else if (existing) {
         toast = normalizedQty === 1
-          ? 'Moved to Collection! âœ¨ðŸ“¦'
-          : `Moved to Collection with ${normalizedQty} copies! âœ¨ðŸ“¦`
+          ? 'Moved to Collection! ✨📦'
+          : `Moved to Collection with ${normalizedQty} copies! ✨📦`
       } else if (normalizedQty > 1) {
-        toast = `Added ${normalizedQty} copies to Collection! âœ¨ðŸ“¦`
+        toast = `Added ${normalizedQty} copies to Collection! ✨📦`
       }
     }
 
@@ -800,7 +759,7 @@ function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, user, on
     /*
       user_id:      user.id,
       card_id:      card.id,
-      name:         card._is1stEd ? `${card.name} ⭐` : card.name,
+      name:         card.name,
     if (!error) { onCardAdded?.(card.id, owned); onToast(owned ? 'Added to Collection! ✨📦' : 'Added to Wishlist! 💖') }
     */
     if (!error) { onCardAdded?.(card.id, owned); onToast(toast) }
@@ -859,7 +818,8 @@ function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, user, on
         </div>
       )}
 
-      {loading && cards.length > 0 && (
+
+{loading && cards.length > 0 && (
         <div className="flex justify-center py-8">
           <motion.div
             className="w-10 h-10 rounded-full border-4 border-pink-300 border-t-pink-500"

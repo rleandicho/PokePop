@@ -69,75 +69,63 @@ function PaginationBar({ currentPage, totalPages, onPageChange }) {
 // ─── Pagination constant ──────────────────────────────────────────────────────
 const ITEMS_PER_PAGE = 20
 
-// ─── High Rollers ─────────────────────────────────────────────────────────────
-function HighRollers({ items }) {
-  const top3 = [...items]
-    .filter(i => (i.manual_price || i.market_price || i.mid_price || i.low_price || 0) > 0)
-    .sort((a, b) => {
-      const pa = a.manual_price || a.market_price || a.mid_price || a.low_price || 0
-      const pb = b.manual_price || b.market_price || b.mid_price || b.low_price || 0
-      return pb - pa
-    })
-    .slice(0, 3)
+// ─── Three showcase panels side-by-side ──────────────────────────────────────
+function ShowcasePanels({ items }) {
+  const price = i => i.manual_price || i.market_price || i.mid_price || i.low_price || 0
+  const owned  = items.filter(i => i.owned)
 
-  if (!top3.length) return null
+  const top3      = [...owned].filter(i => price(i) > 0).sort((a, b) => price(b) - price(a)).slice(0, 3)
+  const chaseCards    = items.filter(i => i.is_chase)
+  const favoriteCards = owned.filter(i => i.is_favorite)
+
+  if (!top3.length && !chaseCards.length && !favoriteCards.length) return null
 
   return (
-    <div className="max-w-md mx-auto px-4 pb-4">
-      <div className="p-4 rounded-2xl border border-yellow-200 bg-gradient-to-r from-yellow-50 to-amber-50 shadow-sm">
-        <p className="text-xs font-semibold text-amber-500 uppercase tracking-wide mb-3">👑 Top High-Rollers</p>
-        <div className="flex gap-3 justify-center flex-wrap">
-          {top3.map((item, i) => {
-            const p = item.manual_price || item.market_price || item.mid_price || item.low_price || 0
-            return (
-              <motion.div
-                key={item.card_id}
-                initial={{ opacity: 0, scale: 0.8 }}
-                animate={{ opacity: 1, scale: 1 }}
-                transition={{ delay: i * 0.12 }}
-                className="flex flex-col items-center gap-1"
-              >
+    <div className="max-w-2xl mx-auto px-4 pb-4 flex gap-3 overflow-x-auto scrollbar-none">
+      {top3.length > 0 && (
+        <div className="flex-1 min-w-[140px] p-3 rounded-2xl border border-yellow-200 bg-gradient-to-b from-yellow-50 to-amber-50 shadow-sm">
+          <p className="text-[10px] font-semibold text-amber-500 uppercase tracking-wide mb-2">👑 High-Rollers</p>
+          <div className="flex gap-2 justify-center flex-wrap">
+            {top3.map((item, i) => (
+              <motion.div key={item.card_id} initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: i * 0.1 }} className="flex flex-col items-center gap-1">
                 <div className="relative">
-                  {i === 0 && <span className="absolute -top-2 -right-2 text-base z-10">👑</span>}
-                  <img src={item.image} alt={item.name} className="w-16 rounded-xl shadow-md border-2 border-yellow-300" />
+                  {i === 0 && <span className="absolute -top-2 -right-2 text-sm z-10">👑</span>}
+                  <img src={item.image} alt={item.name} className="w-14 rounded-xl shadow-md border-2 border-yellow-300" />
                 </div>
-                <p className="text-xs font-bold text-gray-600 text-center max-w-[64px] truncate">{item.name}</p>
-                <span className="text-xs font-semibold text-amber-600 bg-amber-100 px-2 py-0.5 rounded-full">
-                  ${p.toFixed(2)}
-                </span>
+                <p className="text-[10px] font-bold text-gray-600 text-center w-14 truncate">{item.name}</p>
               </motion.div>
-            )
-          })}
+            ))}
+          </div>
         </div>
-      </div>
-    </div>
-  )
-}
+      )}
 
-// ─── Chase Cards ──────────────────────────────────────────────────────────────
-function ChaseCards({ items }) {
-  const chaseCards = items.filter(i => i.is_chase)
-  if (!chaseCards.length) return null
-  return (
-    <div className="max-w-md mx-auto px-4 pb-4">
-      <div className="p-4 rounded-2xl border border-pink-200 bg-gradient-to-r from-pink-50 to-rose-50 shadow-sm">
-        <p className="text-xs font-semibold text-pink-500 uppercase tracking-wide mb-3">🎯 Chase Cards</p>
-        <div className="flex gap-3 justify-center flex-wrap">
-          {chaseCards.map((item, i) => (
-            <motion.div
-              key={item.card_id}
-              initial={{ opacity: 0, scale: 0.8 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ delay: i * 0.1 }}
-              className="flex flex-col items-center gap-1"
-            >
-              <img src={item.image} alt={item.name} className="w-16 rounded-xl shadow-md border-2 border-pink-300" />
-              <p className="text-xs font-bold text-gray-600 text-center max-w-[64px] truncate">{item.name}</p>
-              <span className="text-[9px] font-semibold text-pink-500 bg-pink-100 px-2 py-0.5 rounded-full">hunting</span>
-            </motion.div>
-          ))}
+      {chaseCards.length > 0 && (
+        <div className="flex-1 min-w-[140px] p-3 rounded-2xl border border-pink-200 bg-gradient-to-b from-pink-50 to-rose-50 shadow-sm">
+          <p className="text-[10px] font-semibold text-pink-500 uppercase tracking-wide mb-2">🎯 Chase Cards</p>
+          <div className="flex gap-2 justify-center flex-wrap">
+            {chaseCards.map((item, i) => (
+              <motion.div key={item.card_id} initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: i * 0.1 }} className="flex flex-col items-center gap-1">
+                <img src={item.image} alt={item.name} className="w-14 rounded-xl shadow-md border-2 border-pink-300" />
+                <p className="text-[10px] font-bold text-gray-600 text-center w-14 truncate">{item.name}</p>
+              </motion.div>
+            ))}
+          </div>
         </div>
-      </div>
+      )}
+
+      {favoriteCards.length > 0 && (
+        <div className="flex-1 min-w-[140px] p-3 rounded-2xl border border-indigo-200 bg-gradient-to-b from-indigo-50 to-violet-50 shadow-sm">
+          <p className="text-[10px] font-semibold text-indigo-500 uppercase tracking-wide mb-2">⭐ Favourites</p>
+          <div className="flex gap-2 justify-center flex-wrap">
+            {favoriteCards.map((item, i) => (
+              <motion.div key={item.card_id} initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: i * 0.1 }} className="flex flex-col items-center gap-1">
+                <img src={item.image} alt={item.name} className="w-14 rounded-xl shadow-md border-2 border-indigo-300" />
+                <p className="text-[10px] font-bold text-gray-600 text-center w-14 truncate">{item.name}</p>
+              </motion.div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -196,7 +184,7 @@ export default function PublicWishlist() {
         fetchAllRows(() =>
           supabase
             .from('wishlists')
-            .select('card_id, name, image, owned, market_price, mid_price, low_price, manual_price, slot_index, binder_id, is_chase, quantity')
+            .select('card_id, name, image, owned, market_price, mid_price, low_price, manual_price, slot_index, binder_id, is_chase, is_favorite, quantity')
             .eq('user_id', userId)
             .order('slot_index', { ascending: true, nullsFirst: false })
         ),
@@ -486,9 +474,8 @@ export default function PublicWishlist() {
         </div>
       </div>
 
-      {/* ── High Rollers + Chase Cards ─────────────────────────────────────── */}
-      <HighRollers items={items.filter(i => i.owned)} />
-      <ChaseCards items={items} />
+      {/* ── Showcase panels (High-Rollers · Chase · Favourites) ────────────── */}
+      <ShowcasePanels items={items} />
 
       {/* ── Tab bar ────────────────────────────────────────────────────────── */}
       <div className="flex justify-center gap-2 px-4 pt-1 pb-3 flex-wrap">

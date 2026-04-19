@@ -58,7 +58,7 @@ function StatCard({ label, value, prefix = '', suffix = '', decimals = 0, color 
   return (
     <motion.div
       initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}
-      className={`stat-card rounded-2xl border bg-gradient-to-br p-4 shadow-sm ${palette[color]}`}
+      className={`stat-card h-full rounded-2xl border bg-gradient-to-br p-4 shadow-sm ${palette[color]}`}
     >
       <p className="text-2xl mb-1">{icon}</p>
       <p className="text-xs text-gray-400 font-medium uppercase tracking-wide mb-0.5">{label}</p>
@@ -89,79 +89,110 @@ function ProgressBar({ owned, total }) {
   )
 }
 
-// ─── Top 3 high-rollers ───────────────────────────────────────────────────────
-function HighRollers({ items }) {
-  const top3 = [...items]
-    .filter(i => getDisplayPrice(i) > 0)
-    .sort((a, b) => getDisplayPrice(b) - getDisplayPrice(a))
-    .slice(0, 3)
-
-  if (!top3.length) return null
-
+// ─── Shared card mini-display used by all three showcase panels ──────────────
+function ShowcaseCard({ item, badge, borderColor, delay }) {
   return (
-    <div className="info-panel mx-4 mb-4 p-4 rounded-2xl border border-yellow-200 bg-gradient-to-r from-yellow-50 to-amber-50 shadow-sm">
-      <p className="text-xs font-semibold text-amber-500 uppercase tracking-wide mb-3">👑 Top High-Rollers</p>
-      <div className="flex gap-3 justify-center flex-wrap">
-        {top3.map((item, i) => (
-          <motion.div
-            key={item.card_id}
-            initial={{ opacity: 0, scale: 0.8 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ delay: i * 0.12 }}
-            className="flex flex-col items-center gap-1"
-          >
-            <div className="relative">
-              {i === 0 && (
-                <span className="absolute -top-2 -right-2 text-base z-10">👑</span>
-              )}
-              <img
-                src={item.image}
-                alt={item.name}
-                className="w-16 rounded-xl shadow-md border-2 border-yellow-300"
-              />
-            </div>
-            <p className="text-xs font-bold text-gray-600 text-center max-w-[64px] truncate">{item.name}</p>
-            <span className="text-xs font-semibold text-amber-600 bg-amber-100 px-2 py-0.5 rounded-full">
-              ${getDisplayPrice(item).toFixed(2)}
-            </span>
-          </motion.div>
-        ))}
+    <motion.div
+      initial={{ opacity: 0, scale: 0.8 }}
+      animate={{ opacity: 1, scale: 1 }}
+      transition={{ delay }}
+      className="flex flex-col items-center gap-1"
+    >
+      <div className="relative">
+        {badge}
+        <img src={item.image} alt={item.name} className={`w-14 rounded-xl shadow-md border-2 ${borderColor}`} />
       </div>
-    </div>
+      <p className="text-[10px] font-bold text-gray-600 text-center w-14 truncate">{item.name}</p>
+    </motion.div>
   )
 }
 
-// ─── Chase cards showcase ─────────────────────────────────────────────────────
-// Displays up to 3 user-designated chase cards. Shown on both the dashboard and
-// the public profile so visitors can see what a trainer is actively hunting.
-function ChaseCards({ items }) {
-  const chaseCards = items.filter(i => i.is_chase)
-  if (!chaseCards.length) return null
+// ─── Three showcase panels rendered side-by-side ─────────────────────────────
+function ShowcasePanels({ ownedItems, allItems }) {
+  const top3 = [...ownedItems]
+    .filter(i => getDisplayPrice(i) > 0)
+    .sort((a, b) => getDisplayPrice(b) - getDisplayPrice(a))
+    .slice(0, 3)
+  const chaseCards    = allItems.filter(i => i.is_chase)
+  const favoriteCards = ownedItems.filter(i => i.is_favorite)
+
+  const hasHighRollers = top3.length > 0
+  const hasChase       = chaseCards.length > 0
+  const hasFavorites   = favoriteCards.length > 0
+
+  if (!hasHighRollers && !hasChase && !hasFavorites) return null
+
+  const LIMIT = 3
 
   return (
-    <div className="info-panel mx-4 mb-4 p-4 rounded-2xl border border-pink-200 bg-gradient-to-r from-pink-50 to-rose-50 shadow-sm">
-      <p className="text-xs font-semibold text-pink-500 uppercase tracking-wide mb-3">🎯 Chase Cards</p>
-      <div className="flex gap-3 justify-center flex-wrap">
-        {chaseCards.map((item, i) => (
-          <motion.div
-            key={item.card_id}
-            initial={{ opacity: 0, scale: 0.8 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ delay: i * 0.1 }}
-            className="flex flex-col items-center gap-1"
-          >
-            <img
-              src={item.image}
-              alt={item.name}
-              className="w-16 rounded-xl shadow-md border-2 border-pink-300"
-            />
-            <p className="text-xs font-bold text-gray-600 text-center max-w-[64px] truncate">{item.name}</p>
-            <span className="text-[9px] font-semibold text-pink-500 bg-pink-100 px-2 py-0.5 rounded-full">
-              hunting
+    <div className="px-4 mb-4 flex gap-3 overflow-x-auto scrollbar-none">
+      {hasHighRollers && (
+        <div className="flex-1 min-w-[140px] p-3 rounded-2xl border border-yellow-200 bg-gradient-to-b from-yellow-50 to-amber-50 shadow-sm">
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-[10px] font-semibold text-amber-500 uppercase tracking-wide">👑 High-Rollers</p>
+            <span className="text-[9px] font-bold text-amber-400 bg-amber-100 rounded-full px-1.5 py-0.5">
+              {top3.length}/{LIMIT}
             </span>
-          </motion.div>
-        ))}
-      </div>
+          </div>
+          <div className="flex gap-2 justify-center flex-wrap">
+            {top3.map((item, i) => (
+              <ShowcaseCard
+                key={item.card_id}
+                item={item}
+                borderColor="border-yellow-300"
+                delay={i * 0.1}
+                badge={i === 0 ? <span className="absolute -top-2 -right-2 text-sm z-10">👑</span> : null}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {hasChase && (
+        <div className="flex-1 min-w-[140px] p-3 rounded-2xl border border-pink-200 bg-gradient-to-b from-pink-50 to-rose-50 shadow-sm">
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-[10px] font-semibold text-pink-500 uppercase tracking-wide">🎯 Chase Cards</p>
+            <span className={`text-[9px] font-bold rounded-full px-1.5 py-0.5
+              ${chaseCards.length >= LIMIT ? 'bg-pink-200 text-pink-600' : 'bg-pink-100 text-pink-400'}`}>
+              {chaseCards.length}/{LIMIT}
+            </span>
+          </div>
+          <div className="flex gap-2 justify-center flex-wrap">
+            {chaseCards.map((item, i) => (
+              <ShowcaseCard
+                key={item.card_id}
+                item={item}
+                borderColor="border-pink-300"
+                delay={i * 0.1}
+                badge={null}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {hasFavorites && (
+        <div className="flex-1 min-w-[140px] p-3 rounded-2xl border border-indigo-200 bg-gradient-to-b from-indigo-50 to-violet-50 shadow-sm">
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-[10px] font-semibold text-indigo-500 uppercase tracking-wide">⭐ Favourites</p>
+            <span className={`text-[9px] font-bold rounded-full px-1.5 py-0.5
+              ${favoriteCards.length >= LIMIT ? 'bg-indigo-200 text-indigo-600' : 'bg-indigo-100 text-indigo-400'}`}>
+              {favoriteCards.length}/{LIMIT}
+            </span>
+          </div>
+          <div className="flex gap-2 justify-center flex-wrap">
+            {favoriteCards.map((item, i) => (
+              <ShowcaseCard
+                key={item.card_id}
+                item={item}
+                borderColor="border-indigo-300"
+                delay={i * 0.1}
+                badge={null}
+              />
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -750,14 +781,26 @@ function NewBinderModal({ onSave, onClose }) {
   )
 }
 
+// Human-readable labels for TCGPlayer price tier keys
+const EDITION_LABELS = {
+  '1stEditionHolofoil': '1st Ed Holofoil',
+  '1stEditionNormal':   '1st Ed Normal',
+  'holofoil':           'Holofoil',
+  'reverseHolofoil':    'Reverse Holofoil',
+  'normal':             'Normal',
+}
+function editionLabel(key) {
+  if (!key) return null
+  return EDITION_LABELS[key] ?? key.replace(/([A-Z])/g, ' $1').trim()
+}
+
 // ─── Wishlist card detail modal ───────────────────────────────────────────────
-// Shows the saved image + all stored price tiers + a TCGPlayer search link.
-// Uses the image already in the browser cache (no extra network request).
 function WishlistCardModal({ item, onClose }) {
-  const is1st = item.card_id?.endsWith('-1st')
-  // Build a price breakdown from whatever data is stored in Supabase
+  const versionLabel = editionLabel(item.edition)
+
+  // Stored prices with version context in the header
   const rows = [
-    item.manual_price && { label: 'Manual (Override)', value: item.manual_price },
+    item.manual_price && { label: 'Manual (Override)', value: item.manual_price, highlight: true },
     item.market_price && { label: 'Market',            value: item.market_price },
     item.mid_price    && { label: 'Mid',               value: item.mid_price    },
     item.low_price    && { label: 'Low',               value: item.low_price    },
@@ -786,22 +829,21 @@ function WishlistCardModal({ item, onClose }) {
         <img src={item.image} alt={item.name} className="w-full rounded-2xl mb-4 shadow-md" />
 
         <h2 className="text-xl font-bold text-pink-500 mb-0.5">{item.name}</h2>
-        {is1st && (
-          <span className="inline-block text-[10px] font-bold bg-amber-400 text-white
-                           border border-amber-500 px-2 py-0.5 rounded-full mb-2 shadow-sm">
-            ⭐ 1st Edition
-          </span>
-        )}
         <p className="text-sm text-gray-400 mb-3">
           {item.owned ? '📦 In your Collection' : '💖 On your Wishlist'}
         </p>
 
         {rows.length > 0 && (
-          <div className="mb-4 space-y-1 bg-pink-50 rounded-2xl p-3">
-            {rows.map(({ label, value }) => (
-              <div key={label} className="flex justify-between text-sm">
-                <span className="text-gray-500">{label}</span>
-                <span className="font-semibold text-pink-600">${Number(value).toFixed(2)}</span>
+          <div className="mb-4 rounded-2xl overflow-hidden border border-pink-100">
+            <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide px-3 pt-2.5 pb-1">
+              {versionLabel
+                ? <><span className="text-pink-500 font-bold">{versionLabel}</span> · Stored Prices</>
+                : 'Stored Prices'}
+            </p>
+            {rows.map(({ label, value, highlight }) => (
+              <div key={label} className={`flex justify-between items-center px-3 py-2 text-sm ${highlight ? 'bg-violet-50' : 'bg-white'}`}>
+                <span className={highlight ? 'text-violet-600 font-medium' : 'text-gray-500'}>{label}</span>
+                <span className={`font-bold ${highlight ? 'text-violet-600' : 'text-pink-600'}`}>${Number(value).toFixed(2)}</span>
               </div>
             ))}
           </div>
@@ -867,7 +909,7 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
           .from('wishlists')
           // edition column: run migration before this works →
           //   ALTER TABLE wishlists ADD COLUMN IF NOT EXISTS edition TEXT NOT NULL DEFAULT 'unlimited';
-          .select('card_id, name, image, owned, market_price, mid_price, low_price, manual_price, slot_index, binder_id, edition, is_chase, quantity')
+          .select('card_id, name, image, owned, market_price, mid_price, low_price, manual_price, slot_index, binder_id, edition, is_chase, is_favorite, quantity')
           .eq('user_id', user.id)
           .order('created_at', { ascending: false })
       ),
@@ -1223,6 +1265,15 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
       .eq('card_id', cardId)
   }
 
+  async function updateEdition(cardId, newEdition) {
+    setItems(prev => prev.map(i => i.card_id === cardId ? { ...i, edition: newEdition || null } : i))
+    await supabase
+      .from('wishlists')
+      .update({ edition: newEdition || null })
+      .eq('user_id', user.id)
+      .eq('card_id', cardId)
+  }
+
   async function toggleChase(cardId, currentVal) {
     const newVal = !currentVal
     if (newVal && items.filter(i => i.is_chase).length >= 3) {
@@ -1234,6 +1285,20 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
     await supabase
       .from('wishlists')
       .update({ is_chase: newVal })
+      .eq('user_id', user.id)
+      .eq('card_id', cardId)
+  }
+
+  async function toggleFavorite(cardId, currentVal) {
+    const newVal = !currentVal
+    if (newVal && items.filter(i => i.is_favorite).length >= 3) {
+      onToast('Max 3 favourites! Remove one first ⭐')
+      return
+    }
+    setItems(prev => prev.map(i => i.card_id === cardId ? { ...i, is_favorite: newVal } : i))
+    await supabase
+      .from('wishlists')
+      .update({ is_favorite: newVal })
       .eq('user_id', user.id)
       .eq('card_id', cardId)
   }
@@ -1536,18 +1601,66 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
           </div>
         )}
 
-        <motion.button
-          whileTap={{ scale: 0.92 }}
-          onClick={() => toggleChase(item.card_id, item.is_chase)}
-          className={`w-full text-xs font-semibold py-1 rounded-xl transition-all mt-1
-            ${item.is_chase
-              ? 'bg-pink-100 text-pink-500 hover:bg-pink-200 border border-pink-300'
-              : 'bg-white/70 text-gray-300 hover:bg-pink-50 hover:text-pink-400 border border-gray-200'
-            }`}
-          title={item.is_chase ? 'Remove from chase cards' : 'Mark as a chase card (max 3)'}
+        {/* Chase — wishlist cards only */}
+        {!item.owned && (() => {
+          const chaseCount  = items.filter(i => i.is_chase).length
+          const chaseAtMax  = !item.is_chase && chaseCount >= 3
+          return (
+            <motion.button
+              whileTap={chaseAtMax ? {} : { scale: 0.92 }}
+              onClick={() => toggleChase(item.card_id, item.is_chase)}
+              disabled={chaseAtMax}
+              className={`w-full text-xs font-semibold py-1 rounded-xl transition-all mt-1
+                ${item.is_chase
+                  ? 'bg-pink-100 text-pink-500 hover:bg-pink-200 border border-pink-300'
+                  : chaseAtMax
+                    ? 'bg-gray-50 text-gray-300 border border-gray-200 cursor-not-allowed opacity-50'
+                    : 'bg-white/70 text-gray-300 hover:bg-pink-50 hover:text-pink-400 border border-gray-200'
+                }`}
+              title={item.is_chase ? 'Remove from chase cards' : chaseAtMax ? 'Max 3 chase cards reached' : 'Mark as a chase card (max 3)'}
+            >
+              {item.is_chase ? '🎯 Chasing!' : chaseAtMax ? '🎯 Full (3/3)' : '🎯 Chase'}
+            </motion.button>
+          )
+        })()}
+
+        {/* Favourite — owned collection cards only */}
+        {item.owned && (() => {
+          const favCount   = items.filter(i => i.is_favorite).length
+          const favAtMax   = !item.is_favorite && favCount >= 3
+          return (
+            <motion.button
+              whileTap={favAtMax ? {} : { scale: 0.92 }}
+              onClick={() => toggleFavorite(item.card_id, item.is_favorite)}
+              disabled={favAtMax}
+              className={`w-full text-xs font-semibold py-1 rounded-xl transition-all mt-1
+                ${item.is_favorite
+                  ? 'bg-indigo-100 text-indigo-500 hover:bg-indigo-200 border border-indigo-300'
+                  : favAtMax
+                    ? 'bg-gray-50 text-gray-300 border border-gray-200 cursor-not-allowed opacity-50'
+                    : 'bg-white/70 text-gray-300 hover:bg-indigo-50 hover:text-indigo-400 border border-gray-200'
+                }`}
+              title={item.is_favorite ? 'Remove from favourites' : favAtMax ? 'Max 3 favourites reached' : 'Add to favourites (max 3)'}
+            >
+              {item.is_favorite ? '⭐ Favourite!' : favAtMax ? '⭐ Full (3/3)' : '⭐ Favourite'}
+            </motion.button>
+          )
+        })()}
+
+        {/* Version / edition selector */}
+        <select
+          value={item.edition ?? ''}
+          onChange={e => updateEdition(item.card_id, e.target.value)}
+          className="mt-2 w-full text-xs border border-gray-200 rounded-xl px-2 py-1.5
+                     bg-white/80 text-gray-500 focus:outline-none focus:ring-1 focus:ring-pink-300"
         >
-          {item.is_chase ? '🎯 Chasing!' : '🎯 Chase'}
-        </motion.button>
+          <option value="">Version: unspecified</option>
+          <option value="1stEditionHolofoil">1st Ed Holofoil</option>
+          <option value="1stEditionNormal">1st Ed Normal</option>
+          <option value="holofoil">Holofoil</option>
+          <option value="reverseHolofoil">Reverse Holofoil</option>
+          <option value="normal">Normal</option>
+        </select>
 
         {item.owned && binders.length > 0 ? (
           <select
@@ -1643,19 +1756,13 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
 
       {/* ── Shared stats + HighRollers (collection & wishlist tabs only) ── */}
       {(activeTab === 'collection' || activeTab === 'wishlist') && items.length > 0 && <>
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 p-4">
-          <StatCard icon="📦" label="Collection Value" value={collectionValue} color="mint"  prefix="$" decimals={2} />
-          <StatCard icon="✨" label="Wishlist Value"    value={wishlistValue}   color="blue"  prefix="$" decimals={2} />
-          <StatCard icon="💖" label="Total Cards"       value={totalCount}      color="pink"  />
-          <div className="stat-card rounded-2xl border border-violet-200 bg-gradient-to-br from-violet-100 to-purple-100 p-4 shadow-sm">
-            <p className="text-2xl mb-1">✅</p>
-            <p className="text-xs text-gray-400 font-medium uppercase tracking-wide mb-0.5">Collection Progress</p>
-            <p className="text-2xl font-bold text-gray-700">{ownedCount}<span className="text-base text-gray-400">/{totalCount}</span></p>
-            <ProgressBar owned={ownedCount} total={totalCount} />
-          </div>
+        <div className="flex items-stretch gap-3 px-4 pb-4 overflow-x-auto scrollbar-none">
+          <div className="flex flex-col flex-1 min-w-[130px]"><StatCard icon="📦" label="Collection Value" value={collectionValue} color="mint"  prefix="$" decimals={2} /></div>
+          <div className="flex flex-col flex-1 min-w-[130px]"><StatCard icon="✨" label="Wishlist Value"    value={wishlistValue}   color="lilac" prefix="$" decimals={2} /></div>
+          <div className="flex flex-col flex-1 min-w-[130px]"><StatCard icon="💖" label="Total Cards"       value={totalCount}      color="pink"  /></div>
+          <div className="flex flex-col flex-1 min-w-[130px]"><StatCard icon="✅" label="Collection Progress" value={totalCount > 0 ? Math.round((ownedCount / totalCount) * 100) : 0} color="lilac" suffix="%" /></div>
         </div>
-        <HighRollers items={ownedItemsList} />
-        <ChaseCards items={items} />
+        <ShowcasePanels ownedItems={ownedItemsList} allItems={items} />
       </>}
 
       {/* ── Collection / Wishlist sub-nav ──────────────────────────── */}
