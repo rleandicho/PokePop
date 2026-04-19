@@ -58,7 +58,7 @@ function StatCard({ label, value, prefix = '', suffix = '', decimals = 0, color 
   return (
     <motion.div
       initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}
-      className={`rounded-2xl border bg-gradient-to-br p-4 shadow-sm ${palette[color]}`}
+      className={`stat-card rounded-2xl border bg-gradient-to-br p-4 shadow-sm ${palette[color]}`}
     >
       <p className="text-2xl mb-1">{icon}</p>
       <p className="text-xs text-gray-400 font-medium uppercase tracking-wide mb-0.5">{label}</p>
@@ -99,7 +99,7 @@ function HighRollers({ items }) {
   if (!top3.length) return null
 
   return (
-    <div className="mx-4 mb-4 p-4 rounded-2xl border border-yellow-200 bg-gradient-to-r from-yellow-50 to-amber-50 shadow-sm">
+    <div className="info-panel mx-4 mb-4 p-4 rounded-2xl border border-yellow-200 bg-gradient-to-r from-yellow-50 to-amber-50 shadow-sm">
       <p className="text-xs font-semibold text-amber-500 uppercase tracking-wide mb-3">👑 Top High-Rollers</p>
       <div className="flex gap-3 justify-center flex-wrap">
         {top3.map((item, i) => (
@@ -139,7 +139,7 @@ function ChaseCards({ items }) {
   if (!chaseCards.length) return null
 
   return (
-    <div className="mx-4 mb-4 p-4 rounded-2xl border border-pink-200 bg-gradient-to-r from-pink-50 to-rose-50 shadow-sm">
+    <div className="info-panel mx-4 mb-4 p-4 rounded-2xl border border-pink-200 bg-gradient-to-r from-pink-50 to-rose-50 shadow-sm">
       <p className="text-xs font-semibold text-pink-500 uppercase tracking-wide mb-3">🎯 Chase Cards</p>
       <div className="flex gap-3 justify-center flex-wrap">
         {chaseCards.map((item, i) => (
@@ -822,15 +822,16 @@ function WishlistCardModal({ item, onClose }) {
 }
 
 // ─── Main dashboard ──────────────────────────────────────────────────────────
-export default function WishlistDashboard({ user, onToast, onGoExplore, onBinderChange, initialTab = 'collection' }) {
+export default function WishlistDashboard({ user, onToast, onGoExplore, onBinderChange, initialTab = 'collection', onCardRemoved, onOwnedChanged }) {
   const [items,        setItems]        = useState([])
   const [loading,      setLoading]      = useState(true)
   const [selectedItem, setSelectedItem] = useState(null)
   const [isPublic,  setIsPublic]  = useState(false)
   const [toggling,  setToggling]  = useState(false)
   const [copied,    setCopied]    = useState(false)
-  const [activeTab,        setActiveTab]        = useState(initialTab)  // 'collection' | 'wishlist' | 'binder' | 'trainers'
+  const [activeTab,        setActiveTab]        = useState(initialTab)  // 'collection' | 'wishlist' | 'binder' | 'trainers' | 'followers'
   const [followedTrainers, setFollowedTrainers] = useState([])
+  const [followers,        setFollowers]        = useState([])  // users who follow me
   // 1st Edition is determined by card_id suffix ("-1st") — no toggle, no runtime Sets needed
 
   // ── Binder state ──────────────────────────────────────────────────────────
@@ -849,6 +850,7 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
   const [collectionPage, setCollectionPage] = useState(1)
   const [wishlistPage,   setWishlistPage]   = useState(1)
   const [cardSearch,     setCardSearch]     = useState('')
+  const [cardSort,       setCardSort]       = useState('newest')  // 'newest' | 'oldest'
 
   // Notify App whenever the active binder changes (so CardGrid can route new cards here)
   useEffect(() => { onBinderChange?.(selectedBinder?.id ?? null) }, [selectedBinder])
@@ -858,8 +860,8 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
   async function fetchWishlist() {
     if (!user) return
 
-    // Single round-trip: wishlist + profile + follow IDs + binders all at once
-    const [wishlist, { data: prof }, followData, { data: binderData }] = await Promise.all([
+    // Single round-trip: wishlist + profile + follow IDs + binders + followers + blocks all at once
+    const [wishlist, { data: prof }, followData, { data: binderData }, followersData] = await Promise.all([
       fetchAllRows(() =>
         supabase
           .from('wishlists')
@@ -879,12 +881,19 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
           .from('follows')
           .select('following_id')
           .eq('follower_id', user.id)
+          .order('created_at', { ascending: false })
       ),
       supabase
         .from('binders')
         .select('id, name, color, cover_color, page_style')
         .eq('user_id', user.id)
         .order('created_at', { ascending: true }),
+      fetchAllRows(() =>
+        supabase
+          .from('follows')
+          .select('follower_id')
+          .eq('following_id', user.id)
+      ),
     ])
 
     setItems(wishlist ?? [])
@@ -940,23 +949,38 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
         cardsByUser[card.user_id].push(card)
       }
 
+      // Re-sort profiles to match followedIds order (newest follow first)
+      const profileById = Object.fromEntries((followedProfiles ?? []).map(p => [p.id, p]))
       setFollowedTrainers(
-        (followedProfiles ?? []).map(p => {
-          const all = cardsByUser[p.id] ?? []
-          // Top 3 owned cards by market_price descending; null/0 prices sort to the end
-          const topOwned = all
-            .filter(c => c.owned)
-            .sort((a, b) => (b.market_price ?? 0) - (a.market_price ?? 0))
-            .slice(0, 3)
-          // Top 3 most-recently-added wishlist cards (DB already sorted created_at DESC)
-          const topWishlist = all
-            .filter(c => !c.owned)
-            .slice(0, 3)
-          return { ...p, topOwned, topWishlist }
-        })
+        followedIds
+          .map(id => profileById[id])
+          .filter(Boolean)
+          .map(p => {
+            const all = cardsByUser[p.id] ?? []
+            const topOwned = all
+              .filter(c => c.owned)
+              .sort((a, b) => (b.market_price ?? 0) - (a.market_price ?? 0))
+              .slice(0, 3)
+            const topWishlist = all
+              .filter(c => !c.owned)
+              .slice(0, 3)
+            return { ...p, topOwned, topWishlist }
+          })
       )
     } else {
       setFollowedTrainers([])
+    }
+
+    // Fetch profiles for users who follow me
+    const followerIds = (followersData ?? []).map(f => f.follower_id)
+    if (followerIds.length > 0) {
+      const { data: followerProfiles } = await supabase
+        .from('profiles')
+        .select('id, username')
+        .in('id', followerIds)
+      setFollowers(followerProfiles ?? [])
+    } else {
+      setFollowers([])
     }
 
     setLoading(false)
@@ -981,18 +1005,19 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
     [wishlistItemsList]
   )
 
-  // Search-filtered views
+  // Search-filtered + sorted views
+  // Items are fetched created_at DESC (newest first); 'oldest' just reverses that slice.
   const filteredOwnedItems = useMemo(() => {
-    if (!cardSearch.trim()) return ownedItemsList
-    const q = cardSearch.toLowerCase()
-    return ownedItemsList.filter(i => i.name?.toLowerCase().includes(q))
-  }, [ownedItemsList, cardSearch])
+    const q = cardSearch.trim().toLowerCase()
+    const filtered = q ? ownedItemsList.filter(i => i.name?.toLowerCase().includes(q)) : ownedItemsList
+    return cardSort === 'oldest' ? [...filtered].reverse() : filtered
+  }, [ownedItemsList, cardSearch, cardSort])
 
   const filteredWishlistItems = useMemo(() => {
-    if (!cardSearch.trim()) return wishlistItemsList
-    const q = cardSearch.toLowerCase()
-    return wishlistItemsList.filter(i => i.name?.toLowerCase().includes(q))
-  }, [wishlistItemsList, cardSearch])
+    const q = cardSearch.trim().toLowerCase()
+    const filtered = q ? wishlistItemsList.filter(i => i.name?.toLowerCase().includes(q)) : wishlistItemsList
+    return cardSort === 'oldest' ? [...filtered].reverse() : filtered
+  }, [wishlistItemsList, cardSearch, cardSort])
 
   async function togglePublic() {
     const next = !isPublic
@@ -1156,17 +1181,18 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
   }
 
   async function toggleOwned(cardId, currentOwned) {
-    // Optimistic update
-    setItems(prev => prev.map(i => i.card_id === cardId ? { ...i, owned: !currentOwned } : i))
+    const newOwned = !currentOwned
+    setItems(prev => prev.map(i => i.card_id === cardId ? { ...i, owned: newOwned } : i))
     const { error } = await supabase
       .from('wishlists')
-      .update({ owned: !currentOwned })
+      .update({ owned: newOwned })
       .eq('user_id', user.id)
       .eq('card_id', cardId)
     if (error) {
       setItems(prev => prev.map(i => i.card_id === cardId ? { ...i, owned: currentOwned } : i))
     } else {
-      onToast(!currentOwned ? 'Added to Collection! ✨📦' : 'Moved back to Wishlist 💖')
+      onOwnedChanged?.(cardId, newOwned)
+      onToast(newOwned ? 'Added to Collection! ✨📦' : 'Moved back to Wishlist 💖')
     }
   }
 
@@ -1212,9 +1238,30 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
       .eq('card_id', cardId)
   }
 
+  async function removeFollower(followerId) {
+    await supabase
+      .from('follows')
+      .delete()
+      .eq('follower_id', followerId)
+      .eq('following_id', user.id)
+    setFollowers(prev => prev.filter(f => f.id !== followerId))
+    onToast('Follower removed ✓')
+  }
+
+  async function blockUser(targetId) {
+    await Promise.all([
+      supabase.from('follows').delete()
+        .eq('follower_id', targetId).eq('following_id', user.id),
+      supabase.from('blocks').insert({ blocker_id: user.id, blocked_id: targetId }),
+    ])
+    setFollowers(prev => prev.filter(f => f.id !== targetId))
+    onToast('User blocked 🚫')
+  }
+
   async function removeCard(cardId) {
     setItems(prev => prev.filter(i => i.card_id !== cardId))
     await supabase.from('wishlists').delete().eq('user_id', user.id).eq('card_id', cardId)
+    onCardRemoved?.(cardId)
     onToast('Removed from Wishlist & Collection')
   }
 
@@ -1348,11 +1395,7 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
       layout
       variants={{ hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0 } }}
       exit={{ opacity: 0, scale: 0.85 }}
-      className="rounded-2xl overflow-hidden shadow-md relative"
-      style={{
-        background: item.owned ? 'rgba(236,253,245,0.95)' : 'rgba(238,233,255,0.92)',
-        border:     item.owned ? '1.5px solid #6ee7b7'    : '1.5px solid #a78bfa',
-      }}
+      className={`rounded-2xl overflow-hidden shadow-md relative ${item.owned ? 'tile-owned' : 'tile-wishlist'}`}
     >
       <button
         onClick={() => removeCard(item.card_id)}
@@ -1552,6 +1595,12 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
             isActive: activeTab === 'trainers',
             action:   () => { setActiveTab('trainers'); setCollectionPage(1); setWishlistPage(1) },
           },
+          {
+            id:       'followers',
+            label:    `Followers 🫂${followers.length ? ` · ${followers.length}` : ''}`,
+            isActive: activeTab === 'followers',
+            action:   () => { setActiveTab('followers'); setCollectionPage(1); setWishlistPage(1) },
+          },
         ].map(tab => (
           <motion.button
             key={tab.id}
@@ -1598,7 +1647,7 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
           <StatCard icon="📦" label="Collection Value" value={collectionValue} color="mint"  prefix="$" decimals={2} />
           <StatCard icon="✨" label="Wishlist Value"    value={wishlistValue}   color="blue"  prefix="$" decimals={2} />
           <StatCard icon="💖" label="Total Cards"       value={totalCount}      color="pink"  />
-          <div className="rounded-2xl border border-violet-200 bg-gradient-to-br from-violet-100 to-purple-100 p-4 shadow-sm">
+          <div className="stat-card rounded-2xl border border-violet-200 bg-gradient-to-br from-violet-100 to-purple-100 p-4 shadow-sm">
             <p className="text-2xl mb-1">✅</p>
             <p className="text-xs text-gray-400 font-medium uppercase tracking-wide mb-0.5">Collection Progress</p>
             <p className="text-2xl font-bold text-gray-700">{ownedCount}<span className="text-base text-gray-400">/{totalCount}</span></p>
@@ -1664,6 +1713,28 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
                            text-xs leading-none transition-colors"
               >✕</button>
             )}
+          </div>
+
+          {/* Sort toggle */}
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs font-medium" style={{ color: 'var(--app-text)', opacity: 0.6 }}>Sort:</span>
+            {[
+              { id: 'newest', label: 'Newest first' },
+              { id: 'oldest', label: 'Oldest first' },
+            ].map(opt => (
+              <motion.button
+                key={opt.id}
+                whileTap={{ scale: 0.95 }}
+                onClick={() => { setCardSort(opt.id); setCollectionPage(1); setWishlistPage(1) }}
+                className={`text-xs font-semibold px-3 py-1 rounded-full border transition-all
+                  ${cardSort === opt.id
+                    ? 'bg-pink-400 text-white border-pink-400'
+                    : 'bg-white/60 text-gray-500 border-gray-200 hover:bg-white/80'
+                  }`}
+              >
+                {opt.label}
+              </motion.button>
+            ))}
           </div>
         </div>
       )}
@@ -1829,6 +1900,81 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
               ))}
               {/* Support card anchored at the bottom of the list */}
               <SupportCard />
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Followers tab ─────────────────────────────────────────── */}
+      {activeTab === 'followers' && (
+        <div className="max-w-2xl mx-auto px-4 pb-16">
+          {followers.length === 0 ? (
+            <div className="flex flex-col items-center text-center mt-16 gap-3">
+              <p className="text-5xl">🫂</p>
+              <p className="font-bold text-lg" style={{ color: 'var(--app-accent)' }}>
+                No followers yet
+              </p>
+              <p className="text-sm" style={{ color: 'var(--app-text)', opacity: 0.7 }}>
+                Share your collection link so other trainers can follow you!
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-3 pt-2">
+              {followers.map(follower => {
+                const initial = follower.username?.[0]?.toUpperCase() ?? '?'
+                const shareUrl = `${window.location.origin}/share/${follower.id}`
+                return (
+                  <motion.div
+                    key={follower.id}
+                    initial={{ opacity: 0, y: 12 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="flex items-center gap-3 rounded-2xl border p-3 shadow-sm"
+                    style={{ background: 'var(--app-surface)', borderColor: 'var(--app-border)' }}
+                  >
+                    <div
+                      className="w-9 h-9 rounded-full flex-shrink-0 flex items-center justify-center
+                                 text-white font-bold text-sm"
+                      style={{ background: 'linear-gradient(135deg, #f9a8d4, #a78bfa)' }}
+                    >
+                      {initial}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-bold truncate" style={{ color: 'var(--app-text)' }}>
+                        {follower.username ?? 'Unknown Trainer'}
+                      </p>
+                      <a
+                        href={shareUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs font-medium hover:underline"
+                        style={{ color: 'var(--app-accent-soft)' }}
+                      >
+                        View profile →
+                      </a>
+                    </div>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <motion.button
+                        whileTap={{ scale: 0.95 }}
+                        onClick={() => removeFollower(follower.id)}
+                        className="text-xs font-semibold px-3 py-1.5 rounded-full border transition-colors
+                                   bg-white/60 hover:bg-gray-100 text-gray-500 hover:text-gray-700 border-gray-200"
+                        title="Remove follower"
+                      >
+                        Remove
+                      </motion.button>
+                      <motion.button
+                        whileTap={{ scale: 0.95 }}
+                        onClick={() => blockUser(follower.id)}
+                        className="text-xs font-semibold px-3 py-1.5 rounded-full border transition-colors
+                                   bg-white/60 hover:bg-red-50 text-red-400 hover:text-red-600 border-red-200"
+                        title="Block this user"
+                      >
+                        Block
+                      </motion.button>
+                    </div>
+                  </motion.div>
+                )
+              })}
             </div>
           )}
         </div>

@@ -1,4 +1,5 @@
 import { Component } from 'react'
+import { getStoredTheme } from '../lib/theme'
 
 export default class ErrorBoundary extends Component {
   constructor(props) {
@@ -12,14 +13,14 @@ export default class ErrorBoundary extends Component {
 
   render() {
     if (this.state.error) {
+      const isDark = getStoredTheme() === 'dark'
       return (
         <div
-          className="min-h-screen flex items-center justify-center p-8 text-center"
-          style={{ background: 'linear-gradient(135deg, #FFD1DC 0%, #FFF0F5 50%, #B2E2F2 100%)' }}
+          className={`theme-shell ${isDark ? 'dark-theme' : ''} min-h-screen flex items-center justify-center p-8 text-center`}
         >
-          <div>
+          <div className="theme-panel-strong rounded-3xl p-8 shadow-2xl max-w-md w-full">
             <p className="text-5xl mb-4">🌸</p>
-            <h1 className="text-2xl font-bold text-pink-500 mb-2">Oops! Something went wrong</h1>
+            <h1 className="text-2xl font-bold theme-heading mb-2">Oops! Something went wrong</h1>
             <p className="text-gray-400 text-sm mb-6 max-w-sm mx-auto">
               {this.state.error.message ?? 'An unexpected error occurred.'}
             </p>

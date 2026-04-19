@@ -5,8 +5,9 @@ import CardSkeleton from './CardSkeleton'
 import SearchBar from './SearchBar'
 import { FIRST_ED_SET_IDS, get1stEdPrice } from '../lib/sets'
 
-const PAGE_SIZE   = 20
-const CACHE_LIMIT = 10  // max unique filter combinations held in memory
+const PAGE_SIZE       = 20
+const PRICE_PAGE_SIZE = 100  // larger batch so price sorts have more priced cards to work with
+const CACHE_LIMIT     = 10   // max unique filter combinations held in memory
 
 // ─── Sort options ─────────────────────────────────────────────────────────────
 export const SORT_OPTIONS = [
@@ -31,6 +32,10 @@ const VIBE_QUERIES = {
   nature:      { type: 'grass' },
   // Full Art: catches Sword & Shield / older "Full Art" subtypes AND modern SV rarities
   fullart:     { query: '(subtypes:"Full Art" OR rarity:"Special Illustration Rare" OR rarity:"Illustration Rare" OR rarity:"Hyper Rare")' },
+  // Starters: all starter Pokémon and their evolutions across all 9 generations
+  starters: { query: '(name:bulbasaur OR name:ivysaur OR name:venusaur OR name:charmander OR name:charmeleon OR name:charizard OR name:squirtle OR name:wartortle OR name:blastoise OR name:chikorita OR name:bayleef OR name:meganium OR name:cyndaquil OR name:quilava OR name:typhlosion OR name:totodile OR name:croconaw OR name:feraligatr OR name:treecko OR name:grovyle OR name:sceptile OR name:torchic OR name:combusken OR name:blaziken OR name:mudkip OR name:marshtomp OR name:swampert OR name:turtwig OR name:grotle OR name:torterra OR name:chimchar OR name:monferno OR name:infernape OR name:piplup OR name:prinplup OR name:empoleon OR name:snivy OR name:servine OR name:serperior OR name:tepig OR name:pignite OR name:emboar OR name:oshawott OR name:dewott OR name:samurott OR name:chespin OR name:quilladin OR name:chesnaught OR name:fennekin OR name:braixen OR name:delphox OR name:froakie OR name:frogadier OR name:greninja OR name:rowlet OR name:dartrix OR name:decidueye OR name:litten OR name:torracat OR name:incineroar OR name:popplio OR name:brionne OR name:primarina OR name:grookey OR name:thwackey OR name:rillaboom OR name:scorbunny OR name:raboot OR name:cinderace OR name:sobble OR name:drizzile OR name:inteleon OR name:sprigatito OR name:floragato OR name:meowscarada OR name:fuecoco OR name:crocalor OR name:skeledirge OR name:quaxly OR name:quaxwell OR name:quaquaval)' },
+  // Dragons: TCG Dragon type + classic pre-Dragon-type-era dragon Pokémon (colorless era)
+  dragons: { query: '(types:dragon OR name:dratini OR name:dragonair OR name:dragonite OR name:kingdra OR name:rayquaza OR name:flygon OR name:vibrava OR name:trapinch OR name:altaria OR name:bagon OR name:shelgon OR name:salamence OR name:latias OR name:latios OR name:gible OR name:gabite OR name:garchomp OR name:axew OR name:fraxure OR name:haxorus OR name:deino OR name:zweilous OR name:hydreigon OR name:druddigon)' },
 }
 
 // Unlimited-only price lookup — explicitly skips all 1stEdition* tiers so unlimited
@@ -450,23 +455,10 @@ const CardTile = memo(function CardTile({ card, inList, isOwned, quickAdd, quick
 
   return (
     <motion.div
-      className="cursor-pointer rounded-2xl overflow-hidden shadow-md relative"
+      className={`cursor-pointer rounded-2xl overflow-hidden shadow-md relative ${
+        isOwned ? 'tile-owned' : inList ? 'tile-wishlist' : card._is1stEd ? 'tile-first-ed' : 'tile-default'
+      }`}
       style={{
-        // Opaque backgrounds instead of backdropFilter:blur — same look, far cheaper to paint
-        background: isOwned
-          ? 'rgba(236,253,245,0.95)'
-          : inList
-          ? 'rgba(238,233,255,0.95)'
-          : card._is1stEd
-          ? 'rgba(255,251,235,0.97)'
-          : 'rgba(255,255,255,0.92)',
-        border: isOwned
-          ? '1.5px solid #6ee7b7'
-          : inList
-          ? '1.5px solid #a78bfa'
-          : card._is1stEd
-          ? '1.5px solid #fbbf24'
-          : '1px solid rgba(255,255,255,0.6)',
         userSelect: 'none', WebkitUserSelect: 'none', WebkitTouchCallout: 'none', touchAction: 'manipulation',
       }}
       variants={{ hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0 } }}
@@ -510,6 +502,16 @@ const CardTile = memo(function CardTile({ card, inList, isOwned, quickAdd, quick
             title="Add more copies to Collection"
           >
             + {ownedQty} Cop{ownedQty === 1 ? 'y' : 'ies'}
+          </button>
+        )}
+        {inList && !isOwned && (
+          <button
+            onClick={e => quickAdd(e, card, true, 1)}
+            className="w-full mt-1 text-[10px] font-semibold py-1 rounded-xl
+                       bg-emerald-100 hover:bg-emerald-200 text-emerald-700 transition-colors"
+            title="Move to Collection"
+          >
+            ✅ Move to Collection
           </button>
         )}
         {!inList && (
@@ -608,7 +610,11 @@ function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, user, on
     const apiOrder = sort === 'oldest' ? 'set.releaseDate'
                    : sort === 'alpha'  ? 'name'
                    : '-set.releaseDate'   // newest, price-high, price-low
-    let url = `https://api.pokemontcg.io/v2/cards?page=${pg}&pageSize=${PAGE_SIZE}&orderBy=${encodeURIComponent(apiOrder)}&select=id,name,images,set,number,subtypes,rarity,tcgplayer,cardmarket`
+    // Price sorts use a larger page to ensure we get enough priced cards in the result set
+    // (newest cards often lack TCGPlayer prices, so 20 cards can yield mostly $0 rows)
+    const isPriceSort  = sort === 'price-high' || sort === 'price-low'
+    const effectivePSz = isPriceSort ? PRICE_PAGE_SIZE : PAGE_SIZE
+    let url = `https://api.pokemontcg.io/v2/cards?page=${pg}&pageSize=${effectivePSz}&orderBy=${encodeURIComponent(apiOrder)}&select=id,name,images,set,number,subtypes,rarity,tcgplayer,cardmarket`
     if (q) url += `&q=${encodeURIComponent(q)}`
 
     try {
@@ -619,7 +625,7 @@ function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, user, on
 
       const data = await res.json()
       const incoming = data.data ?? []
-      const total = Math.ceil((data.totalCount ?? 0) / PAGE_SIZE)
+      const total = Math.ceil((data.totalCount ?? 0) / effectivePSz)
 
       // ── Edition split — expand WotC-era cards into Unlimited + 1st Ed variants ──
       // The 1st Ed copy gets a -1st suffix on its ID so it is treated as a distinct
@@ -706,10 +712,12 @@ function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, user, on
     const key = buildCacheKey(activeVibe, effectiveSearch, setQuery)
     activeKeyRef.current = key
 
-    // Date sorts change the API orderBy → stale cache would be in the wrong server order,
-    // so evict the entry and force a fresh fetch.
-    const isDateSort = sortBy === 'oldest' || sortBy === 'newest'
-    if (isDateSort) delete cacheRef.current[key]
+    // Date sorts change the API orderBy → stale cache would be in the wrong server order.
+    // Price sorts use a different pageSize → cached 20-card results are insufficient.
+    // Both cases need a fresh fetch rather than re-sorting stale cache data.
+    const isDateSort  = sortBy === 'oldest' || sortBy === 'newest'
+    const isPriceSort = sortBy === 'price-high' || sortBy === 'price-low'
+    if (isDateSort || isPriceSort) delete cacheRef.current[key]
 
     const cached = cacheRef.current[key]
 
@@ -731,12 +739,6 @@ function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, user, on
     }
   }, [activeVibe, effectiveSearch, setQuery, sortBy, fetchCards]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Sort change: re-sort cached raw cards locally — instantaneous, no network call
-  useEffect(() => {
-    const key = activeKeyRef.current
-    const rawCards = key ? (cacheRef.current[key]?.rawCards ?? null) : null
-    if (rawCards) setCards(sortCards(rawCards, sortBy))
-  }, [sortBy])
 
   const saveCard = useCallback(async (card, owned, quantity = 1) => {
     if (!user) return { error: new Error('Not signed in'), toast: '' }
@@ -753,7 +755,6 @@ function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, user, on
       owned,
     }
     if (owned) payload.quantity = normalizedQty
-    if (activeBinderId) payload.binder_id = activeBinderId
 
     let toast = owned ? 'Added to Collection! âœ¨ðŸ“¦' : 'Added to Wishlist! ðŸ’–'
 

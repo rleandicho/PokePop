@@ -3,7 +3,9 @@ import { useParams, Link } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { supabase } from '../lib/supabase'
 import { fetchAllRows } from '../lib/fetchAllRows'
+import { getStoredTheme, applyTheme } from '../lib/theme'
 import BinderView from './BinderView'
+import ThemeToggle from './ThemeToggle'
 
 // ─── Pagination bar ───────────────────────────────────────────────────────────
 function PaginationBar({ currentPage, totalPages, onPageChange }) {
@@ -163,6 +165,9 @@ export default function PublicWishlist() {
   // Pagination
   const [collectionPage, setCollectionPage] = useState(1)
   const [wishlistPage,   setWishlistPage]   = useState(1)
+  const [themeMode,      setThemeMode]      = useState(() => getStoredTheme())
+
+  useEffect(() => { applyTheme(themeMode) }, [themeMode])
 
   useEffect(() => {
     async function load() {
@@ -256,10 +261,7 @@ export default function PublicWishlist() {
   // ── Shared shell ──────────────────────────────────────────────────────────
   function Shell({ children }) {
     return (
-      <div
-        className="min-h-screen"
-        style={{ background: 'linear-gradient(135deg, #FFD1DC 0%, #FFF0F5 50%, #B2E2F2 100%)' }}
-      >
+      <div className={`theme-shell ${themeMode === 'dark' ? 'dark-theme' : ''}`}>
         {children}
       </div>
     )
@@ -414,6 +416,12 @@ export default function PublicWishlist() {
     <Shell>
       {/* ── Header ─────────────────────────────────────────────────────────── */}
       <header className="text-center pt-8 pb-4 px-4 space-y-3">
+        <div className="flex justify-center">
+          <ThemeToggle
+            mode={themeMode}
+            onToggle={() => setThemeMode(prev => prev === 'dark' ? 'light' : 'dark')}
+          />
+        </div>
         <Link
           to="/"
           className="inline-flex items-center gap-1.5 bg-white/60 hover:bg-pink-100

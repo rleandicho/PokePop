@@ -1,12 +1,15 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
+import { motion } from 'framer-motion'
 import { supabase }        from './lib/supabase'
 import { fetchAllRows }    from './lib/fetchAllRows'
+import { getStoredTheme, applyTheme } from './lib/theme'
 import AestheticFilter     from './components/AestheticFilter'
 import CardGrid            from './components/CardGrid'
 import WishlistDashboard   from './components/WishlistDashboard'
 import HomePage            from './components/HomePage'
 import Auth                from './components/Auth'
 import Toast               from './components/Toast'
+import ThemeToggle         from './components/ThemeToggle'
 import UsernameSetup       from './components/UsernameSetup'
 import './index.css'
 
@@ -23,6 +26,9 @@ export default function App() {
   const [wishlistTab,    setWishlistTab]    = useState('collection') // which tab opens when navigating to wishlist
   const [collectionIds,  setCollectionIds]  = useState(new Set()) // all card IDs in wishlists table
   const [ownedIds,       setOwnedIds]       = useState(new Set()) // subset where owned = true
+  const [themeMode,      setThemeMode]      = useState(() => getStoredTheme())
+
+  useEffect(() => { applyTheme(themeMode) }, [themeMode])
 
   // ── Auth + profile ──────────────────────────────────────────────────────────
   useEffect(() => {
@@ -75,6 +81,14 @@ export default function App() {
     setOwnedIds(prev => { const n = new Set(prev); n.delete(cardId); return n })
   }
 
+  function handleOwnedChanged(cardId, isNowOwned) {
+    if (isNowOwned) {
+      setOwnedIds(prev => new Set([...prev, cardId]))
+    } else {
+      setOwnedIds(prev => { const n = new Set(prev); n.delete(cardId); return n })
+    }
+  }
+
   function handleUsernameSaved(username) {
     if (username) {
       setProfile(prev => ({ ...(prev ?? { id: user.id }), username }))
@@ -106,6 +120,7 @@ export default function App() {
   const showToast     = useCallback((msg) => setToast(msg), [])
   const isHome        = activeVibe === 'home'
   const isWishlist    = activeVibe === 'wishlist'
+  const isDark        = themeMode === 'dark'
 
   // ── Back-to-top visibility ──────────────────────────────────────────────────
   const [showBackTop, setShowBackTop] = useState(false)
@@ -118,7 +133,7 @@ export default function App() {
   const needsUsername = user && profileReady && !profile?.username && !skippedSetup
 
   return (
-    <div className="min-h-screen" style={{ background: 'linear-gradient(135deg, #FFD1DC 0%, #FFF0F5 50%, #B2E2F2 100%)' }}>
+    <div className={`theme-shell ${isDark ? 'dark-theme' : ''}`}>
 
       {/* ── Username setup modal ────────────────────────────────────────── */}
       {needsUsername && (
@@ -126,15 +141,28 @@ export default function App() {
       )}
 
       {/* ── Header ─────────────────────────────────────────────────────── */}
-      <header className="text-center pt-8 pb-2 px-4 space-y-2">
-        <button
+      <header className="text-center pt-8 pb-2 px-4 space-y-3">
+        <motion.button
           onClick={goHome}
-          className="text-4xl sm:text-5xl font-bold text-pink-500 drop-shadow-sm tracking-tight
-                     cursor-pointer bg-transparent border-none p-0 hover:opacity-80 transition-opacity"
+          whileHover={{ scale: 1.06 }}
+          whileTap={{ scale: 0.97 }}
+          className="text-5xl sm:text-6xl font-bold theme-heading drop-shadow-md tracking-tight
+                     cursor-pointer bg-transparent border-none p-0 transition-opacity
+                     inline-flex items-center gap-3"
+          title="Back to home"
         >
-          Poképop 🌸
-        </button>
-        <p className="text-pink-400 font-medium text-sm">
+          Poképop
+          <span
+            className={`theme-ball ${isDark ? 'luxury-ball' : 'love-ball'}`}
+            style={{ width: '0.8em', height: '0.8em', flexShrink: 0 }}
+          >
+            <span className="theme-ball__top" />
+            <span className="theme-ball__band" />
+            <span className="theme-ball__button" />
+            <span className="theme-ball__mark">{isDark ? 'L' : '♥'}</span>
+          </span>
+        </motion.button>
+        <p className="theme-subtle font-medium text-sm">
           Discover Pokémon cards by vibe ✨
         </p>
         <Auth user={user} username={profile?.username} />
@@ -172,6 +200,8 @@ export default function App() {
             onGoExplore={() => { setActiveVibe('girlypop'); setSetQuery(null) }}
             onBinderChange={setActiveBinderId}
             initialTab={wishlistTab}
+            onCardRemoved={handleCardRemoved}
+            onOwnedChanged={handleOwnedChanged}
           />
         ) : (
           <CardGrid
@@ -227,6 +257,13 @@ export default function App() {
       >
         ☕ Support on Ko-fi
       </a>
+
+      {/* ── Theme toggle FAB — fixed bottom-left on all screens ── */}
+      <ThemeToggle
+        mode={themeMode}
+        onToggle={() => setThemeMode(prev => prev === 'dark' ? 'light' : 'dark')}
+        className="fixed bottom-5 left-5 z-40 shadow-lg backdrop-blur-md"
+      />
 
       {/* Mobile: centered footer link so it never blocks "Load More" */}
       <footer className="sm:hidden text-center py-4 pb-6">

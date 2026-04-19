@@ -1,6 +1,27 @@
 @import url('https://fonts.googleapis.com/css2?family=Quicksand:wght@400;500;600;700&display=swap');
 @import "tailwindcss";
 
+:root {
+  --app-bg: linear-gradient(135deg, #FFD1DC 0%, #FFF0F5 50%, #B2E2F2 100%);
+  --app-text: #4b5563;
+  --app-accent: #ec4899;
+  --app-accent-soft: #f472b6;
+  --app-surface: rgba(255, 255, 255, 0.78);
+  --app-surface-strong: rgba(255, 255, 255, 0.9);
+  --app-border: rgba(244, 114, 182, 0.28);
+}
+
+body[data-theme='dark'],
+html[data-theme='dark'] {
+  --app-bg: radial-gradient(circle at top, #3b1b63 0%, #24133b 38%, #151227 100%);
+  --app-text: #d6d0e6;
+  --app-accent: #c084fc;
+  --app-accent-soft: #f0abfc;
+  --app-surface: rgba(25, 20, 39, 0.74);
+  --app-surface-strong: rgba(34, 26, 52, 0.9);
+  --app-border: rgba(192, 132, 252, 0.24);
+}
+
 * {
   font-family: 'Quicksand', sans-serif;
   box-sizing: border-box;
@@ -9,9 +30,268 @@
 body {
   margin: 0;
   min-height: 100vh;
-  background: linear-gradient(135deg, #FFD1DC 0%, #FFF0F5 50%, #B2E2F2 100%);
+  background: var(--app-bg);
+  color: var(--app-text);
+  transition: background 240ms ease, color 240ms ease;
 }
 
 #root {
   min-height: 100vh;
+}
+
+.theme-shell {
+  min-height: 100vh;
+  background: var(--app-bg);
+  color: var(--app-text);
+  transition: background 240ms ease, color 240ms ease;
+}
+
+.theme-panel {
+  background: var(--app-surface);
+  border: 1px solid var(--app-border);
+}
+
+.theme-panel-strong {
+  background: var(--app-surface-strong);
+  border: 1px solid var(--app-border);
+}
+
+.theme-heading {
+  color: var(--app-accent);
+}
+
+.theme-subtle {
+  color: var(--app-accent-soft);
+}
+
+.theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  padding: 10px;
+  border-radius: 999px;
+  border: 1px solid var(--app-border);
+  background: var(--app-surface);
+  color: var(--app-accent);
+  box-shadow: 0 10px 24px rgba(17, 24, 39, 0.1);
+  transition: transform 180ms ease, background 180ms ease, border-color 180ms ease;
+}
+
+.theme-toggle:hover {
+  transform: translateY(-1px);
+  background: var(--app-surface-strong);
+}
+
+.theme-toggle__text {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.theme-ball {
+  position: relative;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  overflow: hidden;
+  border: 2px solid rgba(17, 24, 39, 0.5);
+  flex-shrink: 0;
+}
+
+.theme-ball__top,
+.theme-ball__band,
+.theme-ball__button,
+.theme-ball__mark {
+  position: absolute;
+}
+
+.theme-ball__top {
+  inset: 0 0 50% 0;
+}
+
+.theme-ball__band {
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 4px;
+  transform: translateY(-50%);
+  background: #1f2937;
+}
+
+.theme-ball__button {
+  top: 50%;
+  left: 50%;
+  width: 10px;
+  height: 10px;
+  transform: translate(-50%, -50%);
+  border-radius: 999px;
+  border: 2px solid #1f2937;
+  background: #fff;
+  z-index: 2;
+}
+
+.theme-ball__mark {
+  top: 4px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  z-index: 2;
+}
+
+.love-ball {
+  background: #fff0f6;
+}
+
+.love-ball .theme-ball__top {
+  background: linear-gradient(180deg, #f9a8d4 0%, #f472b6 100%);
+}
+
+.love-ball .theme-ball__mark {
+  color: #fff;
+}
+
+.luxury-ball {
+  background: #20172d;
+}
+
+.luxury-ball .theme-ball__top {
+  background: linear-gradient(180deg, #2d2240 0%, #14101f 100%);
+}
+
+.luxury-ball .theme-ball__band {
+  background: linear-gradient(90deg, #eab308 0%, #fef08a 50%, #eab308 100%);
+}
+
+.luxury-ball .theme-ball__button {
+  border-color: #f59e0b;
+  background: #fef3c7;
+}
+
+.luxury-ball .theme-ball__mark {
+  color: #fef08a;
+}
+
+.dark-theme .bg-white,
+.dark-theme .bg-white\/90,
+.dark-theme .bg-white\/80,
+.dark-theme .bg-white\/70,
+.dark-theme .bg-white\/60,
+.dark-theme .bg-white\/50 {
+  background-color: rgba(34, 26, 52, 0.86) !important;
+}
+
+.dark-theme .text-pink-500,
+.dark-theme .text-pink-400,
+.dark-theme .text-pink-300 {
+  color: #e9b4ff !important;
+}
+
+.dark-theme .text-gray-700 {
+  color: #f3e8ff !important;
+}
+
+.dark-theme .text-gray-600 {
+  color: #ddd6fe !important;
+}
+
+.dark-theme .text-gray-500,
+.dark-theme .text-gray-400,
+.dark-theme .text-gray-300 {
+  color: #b9aed0 !important;
+}
+
+.dark-theme .border-pink-200,
+.dark-theme .border-pink-300,
+.dark-theme .border-gray-200,
+.dark-theme .border-violet-200,
+.dark-theme .border-emerald-200,
+.dark-theme .border-yellow-200,
+.dark-theme .border-amber-200 {
+  border-color: rgba(192, 132, 252, 0.22) !important;
+}
+
+.dark-theme .bg-pink-400 {
+  background-color: #a855f7 !important;
+}
+
+.dark-theme .hover\:bg-pink-500:hover {
+  background-color: #9333ea !important;
+}
+
+.dark-theme .bg-pink-100,
+.dark-theme .bg-pink-50,
+.dark-theme .bg-violet-100,
+.dark-theme .bg-violet-50,
+.dark-theme .bg-emerald-100,
+.dark-theme .bg-emerald-50,
+.dark-theme .bg-sky-50,
+.dark-theme .bg-yellow-50,
+.dark-theme .bg-amber-50,
+.dark-theme .bg-gray-100 {
+  background-color: rgba(62, 41, 92, 0.9) !important;
+}
+
+.dark-theme .text-violet-700,
+.dark-theme .text-violet-600,
+.dark-theme .text-emerald-700,
+.dark-theme .text-emerald-600,
+.dark-theme .text-amber-700,
+.dark-theme .text-amber-600,
+.dark-theme .text-sky-600 {
+  color: #d8b4fe !important;
+}
+
+.dark-theme .bg-gradient-to-br,
+.dark-theme .bg-gradient-to-r {
+  filter: saturate(0.82) brightness(0.92);
+}
+
+/* ── Stat cards ─────────────────────────────────────────────────────────── */
+.dark-theme .stat-card {
+  background: var(--app-surface-strong) !important;
+  filter: none !important;
+}
+
+/* ── Info panels (HighRollers, ChaseCards) ──────────────────────────────── */
+.dark-theme .info-panel {
+  background: var(--app-surface-strong) !important;
+  filter: none !important;
+}
+
+/* ── Card tile backgrounds ──────────────────────────────────────────────── */
+.tile-owned {
+  background: rgba(236,253,245,0.95);
+  border: 1.5px solid #6ee7b7;
+}
+.tile-wishlist {
+  background: rgba(238,233,255,0.92);
+  border: 1.5px solid #a78bfa;
+}
+.tile-first-ed {
+  background: rgba(255,251,235,0.97);
+  border: 1.5px solid #fbbf24;
+}
+.tile-default {
+  background: rgba(255,255,255,0.92);
+  border: 1px solid rgba(255,255,255,0.6);
+}
+
+.dark-theme .tile-owned {
+  background: rgba(10, 38, 28, 0.90) !important;
+  border: 1.5px solid #34d399 !important;
+}
+.dark-theme .tile-wishlist {
+  background: rgba(33, 20, 58, 0.90) !important;
+  border: 1.5px solid #a78bfa !important;
+}
+.dark-theme .tile-first-ed {
+  background: rgba(38, 28, 8, 0.90) !important;
+  border: 1.5px solid #fbbf24 !important;
+}
+.dark-theme .tile-default {
+  background: rgba(20, 16, 35, 0.88) !important;
+  border: 1px solid rgba(192,132,252,0.2) !important;
 }

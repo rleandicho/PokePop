@@ -3,7 +3,6 @@ import { motion, AnimatePresence } from 'framer-motion'
 
 // ─── Vibe definitions ─────────────────────────────────────────────────────────
 const VIBES = [
-  { id: 'home',        label: 'Home 🏠',               color: 'bg-pink-100 text-pink-600' },
   { id: 'all',         label: 'All Cards 🌐',          color: 'bg-sky-100 text-sky-700' },
   { id: 'girlypop',    label: 'Girlypop 🌸',           color: 'bg-pink-200 text-pink-700' },
   { id: 'space',       label: 'Space ✨',               color: 'bg-indigo-200 text-indigo-700' },
@@ -12,8 +11,12 @@ const VIBES = [
   { id: 'darkfairy',   label: 'Dark Fairy 🖤',          color: 'bg-purple-200 text-purple-700' },
   { id: 'nature',      label: 'Nature 🌱',              color: 'bg-emerald-200 text-emerald-700' },
   { id: 'fullart',     label: 'Full Art 🎨',            color: 'bg-fuchsia-200 text-fuchsia-700' },
-  { id: 'trainers',   label: 'Trainers & Supports 🃏',  color: 'bg-orange-100 text-orange-600'  },
+  { id: 'trainers',    label: 'Trainers & Supports 🃏', color: 'bg-orange-100 text-orange-600' },
+  { id: 'starters',    label: 'Starters 🔥',            color: 'bg-red-100 text-red-600' },
+  { id: 'dragons',     label: 'Dragons 🐉',             color: 'bg-blue-200 text-blue-700' },
 ]
+
+const WISHLIST_VIBE = { id: 'wishlist', label: 'Wishlist & Collection ✨📦', color: 'bg-rose-200 text-rose-700' }
 
 // ─── Sets cache — memory + localStorage with 24-hour TTL ─────────────────────
 const LS_KEY  = 'pokepop_sets_v4'   // bumped: POP Series + McDonald's added to promo group
@@ -97,10 +100,6 @@ function AestheticFilter({ active, onChange, setQuery, onSetQuery, user }) {
     })
   }, [setsOpen])
 
-  const vibes = user
-    ? [...VIBES, { id: 'wishlist', label: 'Wishlist & Collection ✨📦', color: 'bg-rose-200 text-rose-700' }]
-    : VIBES
-
   function handleVibe(id) {
     onSetQuery(null)
     // Toggling the active pill off snaps back to home, never leaves a null state
@@ -129,7 +128,7 @@ function AestheticFilter({ active, onChange, setQuery, onSetQuery, user }) {
 
       {/* ── Vibe pills ─────────────────────────────────────────────────── */}
       <div className="flex flex-wrap justify-center gap-2 py-3">
-        {vibes.map(v => (
+        {VIBES.map(v => (
           <motion.button
             key={v.id}
             whileHover={{ scale: 1.08 }} whileTap={{ scale: 0.95 }}
@@ -144,6 +143,23 @@ function AestheticFilter({ active, onChange, setQuery, onSetQuery, user }) {
           </motion.button>
         ))}
       </div>
+
+      {/* ── Wishlist & Collection — own row, logged-in users only ───────── */}
+      {user && (
+        <div className="flex justify-center pb-1">
+          <motion.button
+            whileHover={{ scale: 1.08 }} whileTap={{ scale: 0.95 }}
+            onClick={() => handleVibe(WISHLIST_VIBE.id)}
+            className={`px-4 py-2 rounded-full font-semibold text-sm transition-all shadow-sm
+              ${active === WISHLIST_VIBE.id
+                ? `${WISHLIST_VIBE.color} ring-2 ring-offset-1 ring-pink-400 shadow-md`
+                : 'bg-white/60 text-gray-500 hover:bg-white/80'
+              }`}
+          >
+            {WISHLIST_VIBE.label}
+          </motion.button>
+        </div>
+      )}
 
       {/* ── Browse Sets toggle ──────────────────────────────────────────── */}
       <div className="flex justify-center mb-1">
