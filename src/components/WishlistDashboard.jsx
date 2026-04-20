@@ -90,13 +90,15 @@ function ProgressBar({ owned, total }) {
 }
 
 // ─── Shared card mini-display used by all three showcase panels ──────────────
-function ShowcaseCard({ item, badge, borderColor, delay }) {
+function ShowcaseCard({ item, badge, borderColor, delay, onCardClick }) {
   return (
     <motion.div
       initial={{ opacity: 0, scale: 0.8 }}
       animate={{ opacity: 1, scale: 1 }}
+      whileHover={{ scale: 1.08 }}
       transition={{ delay }}
-      className="flex flex-col items-center gap-1"
+      className="flex flex-col items-center gap-1 cursor-pointer"
+      onClick={() => onCardClick?.(item)}
     >
       <div className="relative">
         {badge}
@@ -108,7 +110,7 @@ function ShowcaseCard({ item, badge, borderColor, delay }) {
 }
 
 // ─── Three showcase panels rendered side-by-side ─────────────────────────────
-function ShowcasePanels({ ownedItems, allItems }) {
+function ShowcasePanels({ ownedItems, allItems, onCardClick }) {
   const top3 = [...ownedItems]
     .filter(i => getDisplayPrice(i) > 0)
     .sort((a, b) => getDisplayPrice(b) - getDisplayPrice(a))
@@ -142,6 +144,7 @@ function ShowcasePanels({ ownedItems, allItems }) {
                 borderColor="border-yellow-300"
                 delay={i * 0.1}
                 badge={i === 0 ? <span className="absolute -top-2 -right-2 text-sm z-10">👑</span> : null}
+                onCardClick={onCardClick}
               />
             ))}
           </div>
@@ -165,6 +168,7 @@ function ShowcasePanels({ ownedItems, allItems }) {
                 borderColor="border-pink-300"
                 delay={i * 0.1}
                 badge={null}
+                onCardClick={onCardClick}
               />
             ))}
           </div>
@@ -188,6 +192,7 @@ function ShowcasePanels({ ownedItems, allItems }) {
                 borderColor="border-indigo-300"
                 delay={i * 0.1}
                 badge={null}
+                onCardClick={onCardClick}
               />
             ))}
           </div>
@@ -1435,14 +1440,17 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
   }
 
   async function moveCardToBinder(rowId, binderId) {
-    const prev_binder = items.find(i => i.id === rowId)?.binder_id
-    setItems(prev => prev.map(i => i.id === rowId ? { ...i, binder_id: binderId || null } : i))
+    const prev = items.find(i => i.id === rowId)
+    const prev_binder = prev?.binder_id
+    const prev_slot   = prev?.slot_index
+    // Reset slot_index so buildSlotArray places the card at the first open slot
+    setItems(cur => cur.map(i => i.id === rowId ? { ...i, binder_id: binderId || null, slot_index: null } : i))
     const { error } = await supabase
       .from('wishlists')
-      .update({ binder_id: binderId || null })
+      .update({ binder_id: binderId || null, slot_index: null })
       .eq('id', rowId)
     if (error) {
-      setItems(prev => prev.map(i => i.id === rowId ? { ...i, binder_id: prev_binder } : i))
+      setItems(cur => cur.map(i => i.id === rowId ? { ...i, binder_id: prev_binder, slot_index: prev_slot } : i))
       onToast('Could not move card 😿')
     }
   }
@@ -1834,7 +1842,7 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
           <StatCard icon="💖" label="Total Cards"       value={totalCount}      color="pink"  />
           <StatCard icon="✅" label="Collection Progress" value={totalCount > 0 ? Math.round((ownedCount / totalCount) * 100) : 0} color="lilac" suffix="%" />
         </div>
-        <ShowcasePanels ownedItems={ownedItemsList} allItems={items} />
+        <ShowcasePanels ownedItems={ownedItemsList} allItems={items} onCardClick={setSelectedItem} />
       </>}
 
       {/* ── Collection / Wishlist sub-nav ──────────────────────────── */}
@@ -2032,6 +2040,7 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
               binders={binders}
               onTransfer={moveCardToBinder}
               currentBinderId={selectedBinder.id}
+              onCardClick={setSelectedItem}
             />
           ) : (
             <p className="text-center text-pink-300 font-semibold mt-16 text-sm">

@@ -70,7 +70,7 @@ function PaginationBar({ currentPage, totalPages, onPageChange }) {
 const ITEMS_PER_PAGE = 20
 
 // ─── Three showcase panels side-by-side ──────────────────────────────────────
-function ShowcasePanels({ items }) {
+function ShowcasePanels({ items, onCardClick }) {
   const price = i => i.manual_price || i.market_price || i.mid_price || i.low_price || 0
   const owned  = items.filter(i => i.owned)
 
@@ -87,7 +87,7 @@ function ShowcasePanels({ items }) {
           <p className="text-[10px] font-semibold text-amber-500 uppercase tracking-wide mb-2">👑 High-Rollers</p>
           <div className="flex gap-2 justify-center flex-wrap">
             {top3.map((item, i) => (
-              <motion.div key={item.card_id} initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: i * 0.1 }} className="flex flex-col items-center gap-1">
+              <motion.div key={item.card_id} initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} whileHover={{ scale: 1.08 }} transition={{ delay: i * 0.1 }} className="flex flex-col items-center gap-1 cursor-pointer" onClick={() => onCardClick?.(item)}>
                 <div className="relative">
                   {i === 0 && <span className="absolute -top-2 -right-2 text-sm z-10">👑</span>}
                   <img src={item.image} alt={item.name} className="w-12 rounded-xl shadow-md border-2 border-yellow-300" />
@@ -104,7 +104,7 @@ function ShowcasePanels({ items }) {
           <p className="text-[10px] font-semibold text-pink-500 uppercase tracking-wide mb-2">🎯 Chase Cards</p>
           <div className="flex gap-2 justify-center flex-wrap">
             {chaseCards.map((item, i) => (
-              <motion.div key={item.card_id} initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: i * 0.1 }} className="flex flex-col items-center gap-1">
+              <motion.div key={item.card_id} initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} whileHover={{ scale: 1.08 }} transition={{ delay: i * 0.1 }} className="flex flex-col items-center gap-1 cursor-pointer" onClick={() => onCardClick?.(item)}>
                 <img src={item.image} alt={item.name} className="w-12 rounded-xl shadow-md border-2 border-pink-300" />
                 <p className="text-[10px] font-bold text-gray-600 text-center w-12 truncate">{item.name}</p>
               </motion.div>
@@ -118,7 +118,7 @@ function ShowcasePanels({ items }) {
           <p className="text-[10px] font-semibold text-indigo-500 uppercase tracking-wide mb-2">⭐ Favourites</p>
           <div className="flex gap-2 justify-center flex-wrap">
             {favoriteCards.map((item, i) => (
-              <motion.div key={item.card_id} initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: i * 0.1 }} className="flex flex-col items-center gap-1">
+              <motion.div key={item.card_id} initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} whileHover={{ scale: 1.08 }} transition={{ delay: i * 0.1 }} className="flex flex-col items-center gap-1 cursor-pointer" onClick={() => onCardClick?.(item)}>
                 <img src={item.image} alt={item.name} className="w-12 rounded-xl shadow-md border-2 border-indigo-300" />
                 <p className="text-[10px] font-bold text-gray-600 text-center w-12 truncate">{item.name}</p>
               </motion.div>
@@ -148,6 +148,7 @@ export default function PublicWishlist() {
   const [viewerWishlistIds, setViewerWishlistIds] = useState(new Set())
   const [savingCardId,      setSavingCardId]      = useState(null)
   const [miniToast,         setMiniToast]         = useState('')
+  const [selectedShowcaseItem, setSelectedShowcaseItem] = useState(null)
 
   // Binder navigation
   const [binders,        setBinders]        = useState([])
@@ -552,7 +553,7 @@ export default function PublicWishlist() {
       </div>
 
       {/* ── Showcase panels (High-Rollers · Chase · Favourites) ────────────── */}
-      <ShowcasePanels items={items} />
+      <ShowcasePanels items={items} onCardClick={setSelectedShowcaseItem} />
 
       {/* ── Tab bar ────────────────────────────────────────────────────────── */}
       <div className="flex justify-center gap-2 px-4 pt-1 pb-3 flex-wrap">
@@ -732,6 +733,7 @@ export default function PublicWishlist() {
             key={selectedBinder?.id ?? 'none'}
             items={items.filter(i => i.owned && i.binder_id === selectedBinder?.id)}
             readOnly
+            onCardClick={setSelectedShowcaseItem}
           />
 
           {selectedBinder && items.filter(i => i.owned && i.binder_id === selectedBinder.id).length === 0 && (
@@ -741,6 +743,89 @@ export default function PublicWishlist() {
           )}
         </main>
       )}
+      {/* ── Showcase card detail modal ──────────────────────────────────────── */}
+      <AnimatePresence>
+        {selectedShowcaseItem && (
+          <motion.div
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-y-auto"
+            style={{ background: 'rgba(255,209,220,0.78)' }}
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            onClick={() => setSelectedShowcaseItem(null)}
+          >
+            <motion.div
+              className="bg-white rounded-3xl shadow-2xl p-6 max-w-sm w-full my-auto relative"
+              initial={{ scale: 0.85, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.85, opacity: 0 }}
+              onClick={e => e.stopPropagation()}
+            >
+              <button
+                onClick={() => setSelectedShowcaseItem(null)}
+                className="absolute top-4 right-4 z-10 w-8 h-8 rounded-full bg-white/70 hover:bg-white
+                           text-gray-400 hover:text-gray-600 flex items-center justify-center
+                           shadow-sm transition-colors text-base leading-none"
+                aria-label="Close"
+              >✕</button>
+
+              <img src={selectedShowcaseItem.image} alt={selectedShowcaseItem.name} className="w-full rounded-2xl mb-4 shadow-md" />
+
+              <h2 className="text-xl font-bold text-pink-500 mb-0.5">{selectedShowcaseItem.name}</h2>
+              <p className="text-sm text-gray-400 mb-3">
+                {selectedShowcaseItem.owned ? '📦 In Collection' : '💖 On Wishlist'}
+                {selectedShowcaseItem.is_chase && ' · 🎯 Chase Card'}
+                {selectedShowcaseItem.is_favorite && ' · ⭐ Favourite'}
+              </p>
+
+              {(() => {
+                const item = selectedShowcaseItem
+                const displayPrice = item.manual_price || item.market_price || item.mid_price || item.low_price
+                const rows = [
+                  item.manual_price && { label: 'Manual (Override)', value: item.manual_price, highlight: true },
+                  item.market_price && { label: 'Market',            value: item.market_price },
+                  item.mid_price    && { label: 'Mid',               value: item.mid_price    },
+                  item.low_price    && { label: 'Low',               value: item.low_price    },
+                ].filter(Boolean)
+                return rows.length > 0 ? (
+                  <div className="mb-4 rounded-2xl overflow-hidden border border-pink-100">
+                    <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide px-3 pt-2.5 pb-1">Stored Prices</p>
+                    {rows.map(({ label, value, highlight }) => (
+                      <div key={label} className={`flex justify-between items-center px-3 py-2 text-sm ${highlight ? 'bg-violet-50' : 'bg-white'}`}>
+                        <span className={highlight ? 'text-violet-600 font-medium' : 'text-gray-500'}>{label}</span>
+                        <span className={`font-bold ${highlight ? 'text-violet-600' : 'text-pink-600'}`}>${Number(value).toFixed(2)}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : null
+              })()}
+
+              {viewer && !viewerOwnedIds.has(selectedShowcaseItem.card_id) && (
+                <div className="flex gap-2 mb-3">
+                  <button
+                    disabled={savingCardId === selectedShowcaseItem.card_id}
+                    onClick={() => { addToMyWishlist(selectedShowcaseItem, false); setSelectedShowcaseItem(null) }}
+                    className="flex-1 py-2 rounded-2xl text-sm font-semibold border border-pink-300
+                               bg-pink-50 text-pink-500 hover:bg-pink-100 transition-colors disabled:opacity-50"
+                  >💖 Want</button>
+                  <button
+                    disabled={savingCardId === selectedShowcaseItem.card_id}
+                    onClick={() => { addToMyWishlist(selectedShowcaseItem, true); setSelectedShowcaseItem(null) }}
+                    className="flex-1 py-2 rounded-2xl text-sm font-semibold border border-emerald-300
+                               bg-emerald-50 text-emerald-600 hover:bg-emerald-100 transition-colors disabled:opacity-50"
+                  >✅ Have</button>
+                </div>
+              )}
+
+              <a
+                href={`https://www.tcgplayer.com/search/pokemon/product?q=${encodeURIComponent(selectedShowcaseItem.name)}`}
+                target="_blank"
+                rel="noreferrer"
+                className="block text-center bg-pink-400 hover:bg-pink-500 text-white
+                           font-semibold py-2 rounded-2xl transition-colors"
+              >
+                View on TCGPlayer
+              </a>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </Shell>
   )
 }

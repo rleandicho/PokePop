@@ -132,10 +132,10 @@ function EmptySlot({ isSelected, pageStyle, onClick, readOnly }) {
 }
 
 // ─── Filled card slot ─────────────────────────────────────────────────────────
-function CardSlot({ item, isSelected, pageStyle, onClick, binders, onTransfer, currentBinderId }) {
+function CardSlot({ item, isSelected, pageStyle, onClick, binders, onTransfer, currentBinderId, onCardClick, readOnly }) {
   const dark         = pageStyle === 'black'
   const [showMenu, setShowMenu] = useState(false)
-  const canTransfer  = onTransfer && binders?.filter(b => b.id !== currentBinderId).length > 0
+  const canTransfer  = !readOnly && onTransfer && binders?.filter(b => b.id !== currentBinderId).length > 0
 
   return (
     <motion.div
@@ -206,6 +206,18 @@ function CardSlot({ item, isSelected, pageStyle, onClick, binders, onTransfer, c
         </motion.div>
       )}
 
+      {/* ── Info button — hidden when card is selected (🌸 badge takes that spot) ── */}
+      {onCardClick && !readOnly && !isSelected && (
+        <button
+          onClick={e => { e.stopPropagation(); onCardClick(item) }}
+          className="absolute top-1.5 right-1.5 z-30 w-4 h-4 rounded-full
+                     bg-black/35 hover:bg-black/60 text-white text-[8px]
+                     flex items-center justify-center backdrop-blur-sm transition-all
+                     leading-none font-bold pointer-events-auto"
+          title="View card details"
+        >ℹ</button>
+      )}
+
       {/* ── Transfer button (outside overflow:hidden so dropdown isn't clipped) ── */}
       {canTransfer && (
         <div className="absolute bottom-1.5 left-0 right-0 flex justify-center z-30">
@@ -268,7 +280,7 @@ function CardSlot({ item, isSelected, pageStyle, onClick, binders, onTransfer, c
 }
 
 // ─── Single binder page ────────────────────────────────────────────────────────
-function BinderPage({ slots, cols, pageNumber, theme, selectedIdx, pageOffset, onSlotClick, binders, onTransfer, currentBinderId, readOnly }) {
+function BinderPage({ slots, cols, pageNumber, theme, selectedIdx, pageOffset, onSlotClick, binders, onTransfer, currentBinderId, readOnly, onCardClick }) {
   const { coverColor, pageStyle } = theme
   const dark = pageStyle === 'black'
 
@@ -343,6 +355,8 @@ function BinderPage({ slots, cols, pageNumber, theme, selectedIdx, pageOffset, o
                 binders={binders}
                 onTransfer={onTransfer}
                 currentBinderId={currentBinderId}
+                onCardClick={onCardClick}
+                readOnly={readOnly}
               />
             ) : (
               <EmptySlot
@@ -457,7 +471,7 @@ function ThemeControls({ theme, onThemeChange, binderSize, onSizeChange }) {
 }
 
 // ─── Main BinderView ──────────────────────────────────────────────────────────
-export default function BinderView({ items, user, readOnly = false, initialTheme, onThemeChange, binders, onTransfer, currentBinderId }) {
+export default function BinderView({ items, user, readOnly = false, initialTheme, onThemeChange, binders, onTransfer, currentBinderId, onCardClick }) {
   const [binderSize,   setBinderSize]   = useState('3x3')
   const [theme,        setTheme]        = useState(initialTheme ?? DEFAULT_THEME)
   const [slotArray,    setSlotArray]    = useState([])
@@ -485,7 +499,11 @@ export default function BinderView({ items, user, readOnly = false, initialTheme
 
   // ── Click-to-swap handler ─────────────────────────────────────────────────
   const handleSlotClick = useCallback((globalIdx) => {
-    if (readOnly) return
+    if (readOnly) {
+      const item = slotArray[globalIdx]
+      if (item && onCardClick) onCardClick(item)
+      return
+    }
 
     setSelectedIdx(prev => {
       // First click: select this slot
@@ -527,7 +545,7 @@ export default function BinderView({ items, user, readOnly = false, initialTheme
 
       return null  // deselect after swap
     })
-  }, [slotArray, user, readOnly])
+  }, [slotArray, user, readOnly, onCardClick])
 
   const pages = chunk(slotArray, slotsPerPage)
 
@@ -575,6 +593,7 @@ export default function BinderView({ items, user, readOnly = false, initialTheme
               onTransfer={onTransfer}
               currentBinderId={currentBinderId}
               readOnly={readOnly}
+              onCardClick={onCardClick}
             />
           ))}
         </motion.div>
