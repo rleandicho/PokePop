@@ -1444,21 +1444,30 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
     const prev_binder = prev?.binder_id
     const prev_slot   = prev?.slot_index
 
-    // Assign an explicit slot_index that sits after every existing binder card,
-    // including cards that have null slot_index (they fill from 0 upward) and
-    // cards that have explicit indices (which may leave gaps from past removals).
-    // max(count, highestExplicit + 1) guarantees we never land in a gap.
+    // Query the DB for actual current slot_indices — local items state is stale
+    // for binder swaps (BinderView updates Supabase directly without syncing back
+    // to WishlistDashboard's items state). Using local state would mis-calculate
+    // nextSlot and land the card in an already-occupied slot.
     let nextSlot = null
     if (binderId) {
-      const binderCards = items.filter(i => i.binder_id === binderId && i.id !== rowId)
-      const maxExplicit = binderCards.reduce((m, i) => Math.max(m, i.slot_index ?? -1), -1)
-      nextSlot = Math.max(binderCards.length, maxExplicit + 1)
+      const { data: existing } = await supabase
+        .from('wishlists')
+        .select('slot_index')
+        .eq('user_id', user.id)
+        .eq('binder_id', binderId)
+        .neq('id', rowId)
+      const rows = existing ?? []
+      const maxExplicit = rows.reduce((m, i) => Math.max(m, i.slot_index ?? -1), -1)
+      nextSlot = Math.max(rows.length, maxExplicit + 1)
     }
 
-    setItems(cur => {
-      const updated = { ...prev, binder_id: binderId || null, slot_index: nextSlot }
-      return [...cur.filter(i => i.id !== rowId), updated]
-    })
+    // Update in-place so the card keeps its position in the collection view.
+    // Moving it to the end of the array (the previous approach) caused it to
+    // appear as the "oldest" card in the collection list.
+    setItems(cur => cur.map(i => i.id === rowId
+      ? { ...i, binder_id: binderId || null, slot_index: nextSlot }
+      : i
+    ))
     const { error } = await supabase
       .from('wishlists')
       .update({ binder_id: binderId || null, slot_index: nextSlot })
