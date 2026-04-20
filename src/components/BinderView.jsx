@@ -133,9 +133,12 @@ function EmptySlot({ isSelected, pageStyle, onClick, readOnly }) {
 
 // ─── Filled card slot ─────────────────────────────────────────────────────────
 function CardSlot({ item, isSelected, pageStyle, onClick, binders, onTransfer, currentBinderId, onCardClick, readOnly }) {
-  const dark         = pageStyle === 'black'
+  const dark        = pageStyle === 'black'
   const [showMenu, setShowMenu] = useState(false)
-  const canTransfer  = !readOnly && onTransfer && binders?.filter(b => b.id !== currentBinderId).length > 0
+  // Show the action menu whenever the owner has the onTransfer callback (even if
+  // there are no other binders, "Remove from binder" is always available)
+  const canShowMenu = !readOnly && !!onTransfer
+  const otherBinders = binders?.filter(b => b.id !== currentBinderId) ?? []
 
   return (
     <motion.div
@@ -218,15 +221,15 @@ function CardSlot({ item, isSelected, pageStyle, onClick, binders, onTransfer, c
         >ℹ</button>
       )}
 
-      {/* ── Transfer button (outside overflow:hidden so dropdown isn't clipped) ── */}
-      {canTransfer && (
+      {/* ── Action menu (move / remove) ────────────────────────────────────── */}
+      {canShowMenu && (
         <div className="absolute bottom-1.5 left-0 right-0 flex justify-center z-30">
           <div className="relative">
             <button
               onClick={e => { e.stopPropagation(); setShowMenu(m => !m) }}
               className="bg-black/40 hover:bg-black/65 text-white text-[9px] font-bold
                          px-2 py-0.5 rounded-full backdrop-blur-sm transition-all leading-none"
-              title="Move to another binder"
+              title="Card actions"
             >
               ↗ Move
             </button>
@@ -243,14 +246,30 @@ function CardSlot({ item, isSelected, pageStyle, onClick, binders, onTransfer, c
                   className="absolute bottom-full mb-1.5 left-1/2 -translate-x-1/2 z-50
                              bg-white rounded-2xl shadow-2xl
                              border border-pink-100 overflow-hidden"
-                  style={{ minWidth: '120px' }}
+                  style={{ minWidth: '130px' }}
                 >
-                  <p className="text-[9px] text-pink-400 font-bold uppercase tracking-widest px-3 pt-2.5 pb-1">
-                    Move to…
-                  </p>
-                  {binders
-                    .filter(b => b.id !== currentBinderId)
-                    .map(b => (
+                  {/* Remove from binder — always available */}
+                  <button
+                    onClick={e => {
+                      e.stopPropagation()
+                      onTransfer(item.id, null)
+                      setShowMenu(false)
+                    }}
+                    className="flex items-center gap-2 w-full px-3 py-2.5
+                               text-xs font-semibold text-red-400 hover:bg-red-50
+                               transition-colors text-left border-b border-pink-50"
+                  >
+                    <span>✕</span>
+                    <span>Remove from binder</span>
+                  </button>
+
+                  {/* Move to another binder — only when others exist */}
+                  {otherBinders.length > 0 && (
+                    <p className="text-[9px] text-pink-400 font-bold uppercase tracking-widest px-3 pt-2.5 pb-1">
+                      Move to…
+                    </p>
+                  )}
+                  {otherBinders.map(b => (
                       <button
                         key={b.id}
                         onClick={e => {
@@ -471,7 +490,7 @@ function ThemeControls({ theme, onThemeChange, binderSize, onSizeChange }) {
 }
 
 // ─── Main BinderView ──────────────────────────────────────────────────────────
-export default function BinderView({ items, user, readOnly = false, initialTheme, onThemeChange, binders, onTransfer, currentBinderId, onCardClick }) {
+export default function BinderView({ items, user, readOnly = false, initialTheme, onThemeChange, binders, onTransfer, currentBinderId, onCardClick, onSlotsSwapped }) {
   const [binderSize,   setBinderSize]   = useState('3x3')
   const [theme,        setTheme]        = useState(initialTheme ?? DEFAULT_THEME)
   const [slotArray,    setSlotArray]    = useState([])
@@ -519,33 +538,38 @@ export default function BinderView({ items, user, readOnly = false, initialTheme
 
       // Perform the swap optimistically
       setSlotArray(arr => {
-        const next     = [...arr]
-        next[prev]     = itemB
+        const next      = [...arr]
+        next[prev]      = itemB
         next[globalIdx] = itemA
         return next
       })
 
-      // Persist both sides to Supabase (fire-and-forget; UI is already updated)
+      // Notify parent so its items state stays in sync (used by moveCardToBinder
+      // to compute the next available slot index without a DB round-trip)
+      const swaps = []
+      if (itemA) swaps.push({ id: itemA.id, slot_index: globalIdx })
+      if (itemB) swaps.push({ id: itemB.id, slot_index: prev })
+      if (swaps.length) onSlotsSwapped?.(swaps)
+
+      // Persist to Supabase using row id (not card_id — multi-edition safe)
       if (user) {
         const ops = []
         if (itemA) ops.push(
           supabase.from('wishlists')
             .update({ slot_index: globalIdx })
-            .eq('user_id', user.id)
-            .eq('card_id', itemA.card_id)
+            .eq('id', itemA.id)
         )
         if (itemB) ops.push(
           supabase.from('wishlists')
             .update({ slot_index: prev })
-            .eq('user_id', user.id)
-            .eq('card_id', itemB.card_id)
+            .eq('id', itemB.id)
         )
-        Promise.all(ops)  // errors are silent; local state is source of truth
+        Promise.all(ops)  // errors are silent; local slotArray is source of truth
       }
 
       return null  // deselect after swap
     })
-  }, [slotArray, user, readOnly, onCardClick])
+  }, [slotArray, user, readOnly, onCardClick, onSlotsSwapped])
 
   const pages = chunk(slotArray, slotsPerPage)
 

@@ -1439,31 +1439,29 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
     onToast(`Binder renamed to "${trimmed}" ✏️`)
   }
 
+  // Called by BinderView whenever cards are swapped so items state stays current.
+  // Without this, moveCardToBinder would read stale slot_indices and mis-place cards.
+  function handleSlotsSwapped(swaps) {
+    setItems(prev => prev.map(item => {
+      const swap = swaps.find(s => s.id === item.id)
+      return swap ? { ...item, slot_index: swap.slot_index } : item
+    }))
+  }
+
   async function moveCardToBinder(rowId, binderId) {
     const prev = items.find(i => i.id === rowId)
     const prev_binder = prev?.binder_id
     const prev_slot   = prev?.slot_index
 
-    // Query the DB for actual current slot_indices — local items state is stale
-    // for binder swaps (BinderView updates Supabase directly without syncing back
-    // to WishlistDashboard's items state). Using local state would mis-calculate
-    // nextSlot and land the card in an already-occupied slot.
+    // Compute next slot from local items state — always current because binder
+    // swaps sync back via handleSlotsSwapped / onSlotsSwapped callback.
     let nextSlot = null
     if (binderId) {
-      const { data: existing } = await supabase
-        .from('wishlists')
-        .select('slot_index')
-        .eq('user_id', user.id)
-        .eq('binder_id', binderId)
-        .neq('id', rowId)
-      const rows = existing ?? []
-      const maxExplicit = rows.reduce((m, i) => Math.max(m, i.slot_index ?? -1), -1)
-      nextSlot = Math.max(rows.length, maxExplicit + 1)
+      const binderCards = items.filter(i => i.binder_id === binderId && i.id !== rowId)
+      const maxExplicit = binderCards.reduce((m, i) => Math.max(m, i.slot_index ?? -1), -1)
+      nextSlot = Math.max(binderCards.length, maxExplicit + 1)
     }
 
-    // Update in-place so the card keeps its position in the collection view.
-    // Moving it to the end of the array (the previous approach) caused it to
-    // appear as the "oldest" card in the collection list.
     setItems(cur => cur.map(i => i.id === rowId
       ? { ...i, binder_id: binderId || null, slot_index: nextSlot }
       : i
@@ -2064,6 +2062,7 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
               onTransfer={moveCardToBinder}
               currentBinderId={selectedBinder.id}
               onCardClick={setSelectedItem}
+              onSlotsSwapped={handleSlotsSwapped}
             />
           ) : (
             <p className="text-center text-pink-300 font-semibold mt-16 text-sm">
