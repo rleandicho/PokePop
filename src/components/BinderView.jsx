@@ -66,15 +66,18 @@ function buildSlotArray(items, totalSlots) {
 }
 
 // ─── Empty "Chase Hole" slot ──────────────────────────────────────────────────
-function EmptySlot({ isSelected, pageStyle, onClick }) {
-  const dark = pageStyle === 'black'
+function EmptySlot({ isSelected, pageStyle, onClick, readOnly }) {
+  const dark       = pageStyle === 'black'
+  const strokeColor = isSelected
+    ? 'rgba(251,191,36,0.7)'
+    : dark ? 'rgba(255,255,255,0.18)' : 'rgba(147,197,253,0.55)'
 
   return (
     <motion.div
-      onClick={onClick}
+      onClick={readOnly ? undefined : onClick}
       animate={isSelected ? { y: -4, scale: 1.03 } : { y: 0, scale: 1 }}
       transition={{ type: 'spring', stiffness: 500, damping: 28 }}
-      className="relative rounded-xl overflow-hidden flex items-center justify-center cursor-pointer"
+      className={`relative rounded-xl overflow-hidden flex items-center justify-center ${readOnly ? 'cursor-default' : 'cursor-pointer'}`}
       style={{
         aspectRatio: '2.5 / 3.5',
         userSelect: 'none',
@@ -94,26 +97,36 @@ function EmptySlot({ isSelected, pageStyle, onClick }) {
           : 'none',
       }}
     >
-      <div
-        className="w-9 h-9 rounded-full flex items-center justify-center"
-        style={{
-          background: isSelected
-            ? 'rgba(251,191,36,0.2)'
-            : dark ? 'rgba(255,255,255,0.06)' : 'rgba(147,197,253,0.15)',
-          border: `1px solid ${isSelected ? 'rgba(251,191,36,0.4)' : dark ? 'rgba(255,255,255,0.1)' : 'rgba(147,197,253,0.3)'}`,
-        }}
-      >
-        <span
-          className="text-xl leading-none font-extralight select-none"
+      {readOnly ? (
+        /* Transparent Pokéball outline — no interactive affordance in guest view */
+        <svg viewBox="0 0 40 40" fill="none" className="w-9 h-9">
+          <circle cx="20" cy="20" r="15" stroke={strokeColor} strokeWidth="1.5" />
+          <line x1="5" y1="20" x2="35" y2="20" stroke={strokeColor} strokeWidth="1.5" />
+          <circle cx="20" cy="20" r="5" stroke={strokeColor} strokeWidth="1.5" />
+          <circle cx="20" cy="20" r="2.5" fill={strokeColor} />
+        </svg>
+      ) : (
+        <div
+          className="w-9 h-9 rounded-full flex items-center justify-center"
           style={{
-            color: isSelected
-              ? 'rgba(251,191,36,0.8)'
-              : dark ? 'rgba(255,255,255,0.2)' : 'rgba(147,197,253,0.65)',
+            background: isSelected
+              ? 'rgba(251,191,36,0.2)'
+              : dark ? 'rgba(255,255,255,0.06)' : 'rgba(147,197,253,0.15)',
+            border: `1px solid ${isSelected ? 'rgba(251,191,36,0.4)' : dark ? 'rgba(255,255,255,0.1)' : 'rgba(147,197,253,0.3)'}`,
           }}
         >
-          {isSelected ? '✦' : '+'}
-        </span>
-      </div>
+          <span
+            className="text-xl leading-none font-extralight select-none"
+            style={{
+              color: isSelected
+                ? 'rgba(251,191,36,0.8)'
+                : dark ? 'rgba(255,255,255,0.2)' : 'rgba(147,197,253,0.65)',
+            }}
+          >
+            {isSelected ? '✦' : '+'}
+          </span>
+        </div>
+      )}
     </motion.div>
   )
 }
@@ -255,7 +268,7 @@ function CardSlot({ item, isSelected, pageStyle, onClick, binders, onTransfer, c
 }
 
 // ─── Single binder page ────────────────────────────────────────────────────────
-function BinderPage({ slots, cols, pageNumber, theme, selectedIdx, pageOffset, onSlotClick, binders, onTransfer, currentBinderId }) {
+function BinderPage({ slots, cols, pageNumber, theme, selectedIdx, pageOffset, onSlotClick, binders, onTransfer, currentBinderId, readOnly }) {
   const { coverColor, pageStyle } = theme
   const dark = pageStyle === 'black'
 
@@ -337,6 +350,7 @@ function BinderPage({ slots, cols, pageNumber, theme, selectedIdx, pageOffset, o
                 isSelected={isSel}
                 pageStyle={pageStyle}
                 onClick={() => onSlotClick(globalIdx)}
+                readOnly={readOnly}
               />
             )
           })}
@@ -560,6 +574,7 @@ export default function BinderView({ items, user, readOnly = false, initialTheme
               binders={binders}
               onTransfer={onTransfer}
               currentBinderId={currentBinderId}
+              readOnly={readOnly}
             />
           ))}
         </motion.div>
