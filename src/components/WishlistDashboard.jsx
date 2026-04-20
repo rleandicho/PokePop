@@ -1443,15 +1443,25 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
     const prev = items.find(i => i.id === rowId)
     const prev_binder = prev?.binder_id
     const prev_slot   = prev?.slot_index
-    // Move the card to the end of the items array with slot_index=null so
-    // buildSlotArray always places it after all existing binder cards.
+
+    // Assign an explicit slot_index that sits after every existing binder card,
+    // including cards that have null slot_index (they fill from 0 upward) and
+    // cards that have explicit indices (which may leave gaps from past removals).
+    // max(count, highestExplicit + 1) guarantees we never land in a gap.
+    let nextSlot = null
+    if (binderId) {
+      const binderCards = items.filter(i => i.binder_id === binderId && i.id !== rowId)
+      const maxExplicit = binderCards.reduce((m, i) => Math.max(m, i.slot_index ?? -1), -1)
+      nextSlot = Math.max(binderCards.length, maxExplicit + 1)
+    }
+
     setItems(cur => {
-      const updated = { ...prev, binder_id: binderId || null, slot_index: null }
+      const updated = { ...prev, binder_id: binderId || null, slot_index: nextSlot }
       return [...cur.filter(i => i.id !== rowId), updated]
     })
     const { error } = await supabase
       .from('wishlists')
-      .update({ binder_id: binderId || null, slot_index: null })
+      .update({ binder_id: binderId || null, slot_index: nextSlot })
       .eq('id', rowId)
     if (error) {
       setItems(cur => cur.map(i => i.id === rowId ? { ...i, binder_id: prev_binder, slot_index: prev_slot } : i))
