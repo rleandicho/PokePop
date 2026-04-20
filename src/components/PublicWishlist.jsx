@@ -81,18 +81,18 @@ function ShowcasePanels({ items }) {
   if (!top3.length && !chaseCards.length && !favoriteCards.length) return null
 
   return (
-    <div className="max-w-2xl mx-auto px-4 pb-4 flex gap-3 overflow-x-auto scrollbar-none">
+    <div className="max-w-2xl mx-auto px-4 pb-4 flex gap-3">
       {top3.length > 0 && (
-        <div className="flex-1 min-w-[140px] p-3 rounded-2xl border border-yellow-200 bg-gradient-to-b from-yellow-50 to-amber-50 shadow-sm">
+        <div className="flex-1 min-w-0 p-3 rounded-2xl border border-yellow-200 bg-gradient-to-b from-yellow-50 to-amber-50 shadow-sm">
           <p className="text-[10px] font-semibold text-amber-500 uppercase tracking-wide mb-2">👑 High-Rollers</p>
           <div className="flex gap-2 justify-center flex-wrap">
             {top3.map((item, i) => (
               <motion.div key={item.card_id} initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: i * 0.1 }} className="flex flex-col items-center gap-1">
                 <div className="relative">
                   {i === 0 && <span className="absolute -top-2 -right-2 text-sm z-10">👑</span>}
-                  <img src={item.image} alt={item.name} className="w-14 rounded-xl shadow-md border-2 border-yellow-300" />
+                  <img src={item.image} alt={item.name} className="w-12 rounded-xl shadow-md border-2 border-yellow-300" />
                 </div>
-                <p className="text-[10px] font-bold text-gray-600 text-center w-14 truncate">{item.name}</p>
+                <p className="text-[10px] font-bold text-gray-600 text-center w-12 truncate">{item.name}</p>
               </motion.div>
             ))}
           </div>
@@ -100,13 +100,13 @@ function ShowcasePanels({ items }) {
       )}
 
       {chaseCards.length > 0 && (
-        <div className="flex-1 min-w-[140px] p-3 rounded-2xl border border-pink-200 bg-gradient-to-b from-pink-50 to-rose-50 shadow-sm">
+        <div className="flex-1 min-w-0 p-3 rounded-2xl border border-pink-200 bg-gradient-to-b from-pink-50 to-rose-50 shadow-sm">
           <p className="text-[10px] font-semibold text-pink-500 uppercase tracking-wide mb-2">🎯 Chase Cards</p>
           <div className="flex gap-2 justify-center flex-wrap">
             {chaseCards.map((item, i) => (
               <motion.div key={item.card_id} initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: i * 0.1 }} className="flex flex-col items-center gap-1">
-                <img src={item.image} alt={item.name} className="w-14 rounded-xl shadow-md border-2 border-pink-300" />
-                <p className="text-[10px] font-bold text-gray-600 text-center w-14 truncate">{item.name}</p>
+                <img src={item.image} alt={item.name} className="w-12 rounded-xl shadow-md border-2 border-pink-300" />
+                <p className="text-[10px] font-bold text-gray-600 text-center w-12 truncate">{item.name}</p>
               </motion.div>
             ))}
           </div>
@@ -114,13 +114,13 @@ function ShowcasePanels({ items }) {
       )}
 
       {favoriteCards.length > 0 && (
-        <div className="flex-1 min-w-[140px] p-3 rounded-2xl border border-indigo-200 bg-gradient-to-b from-indigo-50 to-violet-50 shadow-sm">
+        <div className="flex-1 min-w-0 p-3 rounded-2xl border border-indigo-200 bg-gradient-to-b from-indigo-50 to-violet-50 shadow-sm">
           <p className="text-[10px] font-semibold text-indigo-500 uppercase tracking-wide mb-2">⭐ Favourites</p>
           <div className="flex gap-2 justify-center flex-wrap">
             {favoriteCards.map((item, i) => (
               <motion.div key={item.card_id} initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: i * 0.1 }} className="flex flex-col items-center gap-1">
-                <img src={item.image} alt={item.name} className="w-14 rounded-xl shadow-md border-2 border-indigo-300" />
-                <p className="text-[10px] font-bold text-gray-600 text-center w-14 truncate">{item.name}</p>
+                <img src={item.image} alt={item.name} className="w-12 rounded-xl shadow-md border-2 border-indigo-300" />
+                <p className="text-[10px] font-bold text-gray-600 text-center w-12 truncate">{item.name}</p>
               </motion.div>
             ))}
           </div>
