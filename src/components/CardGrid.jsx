@@ -707,9 +707,9 @@ function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, user, on
       card_id:      card.id,
       name:         card.name,
       image:        card.images?.small,
-      market_price: (edition && card.tcgplayer?.prices?.[edition]?.market) ?? getCardPrice(card),
-      mid_price:    (edition && card.tcgplayer?.prices?.[edition]?.mid)    ?? card.mid_price ?? null,
-      low_price:    (edition && card.tcgplayer?.prices?.[edition]?.low)    ?? card.low_price ?? null,
+      market_price: edition ? (card.tcgplayer?.prices?.[edition]?.market ?? getCardPrice(card)) : getCardPrice(card),
+      mid_price:    edition ? (card.tcgplayer?.prices?.[edition]?.mid    ?? card.mid_price ?? null) : (card.mid_price ?? null),
+      low_price:    edition ? (card.tcgplayer?.prices?.[edition]?.low    ?? card.low_price ?? null) : (card.low_price ?? null),
       owned,
       edition:      edition || null,
     }
