@@ -783,14 +783,24 @@ function NewBinderModal({ onSave, onClose }) {
 
 // Human-readable labels for TCGPlayer price tier keys
 const EDITION_LABELS = {
+  'unspecified':        'Unspecified',
   '1stEditionHolofoil': '1st Ed Holofoil',
   '1stEditionNormal':   '1st Ed Normal',
   'holofoil':           'Holofoil',
   'reverseHolofoil':    'Reverse Holofoil',
   'normal':             'Normal',
 }
+// Ordered list used by dropdowns
+const EDITION_OPTIONS = [
+  { value: 'unspecified',        label: 'Unspecified' },
+  { value: '1stEditionHolofoil', label: '1st Ed Holofoil' },
+  { value: '1stEditionNormal',   label: '1st Ed Normal' },
+  { value: 'holofoil',           label: 'Holofoil' },
+  { value: 'reverseHolofoil',    label: 'Reverse Holofoil' },
+  { value: 'normal',             label: 'Normal' },
+]
 function editionLabel(key) {
-  if (!key) return null
+  if (!key || key === 'unspecified') return null
   return EDITION_LABELS[key] ?? key.replace(/([A-Z])/g, ' $1').trim()
 }
 
@@ -885,8 +895,10 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
   const [showSettings,    setShowSettings]    = useState(false)
   const [refreshing,      setRefreshing]      = useState(false)
   const [refreshProgress, setRefreshProgress] = useState({ done: 0, total: 0 })
-  const [editingPriceId,  setEditingPriceId]  = useState(null)   // card_id being manually priced
+  const [editingPriceId,  setEditingPriceId]  = useState(null)   // row id being manually priced
   const [manualInput,     setManualInput]     = useState('')
+  const [addingEditionFor, setAddingEditionFor] = useState(null) // row id showing the add-edition panel
+  const [pendingNewEdition, setPendingNewEdition] = useState('')
 
   // ── Pagination ────────────────────────────────────────────────────────────
   const [collectionPage, setCollectionPage] = useState(1)
@@ -909,7 +921,7 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
           .from('wishlists')
           // edition column: run migration before this works →
           //   ALTER TABLE wishlists ADD COLUMN IF NOT EXISTS edition TEXT NOT NULL DEFAULT 'unlimited';
-          .select('card_id, name, image, owned, market_price, mid_price, low_price, manual_price, slot_index, binder_id, edition, is_chase, is_favorite, quantity')
+          .select('id, card_id, name, image, owned, market_price, mid_price, low_price, manual_price, slot_index, binder_id, edition, is_chase, is_favorite, quantity')
           .eq('user_id', user.id)
           .order('created_at', { ascending: false })
       ),
@@ -1222,85 +1234,108 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
     }
   }
 
-  async function toggleOwned(cardId, currentOwned) {
+  async function toggleOwned(rowId, cardId, currentOwned) {
     const newOwned = !currentOwned
-    setItems(prev => prev.map(i => i.card_id === cardId ? { ...i, owned: newOwned } : i))
+    setItems(prev => prev.map(i => i.id === rowId ? { ...i, owned: newOwned } : i))
     const { error } = await supabase
       .from('wishlists')
       .update({ owned: newOwned })
-      .eq('user_id', user.id)
-      .eq('card_id', cardId)
+      .eq('id', rowId)
     if (error) {
-      setItems(prev => prev.map(i => i.card_id === cardId ? { ...i, owned: currentOwned } : i))
+      setItems(prev => prev.map(i => i.id === rowId ? { ...i, owned: currentOwned } : i))
     } else {
       onOwnedChanged?.(cardId, newOwned)
       onToast(newOwned ? 'Added to Collection! ✨📦' : 'Moved back to Wishlist 💖')
     }
   }
 
-  async function updateQuantity(cardId, delta) {
-    const item = items.find(i => i.card_id === cardId)
-    if (!item) return
-    const next = Math.max(1, (item.quantity || 1) + delta)
-    setItems(prev => prev.map(i => i.card_id === cardId ? { ...i, quantity: next } : i))
+  async function updateQuantity(rowId, cardId, delta) {
+    const row = items.find(i => i.id === rowId)
+    if (!row) return
+    const next = Math.max(1, (row.quantity || 1) + delta)
+    setItems(prev => prev.map(i => i.id === rowId ? { ...i, quantity: next } : i))
     await supabase
       .from('wishlists')
       .update({ quantity: next })
-      .eq('user_id', user.id)
-      .eq('card_id', cardId)
+      .eq('id', rowId)
   }
 
-  async function saveManualPrice(cardId) {
+  async function saveManualPrice(rowId) {
     const num = parseFloat(manualInput)
     const value = (!isNaN(num) && num > 0) ? num : null
-    // Optimistic local update — works even if the DB column doesn't exist yet
-    setItems(prev => prev.map(i => i.card_id === cardId ? { ...i, manual_price: value } : i))
+    setItems(prev => prev.map(i => i.id === rowId ? { ...i, manual_price: value } : i))
     setEditingPriceId(null)
     setManualInput('')
-    // Persist to Supabase — silently ignored if manual_price column doesn't exist yet
     await supabase
       .from('wishlists')
       .update({ manual_price: value })
-      .eq('user_id', user.id)
-      .eq('card_id', cardId)
+      .eq('id', rowId)
   }
 
-  async function updateEdition(cardId, newEdition) {
-    setItems(prev => prev.map(i => i.card_id === cardId ? { ...i, edition: newEdition || null } : i))
+  async function updateEdition(rowId, newEdition) {
+    const val = newEdition || 'unspecified'
+    // Conflict check: another row for this card already has this edition
+    const existing = items.find(i => i.id !== rowId && i.card_id === items.find(r => r.id === rowId)?.card_id && i.edition === val)
+    if (existing) { onToast('You already have that edition saved for this card!'); return }
+    setItems(prev => prev.map(i => i.id === rowId ? { ...i, edition: val } : i))
     await supabase
       .from('wishlists')
-      .update({ edition: newEdition || null })
-      .eq('user_id', user.id)
-      .eq('card_id', cardId)
+      .update({ edition: val })
+      .eq('id', rowId)
   }
 
-  async function toggleChase(cardId, currentVal) {
+  async function addEdition(item, newEdition) {
+    if (!newEdition || newEdition === 'unspecified') { onToast('Please select an edition to add'); return }
+    const { data, error } = await supabase
+      .from('wishlists')
+      .insert({
+        user_id:      user.id,
+        card_id:      item.card_id,
+        name:         item.name,
+        image:        item.image,
+        owned:        item.owned,
+        edition:      newEdition,
+        quantity:     1,
+        market_price: null,
+        mid_price:    null,
+        low_price:    null,
+      })
+      .select('id, card_id, name, image, owned, market_price, mid_price, low_price, manual_price, slot_index, binder_id, edition, is_chase, is_favorite, quantity')
+      .single()
+    if (error) {
+      onToast(error.code === '23505' ? 'That edition is already saved for this card!' : 'Failed to add edition')
+      return
+    }
+    setItems(prev => [data, ...prev])
+    setAddingEditionFor(null)
+    setPendingNewEdition('')
+    onToast(`${EDITION_LABELS[newEdition] ?? newEdition} added! ✨`)
+  }
+
+  async function toggleChase(rowId, currentVal) {
     const newVal = !currentVal
     if (newVal && items.filter(i => i.is_chase).length >= 3) {
       onToast('Max 3 chase cards! Remove one first 🎯')
       return
     }
-    // Optimistic update — silently tolerates is_chase column not existing yet
-    setItems(prev => prev.map(i => i.card_id === cardId ? { ...i, is_chase: newVal } : i))
+    setItems(prev => prev.map(i => i.id === rowId ? { ...i, is_chase: newVal } : i))
     await supabase
       .from('wishlists')
       .update({ is_chase: newVal })
-      .eq('user_id', user.id)
-      .eq('card_id', cardId)
+      .eq('id', rowId)
   }
 
-  async function toggleFavorite(cardId, currentVal) {
+  async function toggleFavorite(rowId, currentVal) {
     const newVal = !currentVal
     if (newVal && items.filter(i => i.is_favorite).length >= 3) {
       onToast('Max 3 favourites! Remove one first ⭐')
       return
     }
-    setItems(prev => prev.map(i => i.card_id === cardId ? { ...i, is_favorite: newVal } : i))
+    setItems(prev => prev.map(i => i.id === rowId ? { ...i, is_favorite: newVal } : i))
     await supabase
       .from('wishlists')
       .update({ is_favorite: newVal })
-      .eq('user_id', user.id)
-      .eq('card_id', cardId)
+      .eq('id', rowId)
   }
 
   async function removeFollower(followerId) {
@@ -1323,11 +1358,12 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
     onToast('User blocked 🚫')
   }
 
-  async function removeCard(cardId) {
-    setItems(prev => prev.filter(i => i.card_id !== cardId))
-    await supabase.from('wishlists').delete().eq('user_id', user.id).eq('card_id', cardId)
-    onCardRemoved?.(cardId)
-    onToast('Removed from Wishlist & Collection')
+  async function removeCard(item) {
+    const otherEditionsExist = items.some(i => i.id !== item.id && i.card_id === item.card_id)
+    setItems(prev => prev.filter(i => i.id !== item.id))
+    await supabase.from('wishlists').delete().eq('id', item.id)
+    if (!otherEditionsExist) onCardRemoved?.(item.card_id)
+    onToast('Removed ✕')
   }
 
   async function createBinder(name, color) {
@@ -1398,21 +1434,15 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
     onToast(`Binder renamed to "${trimmed}" ✏️`)
   }
 
-  async function moveCardToBinder(cardId, binderId) {
-    // Optimistic update
-    setItems(prev => prev.map(i =>
-      i.card_id === cardId ? { ...i, binder_id: binderId || null } : i
-    ))
+  async function moveCardToBinder(rowId, binderId) {
+    const prev_binder = items.find(i => i.id === rowId)?.binder_id
+    setItems(prev => prev.map(i => i.id === rowId ? { ...i, binder_id: binderId || null } : i))
     const { error } = await supabase
       .from('wishlists')
       .update({ binder_id: binderId || null })
-      .eq('user_id', user.id)
-      .eq('card_id', cardId)
+      .eq('id', rowId)
     if (error) {
-      // Revert on failure
-      setItems(prev => prev.map(i =>
-        i.card_id === cardId ? { ...i, binder_id: items.find(x => x.card_id === cardId)?.binder_id } : i
-      ))
+      setItems(prev => prev.map(i => i.id === rowId ? { ...i, binder_id: prev_binder } : i))
       onToast('Could not move card 😿')
     }
   }
@@ -1456,18 +1486,18 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
   // ── Shared card tile — used by both Collection and Wishlist grids ────────────
   const renderTile = (item) => (
     <motion.div
-      key={item.card_id}
+      key={item.id}
       layout
       variants={{ hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0 } }}
       exit={{ opacity: 0, scale: 0.85 }}
       className={`rounded-2xl overflow-hidden shadow-md relative ${item.owned ? 'tile-owned' : 'tile-wishlist'}`}
     >
       <button
-        onClick={() => removeCard(item.card_id)}
+        onClick={() => removeCard(item)}
         className="absolute top-1.5 right-1.5 z-10 w-6 h-6 rounded-full bg-white/70
                    text-gray-400 hover:text-red-400 hover:bg-white text-xs leading-none
                    flex items-center justify-center shadow-sm transition-colors"
-        title="Remove"
+        title="Remove this edition"
       >✕</button>
 
       <div className="relative">
@@ -1492,8 +1522,8 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
         {(() => {
           const { value: p, label } = getPriceInfo(item)
           const is1st     = item.card_id?.endsWith('-1st')
-          const hasMarket = !!item.market_price   // real TCGPlayer price exists
-          const isEditing = editingPriceId === item.card_id
+          const hasMarket = !!item.market_price
+          const isEditing = editingPriceId === item.id
 
           if (isEditing) {
             return (
@@ -1506,7 +1536,7 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
                   value={manualInput}
                   onChange={e => setManualInput(e.target.value)}
                   onKeyDown={e => {
-                    if (e.key === 'Enter') saveManualPrice(item.card_id)
+                    if (e.key === 'Enter') saveManualPrice(item.id)
                     if (e.key === 'Escape') { setEditingPriceId(null); setManualInput('') }
                   }}
                   autoFocus
@@ -1515,7 +1545,7 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
                              focus:outline-none focus:ring-2 focus:ring-pink-300 bg-white/80"
                 />
                 <button
-                  onClick={() => saveManualPrice(item.card_id)}
+                  onClick={() => saveManualPrice(item.id)}
                   className="text-emerald-500 hover:text-emerald-600 text-sm font-bold leading-none flex-shrink-0"
                   title="Save"
                 >✓</button>
@@ -1551,7 +1581,7 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
                   : p > 0 ? p.toFixed(2) : ''
                 return (
                 <button
-                  onClick={() => { setEditingPriceId(item.card_id); setManualInput(startVal) }}
+                  onClick={() => { setEditingPriceId(item.id); setManualInput(startVal) }}
                   className={`transition-colors leading-none ${hasOverride ? 'text-violet-400 hover:text-violet-600' : 'text-gray-300 hover:text-pink-400'}`}
                   title={hasOverride ? 'Edit your price override' : 'Set a manual price'}
                 >
@@ -1572,7 +1602,7 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
 
         <motion.button
           whileTap={{ scale: 0.92 }}
-          onClick={() => toggleOwned(item.card_id, item.owned)}
+          onClick={() => toggleOwned(item.id, item.card_id, item.owned)}
           className={`w-full text-xs font-semibold py-1.5 rounded-xl transition-all mt-1
             ${item.owned
               ? 'bg-emerald-400 text-white hover:bg-emerald-500'
@@ -1585,7 +1615,7 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
         {item.owned && (
           <div className="flex items-center justify-center gap-2 mt-1.5">
             <button
-              onClick={() => updateQuantity(item.card_id, -1)}
+              onClick={() => updateQuantity(item.id, item.card_id, -1)}
               disabled={(item.quantity || 1) <= 1}
               className="w-6 h-6 rounded-full bg-gray-100 hover:bg-gray-200 text-gray-500
                          font-bold text-sm leading-none transition-colors disabled:opacity-30"
@@ -1594,7 +1624,7 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
               {item.quantity || 1}
             </span>
             <button
-              onClick={() => updateQuantity(item.card_id, 1)}
+              onClick={() => updateQuantity(item.id, item.card_id, 1)}
               className="w-6 h-6 rounded-full bg-gray-100 hover:bg-emerald-100 text-gray-500
                          hover:text-emerald-600 font-bold text-sm leading-none transition-colors"
             >+</button>
@@ -1608,7 +1638,7 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
           return (
             <motion.button
               whileTap={chaseAtMax ? {} : { scale: 0.92 }}
-              onClick={() => toggleChase(item.card_id, item.is_chase)}
+              onClick={() => toggleChase(item.id, item.is_chase)}
               disabled={chaseAtMax}
               className={`w-full text-xs font-semibold py-1 rounded-xl transition-all mt-1
                 ${item.is_chase
@@ -1631,7 +1661,7 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
           return (
             <motion.button
               whileTap={favAtMax ? {} : { scale: 0.92 }}
-              onClick={() => toggleFavorite(item.card_id, item.is_favorite)}
+              onClick={() => toggleFavorite(item.id, item.is_favorite)}
               disabled={favAtMax}
               className={`w-full text-xs font-semibold py-1 rounded-xl transition-all mt-1
                 ${item.is_favorite
@@ -1647,25 +1677,67 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
           )
         })()}
 
-        {/* Version / edition selector */}
-        <select
-          value={item.edition ?? ''}
-          onChange={e => updateEdition(item.card_id, e.target.value)}
-          className="mt-2 w-full text-xs border border-gray-200 rounded-xl px-2 py-1.5
-                     bg-white/80 text-gray-500 focus:outline-none focus:ring-1 focus:ring-pink-300"
-        >
-          <option value="">Version: unspecified</option>
-          <option value="1stEditionHolofoil">1st Ed Holofoil</option>
-          <option value="1stEditionNormal">1st Ed Normal</option>
-          <option value="holofoil">Holofoil</option>
-          <option value="reverseHolofoil">Reverse Holofoil</option>
-          <option value="normal">Normal</option>
-        </select>
+        {/* Edition — label + change dropdown + add-another-edition panel */}
+        {(() => {
+          const currentLabel = EDITION_LABELS[item.edition] ?? item.edition ?? 'Unspecified'
+          const takenEditions = new Set(items.filter(i => i.card_id === item.card_id).map(i => i.edition))
+          const availableEditions = EDITION_OPTIONS.filter(e => !takenEditions.has(e.value))
+          const isAddingHere = addingEditionFor === item.id
+          return (
+            <div className="mt-2">
+              <select
+                value={item.edition ?? 'unspecified'}
+                onChange={e => updateEdition(item.id, e.target.value)}
+                className="w-full text-xs border border-gray-200 rounded-xl px-2 py-1.5
+                           bg-white/80 text-gray-500 focus:outline-none focus:ring-1 focus:ring-pink-300"
+              >
+                {EDITION_OPTIONS.map(e => (
+                  <option key={e.value} value={e.value}>{e.label}</option>
+                ))}
+              </select>
+              {availableEditions.length > 0 && (
+                isAddingHere ? (
+                  <div className="mt-1.5 flex gap-1">
+                    <select
+                      value={pendingNewEdition}
+                      onChange={e => setPendingNewEdition(e.target.value)}
+                      className="flex-1 text-xs border border-pink-200 rounded-xl px-2 py-1.5
+                                 bg-white/90 text-gray-600 focus:outline-none focus:ring-1 focus:ring-pink-300"
+                    >
+                      <option value="">Pick edition…</option>
+                      {availableEditions.map(e => (
+                        <option key={e.value} value={e.value}>{e.label}</option>
+                      ))}
+                    </select>
+                    <button
+                      onClick={() => addEdition(item, pendingNewEdition)}
+                      className="px-2 py-1.5 rounded-xl bg-pink-400 text-white text-xs font-bold
+                                 hover:bg-pink-500 transition-colors"
+                    >Add</button>
+                    <button
+                      onClick={() => { setAddingEditionFor(null); setPendingNewEdition('') }}
+                      className="px-2 py-1.5 rounded-xl bg-gray-100 text-gray-400 text-xs font-bold
+                                 hover:bg-gray-200 transition-colors"
+                    >✕</button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => { setAddingEditionFor(item.id); setPendingNewEdition('') }}
+                    className="mt-1 w-full text-[10px] text-center text-pink-400 hover:text-pink-600
+                               font-medium transition-colors"
+                  >
+                    + Add another edition
+                  </button>
+                )
+              )}
+            </div>
+          )
+        })()}
 
         {item.owned && binders.length > 0 ? (
           <select
             value={item.binder_id ?? ''}
-            onChange={e => moveCardToBinder(item.card_id, e.target.value)}
+            onChange={e => moveCardToBinder(item.id, e.target.value)}
             className="mt-2 w-full text-sm font-bold text-white border-2 border-violet-500
                        rounded-xl px-3 py-2.5 cursor-pointer transition-all
                        focus:outline-none focus:ring-2 focus:ring-violet-400 hover:border-violet-400"

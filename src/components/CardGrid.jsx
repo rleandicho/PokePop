@@ -337,7 +337,7 @@ function CardModal({ card, user, onToast, onClose, saveCard, collectionIds, owne
           <div className="mb-3 rounded-2xl overflow-hidden border border-pink-100">
             <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide px-3 pt-2.5 pb-1">
               {card.rarity ? `${card.rarity} · ` : ''}TCGPlayer Prices
-              {user && !inList && <span className="ml-1 text-pink-400 normal-case font-normal">(tap to select version)</span>}
+              {user && <span className="ml-1 text-pink-400 normal-case font-normal">(tap to select version)</span>}
             </p>
             {priceRows.map(([key, p]) => {
               const selected = version === key
@@ -345,30 +345,27 @@ function CardModal({ card, user, onToast, onClose, saveCard, collectionIds, owne
                 <button
                   key={key}
                   type="button"
-                  onClick={() => user && !inList ? setVersion(key) : undefined}
+                  onClick={() => user ? setVersion(key) : undefined}
                   className={`w-full flex justify-between items-center px-3 py-2 text-sm transition-colors
-                    ${selected && user && !inList
-                      ? 'bg-pink-100 border-l-2 border-pink-400'
-                      : 'bg-white hover:bg-pink-50/60'
-                    }`}
+                    ${selected && user ? 'bg-pink-100 border-l-2 border-pink-400' : 'bg-white hover:bg-pink-50/60'}`}
                 >
-                  <span className={`font-medium ${selected && user && !inList ? 'text-pink-600' : 'text-gray-600'}`}>
+                  <span className={`font-medium ${selected && user ? 'text-pink-600' : 'text-gray-600'}`}>
                     {tierLabel(key)}
                   </span>
                   <div className="flex gap-3 text-right items-center">
                     {p.market != null && (
-                      <span className={`font-bold ${selected && user && !inList ? 'text-pink-500' : 'text-gray-700'}`}>
+                      <span className={`font-bold ${selected && user ? 'text-pink-500' : 'text-gray-700'}`}>
                         ${p.market.toFixed(2)}
                       </span>
                     )}
                     {p.mid != null && <span className="text-[11px] text-gray-400">mid ${p.mid.toFixed(2)}</span>}
                     {p.low != null && <span className="text-[11px] text-gray-400">low ${p.low.toFixed(2)}</span>}
-                    {selected && user && !inList && <span className="text-pink-400 text-xs">✓</span>}
+                    {selected && user && <span className="text-pink-400 text-xs">✓</span>}
                   </div>
                 </button>
               )
             })}
-            {user && !inList && (
+            {user && (
               <button
                 type="button"
                 onClick={() => setVersion('')}
@@ -383,58 +380,46 @@ function CardModal({ card, user, onToast, onClose, saveCard, collectionIds, owne
 
         <div className="flex flex-col gap-2">
           {user ? (
-            inList ? (
-              /* Already saved — show which bucket it's in + remove option */
-              <>
+            <>
+              {/* Status note when card is already saved in any edition */}
+              {inList && (
                 <p className="text-center text-xs font-semibold text-gray-400">
                   {isOwned ? '✅ In your Collection' : '💖 In your Wishlist'}
+                  {version && <span className="ml-1 text-pink-400 font-normal">· Adding as {tierLabel(version) ?? 'Unspecified'}</span>}
                 </p>
-                <QuantityStepper value={quantity} onChange={setQuantity} />
-                <button
-                  onClick={() => addCard(true, quantity)}
-                  disabled={saving}
-                  className="bg-emerald-400 hover:bg-emerald-500 text-white
-                             font-semibold py-2 rounded-2xl transition-colors disabled:opacity-60"
-                >
-                  {saving
-                    ? 'Saving…'
-                    : isOwned
-                    ? `+ Add ${quantity} Cop${quantity === 1 ? 'y' : 'ies'}`
-                    : `Move to Collection ×${quantity}`}
-                </button>
-                <button
-                  onClick={removeCard}
-                  disabled={removing}
-                  className="border border-red-300 text-red-500 hover:bg-red-50
-                             font-semibold py-2 rounded-2xl transition-colors disabled:opacity-60"
-                >
-                  {removing ? 'Removing…' : isOwned ? '🗑️ Remove from Collection' : '🗑️ Remove from Wishlist'}
-                </button>
-              </>
-            ) : (
-              /* Not yet saved — two distinct action buttons */
-              <div className="space-y-2">
-                <QuantityStepper value={quantity} onChange={setQuantity} />
-                <div className="flex gap-2">
+              )}
+              <QuantityStepper value={quantity} onChange={setQuantity} />
+              <div className="flex gap-2">
+                {!inList && (
                   <button
-                  onClick={() => addCard(false)}
-                  disabled={saving}
-                  className="flex-1 bg-violet-100 hover:bg-violet-200 text-violet-700
-                             font-semibold py-2 rounded-2xl transition-colors disabled:opacity-60"
-                >
-                  {saving ? '…' : '💖 Wishlist'}
-                </button>
+                    onClick={() => addCard(false)}
+                    disabled={saving}
+                    className="flex-1 bg-violet-100 hover:bg-violet-200 text-violet-700
+                               font-semibold py-2 rounded-2xl transition-colors disabled:opacity-60"
+                  >
+                    {saving ? '…' : '💖 Wishlist'}
+                  </button>
+                )}
                 <button
                   onClick={() => addCard(true, quantity)}
                   disabled={saving}
                   className="flex-1 bg-emerald-400 hover:bg-emerald-500 text-white
                              font-semibold py-2 rounded-2xl transition-colors disabled:opacity-60"
                 >
-                  {saving ? '…' : '✨ Collection'}
+                  {saving ? 'Saving…' : inList && isOwned ? `+ Add ${quantity} Cop${quantity === 1 ? 'y' : 'ies'}` : inList ? `Move to Collection ×${quantity}` : '✨ Collection'}
                 </button>
-                </div>
               </div>
-            )
+              {inList && (
+                <button
+                  onClick={removeCard}
+                  disabled={removing}
+                  className="border border-red-300 text-red-500 hover:bg-red-50
+                             font-semibold py-2 rounded-2xl transition-colors disabled:opacity-60"
+                >
+                  {removing ? 'Removing…' : '🗑️ Remove all saved copies'}
+                </button>
+              )}
+            </>
           ) : (
             <p className="text-center text-xs text-gray-400">Login to save cards to your Wishlist & Collection 💖</p>
           )}
@@ -711,7 +696,7 @@ function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, user, on
       mid_price:    edition ? (card.tcgplayer?.prices?.[edition]?.mid    ?? card.mid_price ?? null) : (card.mid_price ?? null),
       low_price:    edition ? (card.tcgplayer?.prices?.[edition]?.low    ?? card.low_price ?? null) : (card.low_price ?? null),
       owned,
-      edition:      edition || null,
+      edition:      edition || 'unspecified',
     }
     if (owned) payload.quantity = normalizedQty
 
@@ -745,7 +730,7 @@ function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, user, on
 
     const { error } = await supabase
       .from('wishlists')
-      .upsert(payload, { onConflict: 'user_id,card_id' })
+      .upsert(payload, { onConflict: 'user_id,card_id,edition' })
 
     return { error, toast }
   }, [user, activeBinderId])

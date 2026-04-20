@@ -230,7 +230,7 @@ function CardSlot({ item, isSelected, pageStyle, onClick, binders, onTransfer, c
                         key={b.id}
                         onClick={e => {
                           e.stopPropagation()
-                          onTransfer(item.card_id, b.id)
+                          onTransfer(item.id, b.id)
                           setShowMenu(false)
                         }}
                         className="flex items-center gap-2 w-full px-3 py-2.5

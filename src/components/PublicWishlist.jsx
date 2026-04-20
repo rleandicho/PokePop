@@ -143,6 +143,12 @@ export default function PublicWishlist() {
   const [isFollowing,    setIsFollowing]    = useState(false)
   const [followBusy,     setFollowBusy]     = useState(false)
 
+  // Viewer's own collection for comparison
+  const [viewerOwnedIds,    setViewerOwnedIds]    = useState(new Set())
+  const [viewerWishlistIds, setViewerWishlistIds] = useState(new Set())
+  const [savingCardId,      setSavingCardId]      = useState(null)
+  const [miniToast,         setMiniToast]         = useState('')
+
   // Binder navigation
   const [binders,        setBinders]        = useState([])
   const [selectedBinder, setSelectedBinder] = useState(null)
@@ -177,8 +183,6 @@ export default function PublicWishlist() {
 
       setProfile(prof)
 
-      // Fetch wishlist + binders + follow status in one round-trip.
-      // nullsFirst: false → slot-indexed cards first, unpositioned cards fill gaps after.
       const checkFollow = currentUser && currentUser.id !== userId
       const queries = [
         fetchAllRows(() =>
@@ -206,8 +210,25 @@ export default function PublicWishlist() {
         )
       }
 
-      const [wishlist, { data: binderData }, followResult] = await Promise.all(queries)
+      // Fetch viewer's own collection for comparison (only if logged in and viewing someone else)
+      if (checkFollow) {
+        queries.push(
+          fetchAllRows(() =>
+            supabase
+              .from('wishlists')
+              .select('card_id, owned')
+              .eq('user_id', currentUser.id)
+          )
+        )
+      }
+
+      const [wishlist, { data: binderData }, followResult, viewerCollection] = await Promise.all(queries)
       setItems(wishlist ?? [])
+
+      if (viewerCollection) {
+        setViewerOwnedIds(new Set(viewerCollection.filter(r => r.owned).map(r => r.card_id)))
+        setViewerWishlistIds(new Set(viewerCollection.filter(r => !r.owned).map(r => r.card_id)))
+      }
 
       const loadedBinders = binderData ?? []
       setBinders(loadedBinders)
@@ -244,6 +265,35 @@ export default function PublicWishlist() {
       if (error) setIsFollowing(true)
     }
     setFollowBusy(false)
+  }
+
+  // ── Add a card from someone's collection/wishlist to my own wishlist ────
+  async function addToMyWishlist(item, asOwned = false) {
+    if (!viewer) return
+    setSavingCardId(item.card_id)
+    const { error } = await supabase
+      .from('wishlists')
+      .upsert({
+        user_id:      viewer.id,
+        card_id:      item.card_id,
+        name:         item.name,
+        image:        item.image,
+        owned:        asOwned,
+        market_price: item.market_price ?? 0,
+        mid_price:    item.mid_price    ?? 0,
+        low_price:    item.low_price    ?? 0,
+        edition:      'unspecified',
+      }, { onConflict: 'user_id,card_id,edition' })
+    setSavingCardId(null)
+    if (!error) {
+      if (asOwned) {
+        setViewerOwnedIds(prev => new Set([...prev, item.card_id]))
+      } else {
+        setViewerWishlistIds(prev => new Set([...prev, item.card_id]))
+      }
+      setMiniToast(asOwned ? 'Added to your Collection! ✨' : 'Added to your Wishlist! 💖')
+      setTimeout(() => setMiniToast(''), 2500)
+    }
   }
 
   // ── Shared shell ──────────────────────────────────────────────────────────
@@ -322,37 +372,43 @@ export default function PublicWishlist() {
 
   // ── Card tile ─────────────────────────────────────────────────────────────
   function CardTile({ item }) {
-    const is1stEd = item.card_id?.endsWith('-1st')
+    const iViewerOwned    = viewerOwnedIds.has(item.card_id)
+    const iViewerWishlist = !iViewerOwned && viewerWishlistIds.has(item.card_id)
+    const isSaving        = savingCardId === item.card_id
+    const canAdd          = viewer && !isOwnProfile && !iViewerOwned && !iViewerWishlist
+
+    const tileBg     = themeMode === 'dark'
+      ? (item.owned ? 'bg-emerald-900/40 border-emerald-700/50' : 'bg-violet-900/40 border-violet-700/50')
+      : (item.owned ? 'bg-emerald-50/95 border-emerald-200'     : 'bg-violet-50/92 border-violet-200')
+
     return (
       <motion.div
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
-        className="rounded-2xl overflow-hidden shadow-md flex flex-col"
-        style={{
-          background: item.owned ? 'rgba(236,253,245,0.95)' : 'rgba(245,243,255,0.92)',
-          border:     item.owned ? '1.5px solid #6ee7b7'    : '1.5px solid #c4b5fd',
-        }}
+        className={`rounded-2xl overflow-hidden shadow-md flex flex-col border ${tileBg}`}
       >
         <div className="relative">
           <img src={item.image} alt={item.name} className="w-full" loading="lazy" />
-          {is1stEd && (
-            <span className="absolute top-1.5 left-1.5 text-[10px] font-bold bg-amber-400 text-white
-                             border border-amber-500 px-2 py-0.5 rounded-full shadow-sm leading-none">
-              ⭐ 1st Edition
-            </span>
-          )}
           {item.owned && (item.quantity || 1) > 1 && (
             <span className="absolute bottom-1.5 right-1.5 text-[11px] font-bold bg-emerald-500 text-white
                              px-1.5 py-0.5 rounded-full shadow leading-none">
               ×{item.quantity}
             </span>
           )}
+          {/* Viewer comparison badge */}
+          {iViewerOwned && (
+            <span className="absolute top-1.5 left-1.5 text-[9px] font-bold bg-emerald-500/90 text-white
+                             px-1.5 py-0.5 rounded-full shadow-sm leading-none">✅ I own this</span>
+          )}
+          {iViewerWishlist && (
+            <span className="absolute top-1.5 left-1.5 text-[9px] font-bold bg-violet-500/90 text-white
+                             px-1.5 py-0.5 rounded-full shadow-sm leading-none">💖 My wishlist</span>
+          )}
         </div>
         <div className="p-2 text-center flex flex-col flex-1">
           <p className="text-sm font-bold text-gray-700 truncate">{item.name}</p>
           {(() => {
             const { value: p, label, isManual } = getPriceInfo(item)
-            const is1st = item.card_id?.endsWith('-1st')
             return p > 0 ? (
               <div className="flex items-center justify-center gap-1 mb-1 flex-wrap">
                 <span className={`text-xs font-semibold px-2 py-0.5 rounded-full
@@ -364,23 +420,35 @@ export default function PublicWishlist() {
                     ✏️ Custom
                   </span>
                 )}
-                {is1st && !isManual && (
-                  <span className="text-[9px] font-bold text-amber-600 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded-full leading-none">
-                    1st Ed Price
-                  </span>
-                )}
               </div>
             ) : (
               <p className="text-xs font-medium text-gray-300 bg-gray-100 px-2 py-0.5
-                             rounded-full inline-block mb-1 mx-auto">
-                {is1st ? '1st Ed — Checking…' : '---'}
-              </p>
+                             rounded-full inline-block mb-1 mx-auto">---</p>
             )
           })()}
           {item.owned && (
-            <span className="block text-xs text-emerald-600 font-semibold mt-0.5">
-              ✅ Owned
-            </span>
+            <span className="block text-xs text-emerald-600 font-semibold mt-0.5">✅ Owned</span>
+          )}
+          {/* Add to my collection/wishlist buttons */}
+          {canAdd && (
+            <div className="mt-auto pt-2 flex gap-1">
+              <button
+                onClick={() => addToMyWishlist(item, false)}
+                disabled={isSaving}
+                className="flex-1 text-[10px] font-semibold py-1 rounded-xl
+                           bg-violet-100 hover:bg-violet-200 text-violet-700 transition-colors disabled:opacity-50"
+              >
+                {isSaving ? '…' : '💖 Want'}
+              </button>
+              <button
+                onClick={() => addToMyWishlist(item, true)}
+                disabled={isSaving}
+                className="flex-1 text-[10px] font-semibold py-1 rounded-xl
+                           bg-emerald-100 hover:bg-emerald-200 text-emerald-700 transition-colors disabled:opacity-50"
+              >
+                {isSaving ? '…' : '✅ Have'}
+              </button>
+            </div>
           )}
           {shopMode && item.owned && (
             <a
@@ -443,11 +511,20 @@ export default function PublicWishlist() {
         )}
       </header>
 
+      {/* ── Mini toast ─────────────────────────────────────────────────────── */}
+      {miniToast && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50
+                        bg-pink-500 text-white text-sm font-semibold
+                        px-5 py-2.5 rounded-full shadow-lg pointer-events-none">
+          {miniToast}
+        </div>
+      )}
+
       {/* ── Split stats: collection (emerald) + wishlist (violet) ────────────── */}
       <div className="max-w-md mx-auto px-4 pb-4">
         <div className="grid grid-cols-2 gap-3">
-          <div className="rounded-2xl p-4 text-center border border-emerald-200"
-               style={{ background: 'rgba(236,253,245,0.95)' }}>
+          <div className={`rounded-2xl p-4 text-center border
+            ${themeMode === 'dark' ? 'bg-emerald-900/40 border-emerald-700/50' : 'bg-emerald-50/95 border-emerald-200'}`}>
             <p className="text-xs font-semibold text-emerald-500 uppercase tracking-wide mb-1">
               Collection Value
             </p>
@@ -459,8 +536,8 @@ export default function PublicWishlist() {
             </p>
           </div>
 
-          <div className="rounded-2xl p-4 text-center border border-violet-200"
-               style={{ background: 'rgba(245,243,255,0.92)' }}>
+          <div className={`rounded-2xl p-4 text-center border
+            ${themeMode === 'dark' ? 'bg-violet-900/40 border-violet-700/50' : 'bg-violet-50/92 border-violet-200'}`}>
             <p className="text-xs font-semibold text-violet-500 uppercase tracking-wide mb-1">
               Wishlist Value
             </p>
