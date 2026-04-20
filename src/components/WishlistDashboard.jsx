@@ -1443,8 +1443,12 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
     const prev = items.find(i => i.id === rowId)
     const prev_binder = prev?.binder_id
     const prev_slot   = prev?.slot_index
-    // Reset slot_index so buildSlotArray places the card at the first open slot
-    setItems(cur => cur.map(i => i.id === rowId ? { ...i, binder_id: binderId || null, slot_index: null } : i))
+    // Move the card to the end of the items array with slot_index=null so
+    // buildSlotArray always places it after all existing binder cards.
+    setItems(cur => {
+      const updated = { ...prev, binder_id: binderId || null, slot_index: null }
+      return [...cur.filter(i => i.id !== rowId), updated]
+    })
     const { error } = await supabase
       .from('wishlists')
       .update({ binder_id: binderId || null, slot_index: null })
