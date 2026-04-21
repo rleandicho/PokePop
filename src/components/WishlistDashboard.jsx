@@ -1448,18 +1448,52 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
     }))
   }
 
+  // Simulate buildSlotArray (BinderView's layout engine) with the current owned
+  // binder cards and return the index of the first visually empty slot.
+  // This matches exactly what BinderView will render, accounting for:
+  //   - cards whose slot_index >= totalSlots (displaced to first gap)
+  //   - un-owned cards that share a binder_id but are hidden in the binder view
+  //   - gaps left by previously removed cards
+  function computeNextBinderSlot(ownedBinderItems) {
+    const SLOTS_PER_PAGE = 9  // BinderView default (3×3); resets on every mount
+    const n          = ownedBinderItems.length
+    const totalPages = Math.max(1, Math.ceil(n / SLOTS_PER_PAGE))
+    const totalSlots = totalPages * SLOTS_PER_PAGE
+
+    const occupied = new Array(totalSlots).fill(false)
+    const unplaced  = []
+
+    for (const item of ownedBinderItems) {
+      const idx = item.slot_index
+      if (idx != null && idx >= 0 && idx < totalSlots && !occupied[idx]) {
+        occupied[idx] = true
+      } else {
+        unplaced.push(item)
+      }
+    }
+
+    let cursor = 0
+    for (const _ of unplaced) {
+      while (cursor < totalSlots && occupied[cursor]) cursor++
+      if (cursor < totalSlots) { occupied[cursor] = true; cursor++ }
+    }
+
+    const firstEmpty = occupied.indexOf(false)
+    // All slots full → extend into the first slot of the next page
+    return firstEmpty === -1 ? totalSlots : firstEmpty
+  }
+
   async function moveCardToBinder(rowId, binderId) {
     const prev = items.find(i => i.id === rowId)
     const prev_binder = prev?.binder_id
     const prev_slot   = prev?.slot_index
 
-    // Compute next slot from local items state — always current because binder
-    // swaps sync back via handleSlotsSwapped / onSlotsSwapped callback.
     let nextSlot = null
     if (binderId) {
-      const binderCards = items.filter(i => i.binder_id === binderId && i.id !== rowId)
-      const maxExplicit = binderCards.reduce((m, i) => Math.max(m, i.slot_index ?? -1), -1)
-      nextSlot = Math.max(binderCards.length, maxExplicit + 1)
+      // Only owned cards — BinderView filters by i.owned, so nextSlot must
+      // be computed from the same subset to avoid off-by-N placement errors.
+      const ownedBinder = items.filter(i => i.binder_id === binderId && i.id !== rowId && i.owned)
+      nextSlot = computeNextBinderSlot(ownedBinder)
     }
 
     setItems(cur => cur.map(i => i.id === rowId
