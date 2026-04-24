@@ -910,6 +910,7 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
   const [wishlistPage,   setWishlistPage]   = useState(1)
   const [cardSearch,     setCardSearch]     = useState('')
   const [cardSort,       setCardSort]       = useState('newest')  // 'newest' | 'oldest'
+  const [categoryFilter, setCategoryFilter] = useState(null)      // null = all, string = specific category
 
   // Notify App whenever the active binder changes (so CardGrid can route new cards here)
   useEffect(() => { onBinderChange?.(selectedBinder?.id ?? null) }, [selectedBinder])
@@ -926,7 +927,7 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
           .from('wishlists')
           // edition column: run migration before this works →
           //   ALTER TABLE wishlists ADD COLUMN IF NOT EXISTS edition TEXT NOT NULL DEFAULT 'unlimited';
-          .select('id, card_id, name, image, owned, market_price, mid_price, low_price, manual_price, slot_index, binder_id, edition, is_chase, is_favorite, quantity')
+          .select('id, card_id, name, image, owned, market_price, mid_price, low_price, manual_price, slot_index, binder_id, edition, is_chase, is_favorite, quantity, category')
           .eq('user_id', user.id)
           .order('created_at', { ascending: false })
       ),
@@ -1066,17 +1067,31 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
 
   // Search-filtered + sorted views
   // Items are fetched created_at DESC (newest first); 'oldest' just reverses that slice.
+  // All unique non-empty categories across the full list (for filter pills)
+  const allCategories = useMemo(() => {
+    const cats = new Set(items.map(i => i.category).filter(Boolean))
+    return [...cats].sort()
+  }, [items])
+
   const filteredOwnedItems = useMemo(() => {
     const q = cardSearch.trim().toLowerCase()
-    const filtered = q ? ownedItemsList.filter(i => i.name?.toLowerCase().includes(q)) : ownedItemsList
+    let filtered = q ? ownedItemsList.filter(i => i.name?.toLowerCase().includes(q)) : ownedItemsList
+    if (categoryFilter) filtered = filtered.filter(i => i.category === categoryFilter)
     return cardSort === 'oldest' ? [...filtered].reverse() : filtered
-  }, [ownedItemsList, cardSearch, cardSort])
+  }, [ownedItemsList, cardSearch, cardSort, categoryFilter])
 
   const filteredWishlistItems = useMemo(() => {
     const q = cardSearch.trim().toLowerCase()
-    const filtered = q ? wishlistItemsList.filter(i => i.name?.toLowerCase().includes(q)) : wishlistItemsList
+    let filtered = q ? wishlistItemsList.filter(i => i.name?.toLowerCase().includes(q)) : wishlistItemsList
+    if (categoryFilter) filtered = filtered.filter(i => i.category === categoryFilter)
     return cardSort === 'oldest' ? [...filtered].reverse() : filtered
-  }, [wishlistItemsList, cardSearch, cardSort])
+  }, [wishlistItemsList, cardSearch, cardSort, categoryFilter])
+
+  async function updateCategory(rowId, category) {
+    const val = category?.trim() || null
+    setItems(prev => prev.map(i => i.id === rowId ? { ...i, category: val } : i))
+    await supabase.from('wishlists').update({ category: val }).eq('id', rowId)
+  }
 
   async function togglePublic() {
     const next = !isPublic
@@ -1122,7 +1137,7 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
     // Batch fetch ALL prices in one round-trip
     const { data: priceRows } = await supabase
       .from('tcg_prices')
-      .select('card_id, holofoil_market, holofoil_mid, holofoil_low, normal_market, normal_mid, normal_low, reverse_holo_market, first_ed_holo_market, first_ed_normal_market')
+      .select('card_id, holofoil_market, holofoil_mid, holofoil_low, normal_market, normal_mid, normal_low, reverse_holo_market, first_ed_holo_market, first_ed_normal_market, other_market, other_mid, other_low')
       .in('card_id', uniqueBaseIds)
 
     if (!priceRows?.length) {
@@ -1148,10 +1163,10 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
         continue
       }
 
-      // Unlimited: prefer holofoil → normal → reverse holo
-      const unlMarket = p.holofoil_market ?? p.normal_market ?? p.reverse_holo_market ?? null
-      const unlMid    = p.holofoil_mid    ?? p.normal_mid    ?? null
-      const unlLow    = p.holofoil_low    ?? p.normal_low    ?? null
+      // Unlimited: prefer holofoil → normal → reverse holo → other (e.g. Perfect Order)
+      const unlMarket = p.holofoil_market ?? p.normal_market ?? p.reverse_holo_market ?? p.other_market ?? null
+      const unlMid    = p.holofoil_mid    ?? p.normal_mid    ?? p.other_mid    ?? null
+      const unlLow    = p.holofoil_low    ?? p.normal_low    ?? p.other_low    ?? null
 
       let market, mid, low
       if (is1st) {
@@ -1788,6 +1803,25 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
             💖 Wishlisted
           </p>
         ) : null}
+
+        {/* Category tag input */}
+        <div className="mt-2">
+          <input
+            type="text"
+            list={`cats-${item.id}`}
+            value={item.category ?? ''}
+            onChange={e => updateCategory(item.id, e.target.value)}
+            placeholder="+ Add category…"
+            className="w-full text-xs border border-gray-200 rounded-xl px-2 py-1.5
+                       bg-white/80 text-gray-500 placeholder-gray-300
+                       focus:outline-none focus:ring-1 focus:ring-violet-300"
+          />
+          {allCategories.length > 0 && (
+            <datalist id={`cats-${item.id}`}>
+              {allCategories.map(c => <option key={c} value={c} />)}
+            </datalist>
+          )}
+        </div>
       </div>
     </motion.div>
   )
@@ -1950,6 +1984,38 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
               </motion.button>
             ))}
           </div>
+
+          {/* Category filter pills — only show when categories exist */}
+          {allCategories.length > 0 && (
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span className="text-xs font-medium" style={{ color: 'var(--app-text)', opacity: 0.6 }}>Category:</span>
+              <motion.button
+                whileTap={{ scale: 0.95 }}
+                onClick={() => { setCategoryFilter(null); setCollectionPage(1); setWishlistPage(1) }}
+                className={`text-xs font-semibold px-3 py-1 rounded-full border transition-all
+                  ${!categoryFilter
+                    ? 'bg-sky-400 text-white border-sky-400'
+                    : 'bg-white/60 text-gray-500 border-gray-200 hover:bg-white/80'
+                  }`}
+              >
+                All
+              </motion.button>
+              {allCategories.map(cat => (
+                <motion.button
+                  key={cat}
+                  whileTap={{ scale: 0.95 }}
+                  onClick={() => { setCategoryFilter(categoryFilter === cat ? null : cat); setCollectionPage(1); setWishlistPage(1) }}
+                  className={`text-xs font-semibold px-3 py-1 rounded-full border transition-all
+                    ${categoryFilter === cat
+                      ? 'bg-violet-400 text-white border-violet-400'
+                      : 'bg-white/60 text-gray-500 border-gray-200 hover:bg-white/80'
+                    }`}
+                >
+                  {cat}
+                </motion.button>
+              ))}
+            </div>
+          )}
         </div>
       )}
 

@@ -128,12 +128,13 @@ function normaliseCard(row) {
         ...(row.reverse_holo_market != null ? { reverseHolofoil: { market: row.reverse_holo_market, mid: row.reverse_holo_mid, low: row.reverse_holo_low } } : {}),
         ...(row.first_ed_holo_market != null ? { '1stEditionHolofoil': { market: row.first_ed_holo_market } } : {}),
         ...(row.first_ed_normal_market != null ? { '1stEditionNormal': { market: row.first_ed_normal_market } } : {}),
+        ...(row.other_market != null ? { other: { market: row.other_market, mid: row.other_mid, low: row.other_low } } : {}),
       }
     },
     // Convenience fields CardGrid reads directly
     market_price: row.best_market_price ?? null,
-    mid_price:    row.holofoil_mid ?? row.normal_mid ?? null,
-    low_price:    row.holofoil_low ?? row.normal_low ?? null,
+    mid_price:    row.holofoil_mid ?? row.normal_mid ?? row.other_mid ?? null,
+    low_price:    row.holofoil_low ?? row.normal_low ?? row.other_low ?? null,
     price_updated_at: row.price_updated_at ?? null,
     _is_wotc:     row.is_wotc ?? false,
   }
@@ -237,6 +238,13 @@ export async function refreshPriceIfStale(cardId, tcgApiKey) {
     if (!card) return
 
     const p = card.tcgplayer?.prices ?? {}
+
+    // Scan all tiers for a generic "other" price (e.g. Perfect Order, non-standard sets).
+    // Skip well-known keys that have their own columns; skip 1stEdition* for unlimited.
+    const KNOWN_KEYS = new Set(['normal','holofoil','reverseHolofoil','1stEditionHolofoil','1stEditionNormal'])
+    const otherTier = Object.entries(p).find(([k]) => !KNOWN_KEYS.has(k) && p[k]?.market != null)
+    const otherData = otherTier ? otherTier[1] : null
+
     const priceRow = {
       card_id:                cardId,
       normal_market:          p.normal?.market          ?? null,
@@ -250,6 +258,9 @@ export async function refreshPriceIfStale(cardId, tcgApiKey) {
       reverse_holo_low:       p.reverseHolofoil?.low    ?? null,
       first_ed_holo_market:   p['1stEditionHolofoil']?.market ?? null,
       first_ed_normal_market: p['1stEditionNormal']?.market   ?? null,
+      other_market:           otherData?.market ?? null,
+      other_mid:              otherData?.mid    ?? null,
+      other_low:              otherData?.low    ?? null,
       updated_at:             new Date().toISOString(),
     }
 
