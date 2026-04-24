@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef, memo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { supabase } from '../lib/supabase'
-import { fetchCardsFromDb } from '../lib/cardDb.js'
+import { fetchCardsFromDb, refreshPriceIfStale } from '../lib/cardDb.js'
 import CardSkeleton from './CardSkeleton'
 import SearchBar from './SearchBar'
 
@@ -512,6 +512,14 @@ function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, user, on
   // Start as true when a filter is already active so skeletons show on the very first paint
   const [loading,  setLoading]  = useState(() => !!(activeVibe || setQuery || search))
   const [selected, setSelected] = useState(null)
+
+  // Lazy price refresh — fires when a card modal opens.
+  // Silently fetches a fresh price from pokemontcg.io if the stored price is > 24h old,
+  // then upserts to tcg_prices. Does not block or affect the modal's current display.
+  useEffect(() => {
+    if (!selected) return
+    refreshPriceIfStale(selected.id, import.meta.env.VITE_TCG_API_KEY)
+  }, [selected?.id])  // eslint-disable-line react-hooks/exhaustive-deps
 
   const abortRef     = useRef(null)
   const reqIdRef     = useRef(0)    // increments with every new request; stale responses check this

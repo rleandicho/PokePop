@@ -1097,109 +1097,81 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
   // ── Price tier extractor ─────────────────────────────────────────────────────
   // Checks preferred tier names first; falls back to ANY tier that has a market
   // price, intentionally skipping 1stEdition* keys for unlimited lookups.
-  // This fixes "blackout" on sets like Perfect Order that use non-standard tier names.
-  function extractUnlimitedPrices(prices) {
-    const PREFERRED = ['holofoil', 'reverseHolofoil', 'normal']
-    for (const key of PREFERRED) {
-      if (prices[key]?.market != null) {
-        return { market: prices[key].market ?? null, mid: prices[key].mid ?? null, low: prices[key].low ?? null }
-      }
-    }
-    // Generic fallback — iterate all tiers, skip any 1stEdition* key
-    const entry = Object.entries(prices).find(([k, v]) => !k.startsWith('1stEdition') && v?.market != null)
-    if (entry) {
-      const [, tier] = entry
-      return { market: tier.market ?? null, mid: tier.mid ?? null, low: tier.low ?? null }
-    }
-    return { market: null, mid: null, low: null }
-  }
-
-  function extract1stEdPrices(prices) {
-    const tier = prices['1stEditionHolofoil'] ?? prices['1stEditionNormal'] ?? {}
-    return { market: tier.market ?? null, mid: tier.mid ?? null, low: tier.low ?? null }
-  }
-
-  // ── Refresh Prices — re-fetch TCGPlayer market/mid/low for all saved cards ──
+  // ── Refresh Prices — pull latest prices from tcg_prices (our Supabase DB) ────
+  // Single batch query instead of per-card API calls — fast and no rate limits.
   async function refreshPrices() {
     if (refreshing) return
     setRefreshing(true)
     setRefreshProgress({ done: 0, total: 0 })
 
-    const { data: stale, error: fetchErr } = await supabase
+    // Fetch all wishlist rows for this user
+    const { data: wishlistItems, error: fetchErr } = await supabase
       .from('wishlists')
-      .select('card_id, market_price, mid_price, low_price')
+      .select('id, card_id')
       .eq('user_id', user.id)
 
-    if (fetchErr || !stale?.length) {
+    if (fetchErr || !wishlistItems?.length) {
       onToast('Nothing to refresh.')
       setRefreshing(false)
       return
     }
 
-    // Deduplicate base IDs (strip -1st suffix for the API lookup)
-    const uniqueBaseIds = [...new Set(stale.map(i => i.card_id.replace(/-1st$/, '')))]
-    const total = uniqueBaseIds.length
+    // Collect unique base card IDs (strip -1st suffix for the DB lookup)
+    const uniqueBaseIds = [...new Set(wishlistItems.map(i => i.card_id.replace(/-1st$/, '')))]
+
+    // Batch fetch ALL prices in one round-trip
+    const { data: priceRows } = await supabase
+      .from('tcg_prices')
+      .select('card_id, holofoil_market, holofoil_mid, holofoil_low, normal_market, normal_mid, normal_low, reverse_holo_market, first_ed_holo_market, first_ed_normal_market')
+      .in('card_id', uniqueBaseIds)
+
+    if (!priceRows?.length) {
+      onToast('Price data not available yet — run the import script first 📦')
+      setRefreshing(false)
+      return
+    }
+
+    // Build price lookup map: base card_id → price row
+    const priceMap = Object.fromEntries(priceRows.map(p => [p.card_id, p]))
+
+    const total = wishlistItems.length
     setRefreshProgress({ done: 0, total })
-
     let updated = 0
-    let done    = 0
 
-    for (const baseId of uniqueBaseIds) {
-      try {
-        console.log(`[PriceRefresh] Fetching → ${baseId}`)
+    for (const item of wishlistItems) {
+      const is1st  = item.card_id.endsWith('-1st')
+      const baseId = is1st ? item.card_id.replace(/-1st$/, '') : item.card_id
+      const p      = priceMap[baseId]
 
-        const res = await fetch(
-          `https://api.pokemontcg.io/v2/cards/${baseId}?select=id,tcgplayer`
-        )
-
-        if (!res.ok) {
-          console.warn(`[PriceRefresh] HTTP ${res.status} for ${baseId}`)
-          done++
-          setRefreshProgress({ done, total })
-          await new Promise(r => setTimeout(r, 300))
-          continue
-        }
-
-        const json   = await res.json()
-        const tcg    = json.data?.tcgplayer?.prices ?? {}
-        console.log(`[PriceRefresh] ${baseId} — raw prices:`, tcg)
-
-        // Unlimited card row
-        const unl = extractUnlimitedPrices(tcg)
-        console.log(`[PriceRefresh] ${baseId} — resolved unlimited:`, unl)
-        const { error: unlErr } = await supabase
-          .from('wishlists')
-          .update({ market_price: unl.market, mid_price: unl.mid, low_price: unl.low })
-          .eq('user_id', user.id)
-          .eq('card_id', baseId)
-        if (!unlErr) updated++
-
-        // 1st Ed row — only if this user has the -1st variant saved
-        const has1st = stale.some(i => i.card_id === `${baseId}-1st`)
-        if (has1st) {
-          const ed = extract1stEdPrices(tcg)
-          // Edition Swap: fall back to unlimited baseline if TCGPlayer has no 1st Ed tier
-          const ed1st = {
-            market: ed.market ?? unl.market,
-            mid:    ed.mid    ?? unl.mid,
-            low:    ed.low    ?? unl.low,
-          }
-          console.log(`[PriceRefresh] ${baseId}-1st — resolved 1st Ed:`, ed1st, ed.market == null ? '(unlimited fallback)' : '')
-          const { error: edErr } = await supabase
-            .from('wishlists')
-            .update({ market_price: ed1st.market, mid_price: ed1st.mid, low_price: ed1st.low })
-            .eq('user_id', user.id)
-            .eq('card_id', `${baseId}-1st`)
-          if (!edErr) updated++
-        }
-      } catch (err) {
-        console.warn(`[PriceRefresh] Exception for ${baseId}:`, err)
+      if (!p) {
+        setRefreshProgress(prev => ({ ...prev, done: prev.done + 1 }))
+        continue
       }
 
-      done++
-      setRefreshProgress({ done, total })
-      // 300ms between requests — gives the main thread room and avoids rate-limit triggers
-      await new Promise(r => setTimeout(r, 300))
+      // Unlimited: prefer holofoil → normal → reverse holo
+      const unlMarket = p.holofoil_market ?? p.normal_market ?? p.reverse_holo_market ?? null
+      const unlMid    = p.holofoil_mid    ?? p.normal_mid    ?? null
+      const unlLow    = p.holofoil_low    ?? p.normal_low    ?? null
+
+      let market, mid, low
+      if (is1st) {
+        // 1st Ed: use 1st Ed market, fall back to unlimited for mid/low (not stored separately)
+        market = p.first_ed_holo_market ?? p.first_ed_normal_market ?? unlMarket
+        mid    = unlMid
+        low    = unlLow
+      } else {
+        market = unlMarket
+        mid    = unlMid
+        low    = unlLow
+      }
+
+      const { error } = await supabase
+        .from('wishlists')
+        .update({ market_price: market, mid_price: mid, low_price: low })
+        .eq('id', item.id)
+
+      if (!error) updated++
+      setRefreshProgress(prev => ({ ...prev, done: prev.done + 1 }))
     }
 
     setRefreshing(false)
@@ -1207,7 +1179,7 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
 
     if (updated > 0) {
       await fetchWishlist()
-      onToast(`✨ Updated ${updated}/${stale.length} card${stale.length !== 1 ? 's' : ''}!`)
+      onToast(`✨ Updated ${updated}/${total} card price${total !== 1 ? 's' : ''}!`)
     } else {
       onToast('All prices are already up to date ✅')
     }

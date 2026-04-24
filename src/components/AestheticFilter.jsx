@@ -1,5 +1,6 @@
 import { useState, useEffect, memo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
+import { supabase } from '../lib/supabase.js'
 
 // ─── Vibe definitions ─────────────────────────────────────────────────────────
 const VIBES = [
@@ -19,11 +20,11 @@ const VIBES = [
 const WISHLIST_VIBE = { id: 'wishlist', label: 'Wishlist & Collection ✨📦', color: 'bg-rose-200 text-rose-700' }
 
 // ─── Sets cache — memory + localStorage with 24-hour TTL ─────────────────────
-const LS_KEY  = 'pokepop_sets_v4'   // bumped: POP Series + McDonald's added to promo group
+// v5: now fetches from Supabase tcg_sets instead of pokemontcg.io API
+const LS_KEY  = 'pokepop_sets_v5'
 const TTL_MS  = 24 * 60 * 60 * 1000
 const PROMO_KEY   = 'Promos'
-// Catches: sets named with "Promo/Promos", cards with PROMO subtype (older WotC/DP era),
-// POP Series tournament promos, and McDonald's Happy Meal promo sets.
+// Matches AestheticFilter promo detection AND cardDb.js PROMO_NAME_FRAGMENTS filter.
 const PROMO_QUERY = '(set.name:"*Promo*" OR subtypes:PROMO OR set.name:"*POP Series*" OR set.name:"*McDonald*")'
 
 let setsCache = null   // in-memory reference to avoid re-parsing localStorage
@@ -42,14 +43,23 @@ async function fetchSets() {
         return setsCache
       }
     }
-  } catch (_) { /* corrupt entry — fall through to network */ }
+  } catch (_) { /* corrupt entry — fall through to DB */ }
 
-  // 3. Fetch from TCG API (pageSize=250 is the API maximum)
-  const res  = await fetch(
-    'https://api.pokemontcg.io/v2/sets?orderBy=-releaseDate&pageSize=250&select=id,name,series,releaseDate'
-  )
-  const data = await res.json()
-  const sets = data.data ?? []
+  // 3. Fetch from Supabase tcg_sets (no rate limits — our own data)
+  const { data: rows, error } = await supabase
+    .from('tcg_sets')
+    .select('id, name, series, release_date')
+    .order('release_date', { ascending: false })
+
+  if (error) throw error
+
+  // Normalise snake_case → camelCase so grouping logic below is unchanged
+  const sets = (rows ?? []).map(s => ({
+    id:          s.id,
+    name:        s.name,
+    series:      s.series,
+    releaseDate: s.release_date,
+  }))
 
   // Group ALL sets by series — promo/special sets go into a dedicated Promos group
   const grouped = {}
