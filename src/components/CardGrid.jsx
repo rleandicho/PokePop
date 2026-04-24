@@ -511,6 +511,7 @@ function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, user, on
   const [totalPages, setTotalPages] = useState(0)
   // Start as true when a filter is already active so skeletons show on the very first paint
   const [loading,  setLoading]  = useState(() => !!(activeVibe || setQuery || search))
+  const [dbError,  setDbError]  = useState(null)   // set when card DB isn't ready yet
   const [selected, setSelected] = useState(null)
 
   // Lazy price refresh — fires when a card modal opens.
@@ -607,6 +608,10 @@ function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, user, on
     } catch (err) {
       if (err.name === 'AbortError') return
       console.error('fetchCards:', err)
+      // Surface a human-readable error when the DB tables haven't been created yet
+      if (err.message?.includes('does not exist') || err.message?.includes('relation')) {
+        setDbError('Card database is being set up — check back soon! 🛠️')
+      }
       setTotalPages(0)
     }
 
@@ -743,6 +748,14 @@ function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, user, on
     return (
       <p className="text-center text-pink-300 font-semibold mt-16 text-lg">
         Pick a vibe above to discover cards ✨
+      </p>
+    )
+  }
+
+  if (dbError) {
+    return (
+      <p className="text-center text-amber-500 font-semibold mt-16 text-base max-w-sm mx-auto">
+        {dbError}
       </p>
     )
   }
