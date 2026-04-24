@@ -1,12 +1,12 @@
 import { useState, useEffect, useCallback, useRef, memo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { supabase } from '../lib/supabase'
+import { fetchCardsFromDb } from '../lib/cardDb.js'
 import CardSkeleton from './CardSkeleton'
 import SearchBar from './SearchBar'
 
-const PAGE_SIZE       = 20
-const PRICE_PAGE_SIZE = 250  // API maximum — gives the largest priced-card pool for price sorts
-const CACHE_LIMIT     = 10   // max unique filter combinations held in memory
+const PAGE_SIZE   = 20
+const CACHE_LIMIT = 10   // max unique filter combinations held in memory
 
 // ─── Sort options ─────────────────────────────────────────────────────────────
 export const SORT_OPTIONS = [
@@ -16,26 +16,6 @@ export const SORT_OPTIONS = [
   { id: 'price-high', label: 'Price (High → Low)' },
   { id: 'price-low',  label: 'Price (Low → High)' },
 ]
-
-// ─── Vibe → TCG query mapping ─────────────────────────────────────────────────
-// name-based vibes use `names` arrays — all are OR'd together for consistent results
-const VIBE_QUERIES = {
-  girlypop:    { names: ['cleffa', 'sylveon', 'alcremie', 'jigglypuff', 'togepi', 'snubbull', 'togekiss', 'clefairy', 'chansey', 'happiny', 'mew', 'eevee'] },
-  trainers:    { query: '(supertype:trainer OR subtypes:item OR subtypes:supporter OR subtypes:stadium)' },
-  // Space: named space Pokémon + background-aware flavor/set keywords to catch non-space Pokémon
-  // depicted in starry/lunar/cosmic scenes (e.g. Clefairy on a moonlit mountain).
-  space: { query: '((name:lunala OR name:cosmog OR name:cosmoem OR name:minior OR name:jirachi OR name:elgyem OR name:beheeyem OR name:deoxys OR name:solrock OR name:lunatone OR name:cresselia OR name:stakataka OR name:nihilego OR name:solgaleo) OR set.name:"Cosmic Eclipse" OR flavorText:space OR flavorText:galaxy OR flavorText:moon OR flavorText:meteor OR flavorText:celestial OR flavorText:cosmic OR flavorText:lunar)' },
-  pastel:      { type: 'fairy' },
-  cottagecore: { names: ['comfey', 'roselia', 'cherubi', 'shaymin', 'tangela', 'bellossom', 'flabebe', 'floette', 'florges', 'gossifleur', 'eldegoss'] },
-  darkfairy:   { names: ['misdreavus', 'mismagius', 'gardevoir', 'hatterene', 'grimmsnarl', 'dragapult', 'gengar', 'spiritomb'] },
-  nature:      { type: 'grass' },
-  // Full Art: catches Sword & Shield / older "Full Art" subtypes AND modern SV rarities
-  fullart:     { query: '(subtypes:"Full Art" OR rarity:"Special Illustration Rare" OR rarity:"Illustration Rare" OR rarity:"Hyper Rare")' },
-  // Starters: all starter Pokémon and their evolutions across all 9 generations
-  starters: { query: '(name:bulbasaur OR name:ivysaur OR name:venusaur OR name:charmander OR name:charmeleon OR name:charizard OR name:squirtle OR name:wartortle OR name:blastoise OR name:chikorita OR name:bayleef OR name:meganium OR name:cyndaquil OR name:quilava OR name:typhlosion OR name:totodile OR name:croconaw OR name:feraligatr OR name:treecko OR name:grovyle OR name:sceptile OR name:torchic OR name:combusken OR name:blaziken OR name:mudkip OR name:marshtomp OR name:swampert OR name:turtwig OR name:grotle OR name:torterra OR name:chimchar OR name:monferno OR name:infernape OR name:piplup OR name:prinplup OR name:empoleon OR name:snivy OR name:servine OR name:serperior OR name:tepig OR name:pignite OR name:emboar OR name:oshawott OR name:dewott OR name:samurott OR name:chespin OR name:quilladin OR name:chesnaught OR name:fennekin OR name:braixen OR name:delphox OR name:froakie OR name:frogadier OR name:greninja OR name:rowlet OR name:dartrix OR name:decidueye OR name:litten OR name:torracat OR name:incineroar OR name:popplio OR name:brionne OR name:primarina OR name:grookey OR name:thwackey OR name:rillaboom OR name:scorbunny OR name:raboot OR name:cinderace OR name:sobble OR name:drizzile OR name:inteleon OR name:sprigatito OR name:floragato OR name:meowscarada OR name:fuecoco OR name:crocalor OR name:skeledirge OR name:quaxly OR name:quaxwell OR name:quaquaval)' },
-  // Dragons: TCG Dragon type + classic pre-Dragon-type-era dragon Pokémon (colorless era)
-  dragons: { query: '(types:dragon OR name:dratini OR name:dragonair OR name:dragonite OR name:kingdra OR name:rayquaza OR name:flygon OR name:vibrava OR name:trapinch OR name:altaria OR name:bagon OR name:shelgon OR name:salamence OR name:latias OR name:latios OR name:gible OR name:gabite OR name:garchomp OR name:axew OR name:fraxure OR name:haxorus OR name:deino OR name:zweilous OR name:hydreigon OR name:druddigon)' },
-}
 
 // Pick the best available market price across all TCGPlayer tiers.
 // Used for grid display / sort — the specific version price is shown separately in the modal.
@@ -71,8 +51,9 @@ function buildCacheKey(vibe, search, setQuery, sort) {
 
 // ─── localStorage card cache ──────────────────────────────────────────────────
 // Persists non-price-sort results across page refreshes.
-// Price sorts (250 cards) are skipped — too large for reliable localStorage storage.
-const LS_PREFIX = 'pokepop_cards_v1|'
+// Price sorts are skipped — too many rows for reliable localStorage storage.
+// v2: card data now sourced from Supabase (different shape — invalidates v1 entries)
+const LS_PREFIX = 'pokepop_cards_v2|'
 const LS_TTL    = 60 * 60 * 1000  // 1 hour — card data rarely changes within a session
 
 function lsGet(key) {
@@ -120,33 +101,6 @@ function sortCards(cards, sort) {
   return arr   // 'oldest' — API already returns oldest-first, no local sort needed
 }
 
-// Builds the q= string sent to the TCG API.
-// Parts are joined with a space — the API treats spaces as AND operators.
-// Returns null when there is nothing to filter (renders "all cards" endpoint).
-function buildTcgQuery(vibe, search, setQuery) {
-  const parts = []
-
-  // 1. Name search — wildcards let partial names match (e.g. "eev" → Eevee)
-  const safeName = search ? search.replace(/["()]/g, '').trim() : ''
-  if (safeName) parts.push(`name:"*${safeName}*"`)
-
-  // 2. Set filter — passed through verbatim (e.g. "set.id:base1", "set.series:\"Base\"")
-  if (setQuery) parts.push(setQuery)
-
-  // 3. Vibe filter — skipped for 'all' or when vibe is null/undefined
-  if (vibe && vibe !== 'all') {
-    const cfg = VIBE_QUERIES[vibe]
-    if (cfg) {
-      // Raw query strings are wrapped in () so their internal OR clauses don't bleed
-      // into the AND-joined parts (e.g. "name:*eevee* (supertype:Trainer OR ...)")
-      if      (cfg.query) parts.push(`(${cfg.query})`)
-      else if (cfg.type)  parts.push(`types:${cfg.type}`)
-      else if (cfg.names) parts.push(`(${cfg.names.map(n => `name:${n}`).join(' OR ')})`)
-    }
-  }
-
-  return parts.length ? parts.join(' ') : null
-}
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 function PriceTag({ card }) {
@@ -603,59 +557,30 @@ function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, user, on
     const key = buildCacheKey(vibe, srch, sq, sort)
     activeKeyRef.current = key
 
-    // Cancel any in-flight request
+    // Abort any previous Supabase fetch (bumping reqId is how we discard stale responses)
     abortRef.current?.abort()
     abortRef.current = new AbortController()
-    const { signal } = abortRef.current
 
     // Stamp this request so we can discard responses that arrive out of order
     const reqId = ++reqIdRef.current
 
     setLoading(true)
 
-    const q = buildTcgQuery(vibe, srch, sq)
-    // API ordering strategy per sort mode:
-    //   oldest/price-low/price-high → oldest release date first.
-    //     Oldest cards have near-complete TCGPlayer coverage, so local price sorting
-    //     yields a batch where almost every card is priced. Newest-first is avoided for
-    //     price sorts because brand-new cards often lack pricing entirely.
-    //   newest → newest release date first (no price involvement)
-    //   alpha  → alphabetical by name from API
-    const apiOrder = sort === 'newest'  ? '-set.releaseDate'
-                   : sort === 'alpha'   ? 'name'
-                   : 'set.releaseDate'   // oldest, price-high, price-low → oldest-first
-    const isPriceSort  = sort === 'price-high' || sort === 'price-low'
-    const effectivePSz = isPriceSort ? PRICE_PAGE_SIZE : PAGE_SIZE
-    let url = `https://api.pokemontcg.io/v2/cards?page=${pg}&pageSize=${effectivePSz}&orderBy=${encodeURIComponent(apiOrder)}&select=id,name,images,set,number,subtypes,rarity,tcgplayer,cardmarket`
-    if (q) url += `&q=${encodeURIComponent(q)}`
+    const isPriceSort = sort === 'price-high' || sort === 'price-low'
 
     try {
-      const headers = {}
-      if (import.meta.env.VITE_TCG_API_KEY) headers['X-Api-Key'] = import.meta.env.VITE_TCG_API_KEY
-      const res = await fetch(url, { signal, headers })
+      const { cards: rawCards, totalPages: total } = await fetchCardsFromDb({
+        vibe: vibe !== 'all' ? vibe : null,
+        search: srch,
+        setQuery: sq,
+        sort,
+        page: pg,
+      })
 
-      // A newer request has already started — discard this response entirely
+      // A newer request has already started — discard this response
       if (reqIdRef.current !== reqId) return
 
-      const data = await res.json()
-      const incoming = data.data ?? []
-      const total = Math.ceil((data.totalCount ?? 0) / effectivePSz)
-
-      // Attach the best available market price to each card for sort/display.
-      // All TCGPlayer tier prices remain on card.tcgplayer.prices for the modal breakdown.
-      const expanded = []
-      for (const card of incoming) {
-        const tcg   = card.tcgplayer?.prices ?? {}
-        const best  = Object.values(tcg).find(v => v?.market != null)
-        card.market_price = best?.market ?? null
-        card.mid_price    = best?.mid    ?? null
-        card.low_price    = best?.low    ?? null
-        expanded.push(card)
-      }
-
-      const rawCards = expanded
-
-      // Write to cache with LRU eviction — cap at CACHE_LIMIT unique filter combinations
+      // Write to LRU in-memory cache
       const keyList = cacheKeysRef.current
       const existing = keyList.indexOf(key)
       if (existing !== -1) keyList.splice(existing, 1)
@@ -672,7 +597,8 @@ function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, user, on
       setCards(sortCards(rawCards, sort))
       setTotalPages(total)
     } catch (err) {
-      if (err.name === 'AbortError') return   // intentional cancel — leave loading state alone
+      if (err.name === 'AbortError') return
+      console.error('fetchCards:', err)
       setTotalPages(0)
     }
 
