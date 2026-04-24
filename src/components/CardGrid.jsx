@@ -69,6 +69,28 @@ function buildCacheKey(vibe, search, setQuery, sort) {
   return `v2|${vibe ?? ''}|${search ?? ''}|${setQuery ?? ''}|${sort ?? ''}`
 }
 
+// ─── localStorage card cache ──────────────────────────────────────────────────
+// Persists non-price-sort results across page refreshes.
+// Price sorts (250 cards) are skipped — too large for reliable localStorage storage.
+const LS_PREFIX = 'pokepop_cards_v1|'
+const LS_TTL    = 60 * 60 * 1000  // 1 hour — card data rarely changes within a session
+
+function lsGet(key) {
+  try {
+    const raw = localStorage.getItem(LS_PREFIX + key)
+    if (!raw) return null
+    const { data, ts } = JSON.parse(raw)
+    if (Date.now() - ts > LS_TTL) { localStorage.removeItem(LS_PREFIX + key); return null }
+    return data
+  } catch { return null }
+}
+
+function lsSet(key, data) {
+  try {
+    localStorage.setItem(LS_PREFIX + key, JSON.stringify({ data, ts: Date.now() }))
+  } catch {} // quota exceeded or private browsing — silently skip
+}
+
 function sortCards(cards, sort) {
   const arr = [...cards]
 
@@ -608,7 +630,9 @@ function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, user, on
     if (q) url += `&q=${encodeURIComponent(q)}`
 
     try {
-      const res = await fetch(url, { signal })
+      const headers = {}
+      if (import.meta.env.VITE_TCG_API_KEY) headers['X-Api-Key'] = import.meta.env.VITE_TCG_API_KEY
+      const res = await fetch(url, { signal, headers })
 
       // A newer request has already started — discard this response entirely
       if (reqIdRef.current !== reqId) return
@@ -641,6 +665,9 @@ function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, user, on
       }
       keyList.push(key)
       cacheRef.current[key] = { rawCards, page: pg, totalPages: total }
+
+      // Persist to localStorage so the next page load skips the network (non-price sorts only)
+      if (!isPriceSort) lsSet(key, { rawCards, totalPages: total })
 
       setCards(sortCards(rawCards, sort))
       setTotalPages(total)
@@ -675,10 +702,27 @@ function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, user, on
       setTotalPages(cached.totalPages ?? 0)
       setLoading(false)
     } else {
-      // Cache miss: fresh fetch with the correct API ordering for this sort
-      setPage(1)
-      setCards([])
-      fetchCards(activeVibe, effectiveSearch, setQuery, sortBy, 1)
+      // Check localStorage before hitting the network (non-price sorts only)
+      const isPriceSortNow = sortBy === 'price-high' || sortBy === 'price-low'
+      const lsCached = !isPriceSortNow ? lsGet(key) : null
+      if (lsCached) {
+        // Warm the in-memory cache from localStorage so subsequent filter switches are instant
+        const keyList = cacheKeysRef.current
+        if (!keyList.includes(key)) {
+          if (keyList.length >= CACHE_LIMIT) { const evicted = keyList.shift(); delete cacheRef.current[evicted] }
+          keyList.push(key)
+        }
+        cacheRef.current[key] = { rawCards: lsCached.rawCards, page: 1, totalPages: lsCached.totalPages }
+        setCards(sortCards(lsCached.rawCards, sortBy))
+        setPage(1)
+        setTotalPages(lsCached.totalPages ?? 0)
+        setLoading(false)
+      } else {
+        // Full cache miss: fresh fetch with the correct API ordering for this sort
+        setPage(1)
+        setCards([])
+        fetchCards(activeVibe, effectiveSearch, setQuery, sortBy, 1)
+      }
     }
   }, [activeVibe, effectiveSearch, setQuery, sortBy, fetchCards]) // eslint-disable-line react-hooks/exhaustive-deps
 
