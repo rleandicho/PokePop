@@ -34,6 +34,7 @@ if (fs.existsSync(envPath)) {
 
 const SUPABASE_URL      = process.env.SUPABASE_URL      || process.env.VITE_SUPABASE_URL
 const SUPABASE_SVCKEY   = process.env.SUPABASE_SERVICE_ROLE_KEY
+                       || process.env.VITE_SUPABASE_ANON_KEY  // fallback when RLS allows inserts
 
 if (!SUPABASE_URL || !SUPABASE_SVCKEY) {
   console.error('ERROR: Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in your .env file.')
@@ -47,7 +48,8 @@ const args    = process.argv.slice(2)
 const dirArg  = args[args.indexOf('--data-dir') + 1]
 const onlySets = args.includes('--sets-only')
 const onlyPrices = args.includes('--prices-only')
-const setFilter = args[args.indexOf('--set') + 1]  // import a single set: --set base1
+const setIdx = args.indexOf('--set')
+const setFilter = setIdx !== -1 ? args[setIdx + 1] : null  // import a single set: --set base1
 
 if (!dirArg) {
   console.error('Usage: node scripts/import-cards.mjs --data-dir /path/to/pokemon-tcg-data')
