@@ -8,7 +8,8 @@
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "refresh-prices": "node scripts/refresh-prices.mjs"
+    "refresh-prices": "node scripts/refresh-prices.mjs",
+    "upload-mep-images": "node scripts/upload-mep-images.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.102.1",

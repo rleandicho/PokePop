@@ -31,11 +31,16 @@ import { createClient }  from '@supabase/supabase-js'
 // regardless of which directory the user runs the command from.
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const envPath   = path.resolve(__dirname, '..', '.env')
+const envKeysFound = []
 if (fs.existsSync(envPath)) {
   const envText = fs.readFileSync(envPath, 'utf8')
   for (const line of envText.split('\n')) {
-    const m = line.match(/^([^#=\s]+)\s*=\s*(.+)$/)
-    if (m) process.env[m[1]] = m[2].trim().replace(/^["']|["']$/g, '')
+    const trimmed = line.replace(/\r$/, '')   // strip Windows CRLF
+    const m = trimmed.match(/^([^#=\s]+)\s*=\s*(.+)$/)
+    if (m) {
+      process.env[m[1]] = m[2].trim().replace(/^["']|["']$/g, '')
+      envKeysFound.push(m[1])
+    }
   }
 }
 
@@ -48,6 +53,7 @@ if (!SUPABASE_URL || !SUPABASE_SVCKEY) {
   console.error('\nERROR: Missing Supabase credentials.')
   console.error(`  .env path checked: ${envPath}`)
   console.error(`  .env exists:       ${fs.existsSync(envPath)}`)
+  console.error(`  Keys found in .env: ${envKeysFound.join(', ') || '(none)'}`)
   console.error(`  SUPABASE_URL:      ${SUPABASE_URL ? '✓ found' : '✗ missing (need SUPABASE_URL or VITE_SUPABASE_URL)'}`)
   console.error(`  SUPABASE_KEY:      ${SUPABASE_SVCKEY ? '✓ found' : '✗ missing (need SUPABASE_SERVICE_ROLE_KEY or VITE_SUPABASE_ANON_KEY)'}`)
   console.error('\nFix: make sure your .env file has VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY')
