@@ -20,14 +20,17 @@
  * Runtime: ~5–8 min for all 20k cards with a TCG API key (rate-limited to 30 req/s).
  */
 
-import fs   from 'fs'
-import path from 'path'
-import { createClient } from '@supabase/supabase-js'
+import fs                from 'fs'
+import path              from 'path'
+import { fileURLToPath } from 'url'
+import { createClient }  from '@supabase/supabase-js'
 
 // ── Load .env ─────────────────────────────────────────────────────────────────
-// Use process.cwd() so this works reliably on Windows regardless of how Node
-// resolves import.meta.url paths. Run the script from the project root folder.
-const envPath = path.resolve(process.cwd(), '.env')
+// fileURLToPath handles the Windows C:/ prefix correctly in ESM modules.
+// This finds .env relative to the script file itself (scripts/../.env)
+// regardless of which directory the user runs the command from.
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
+const envPath   = path.resolve(__dirname, '..', '.env')
 if (fs.existsSync(envPath)) {
   const envText = fs.readFileSync(envPath, 'utf8')
   for (const line of envText.split('\n')) {
