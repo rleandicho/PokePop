@@ -120,8 +120,10 @@ function normaliseCard(row) {
       name:        row.set_name,
       releaseDate: row.release_date,
     },
-    // Prices in the same shape CardGrid uses for the modal breakdown
+    // TCGPlayer link — direct URL if stored, otherwise a search link so the modal button always appears
     tcgplayer: {
+      url: row.tcgplayer_url
+        ?? `https://www.tcgplayer.com/search/pokemon/product?q=${encodeURIComponent(row.name)}&view=grid`,
       prices: {
         ...(row.normal_market != null ? { normal: { market: row.normal_market, mid: row.normal_mid, low: row.normal_low } } : {}),
         ...(row.holofoil_market != null ? { holofoil: { market: row.holofoil_market, mid: row.holofoil_mid, low: row.holofoil_low } } : {}),

@@ -96,6 +96,7 @@ async function fetchSets() {
 // ─── Component ────────────────────────────────────────────────────────────────
 function AestheticFilter({ active, onChange, setQuery, onSetQuery, user }) {
   const [setsOpen,       setSetsOpen]       = useState(false)
+  const [vibesOpen,      setVibesOpen]      = useState(false)
   const [setGroups,      setSetGroups]      = useState({ grouped: {}, order: [] })
   const [expandedSeries, setExpandedSeries] = useState(null)
   const [loadingSets,    setLoadingSets]    = useState(false)
@@ -133,34 +134,39 @@ function AestheticFilter({ active, onChange, setQuery, onSetQuery, user }) {
   const activeSeriesQuery = (setQuery?.startsWith('set.series:') || setQuery === PROMO_QUERY) ? setQuery : null
   const activeSetQuery    = setQuery?.startsWith('set.id:')     ? setQuery : null
 
+  // A vibe is "active" if it's not 'all', 'home', 'wishlist', and not null
+  const vibeIsActive = active && active !== 'all' && active !== 'home' && active !== 'wishlist'
+
   return (
     <div className="px-4 pb-2 max-w-4xl mx-auto">
 
-      {/* ── Vibe pills ─────────────────────────────────────────────────── */}
-      <div className="flex flex-wrap justify-center gap-2 py-3">
-        {VIBES.map(v => (
-          <motion.button
-            key={v.id}
-            whileHover={{ scale: 1.08 }} whileTap={{ scale: 0.95 }}
-            onClick={() => handleVibe(v.id)}
-            className={`px-4 py-2 rounded-full font-semibold text-sm transition-all shadow-sm
-              ${active === v.id
-                ? `${v.color} ring-2 ring-offset-1 ring-pink-400 shadow-md`
-                : 'bg-white/60 text-gray-500 hover:bg-white/80'
-              }`}
-          >
-            {v.label}
-          </motion.button>
-        ))}
-      </div>
+      {/* ── Top row: All Cards + Wishlist & Collection ─────────────────── */}
+      <div className="flex flex-wrap justify-center items-center gap-2 pt-3 pb-2">
+        {/* All Cards pill */}
+        {(() => {
+          const v = VIBES.find(x => x.id === 'all')
+          return (
+            <motion.button
+              key="all"
+              whileHover={{ scale: 1.08 }} whileTap={{ scale: 0.95 }}
+              onClick={() => handleVibe('all')}
+              className={`px-5 py-2 rounded-full font-bold text-sm transition-all shadow-sm
+                ${active === 'all'
+                  ? `${v.color} ring-2 ring-offset-1 ring-pink-400 shadow-md`
+                  : 'bg-white/60 text-gray-500 hover:bg-white/80'
+                }`}
+            >
+              {v.label}
+            </motion.button>
+          )
+        })()}
 
-      {/* ── Wishlist & Collection — own row, logged-in users only ───────── */}
-      {user && (
-        <div className="flex justify-center pb-1">
+        {/* Wishlist & Collection — logged-in users only */}
+        {user && (
           <motion.button
             whileHover={{ scale: 1.08 }} whileTap={{ scale: 0.95 }}
             onClick={() => handleVibe(WISHLIST_VIBE.id)}
-            className={`px-4 py-2 rounded-full font-semibold text-sm transition-all shadow-sm
+            className={`px-5 py-2 rounded-full font-bold text-sm transition-all shadow-sm
               ${active === WISHLIST_VIBE.id
                 ? `${WISHLIST_VIBE.color} ring-2 ring-offset-1 ring-pink-400 shadow-md`
                 : 'bg-white/60 text-gray-500 hover:bg-white/80'
@@ -168,8 +174,60 @@ function AestheticFilter({ active, onChange, setQuery, onSetQuery, user }) {
           >
             {WISHLIST_VIBE.label}
           </motion.button>
-        </div>
-      )}
+        )}
+      </div>
+
+      {/* ── Browse by Vibe toggle ───────────────────────────────────────── */}
+      <div className="flex justify-center gap-2 mb-1 flex-wrap">
+        <motion.button
+          whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
+          onClick={() => setVibesOpen(o => !o)}
+          className={`flex items-center gap-2 px-5 py-2 rounded-2xl text-sm font-bold
+                      transition-all shadow-sm border
+                      ${vibesOpen || vibeIsActive
+                        ? 'bg-gradient-to-r from-pink-100 to-violet-100 text-violet-700 border-violet-200'
+                        : 'bg-white/60 text-gray-500 border-gray-200 hover:bg-white/80'
+                      }`}
+        >
+          🎨 Browse by Vibe
+          <motion.span
+            animate={{ rotate: vibesOpen ? 180 : 0 }}
+            transition={{ duration: 0.2 }}
+            className="inline-block leading-none text-xs"
+          >
+            ▾
+          </motion.span>
+        </motion.button>
+      </div>
+
+      {/* ── Vibe pills (expandable) ─────────────────────────────────────── */}
+      <AnimatePresence>
+        {vibesOpen && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            className="overflow-hidden"
+          >
+            <div className="flex flex-wrap justify-center gap-2 py-3 border-t border-white/40">
+              {VIBES.filter(v => v.id !== 'all').map(v => (
+                <motion.button
+                  key={v.id}
+                  whileHover={{ scale: 1.08 }} whileTap={{ scale: 0.95 }}
+                  onClick={() => handleVibe(v.id)}
+                  className={`px-4 py-2 rounded-full font-semibold text-sm transition-all shadow-sm
+                    ${active === v.id
+                      ? `${v.color} ring-2 ring-offset-1 ring-pink-400 shadow-md`
+                      : 'bg-white/60 text-gray-500 hover:bg-white/80'
+                    }`}
+                >
+                  {v.label}
+                </motion.button>
+              ))}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* ── Browse Sets toggle ──────────────────────────────────────────── */}
       <div className="flex justify-center mb-1">

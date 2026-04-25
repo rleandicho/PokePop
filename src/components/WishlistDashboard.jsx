@@ -692,7 +692,8 @@ function NewBinderModal({ onSave, onClose }) {
   const [name,   setName]   = useState('')
   const [color,  setColor]  = useState('#a78bfa')
   const [saving, setSaving] = useState(false)
-  const colorRef = useRef(null)
+  const colorRef           = useRef(null)
+  const categoryDebounce   = useRef({})    // rowId → setTimeout handle for debounced DB writes
 
   async function handleSave() {
     const trimmed = name.trim()
@@ -1087,10 +1088,16 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
     return cardSort === 'oldest' ? [...filtered].reverse() : filtered
   }, [wishlistItemsList, cardSearch, cardSort, categoryFilter])
 
-  async function updateCategory(rowId, category) {
-    const val = category?.trim() || null
-    setItems(prev => prev.map(i => i.id === rowId ? { ...i, category: val } : i))
-    await supabase.from('wishlists').update({ category: val }).eq('id', rowId)
+  function updateCategory(rowId, category) {
+    // Keep raw value in state (preserves spaces while typing)
+    const rawVal = category === '' ? null : category
+    setItems(prev => prev.map(i => i.id === rowId ? { ...i, category: rawVal } : i))
+    // Debounce DB write: only persist after 600ms of quiet, and trim only for storage
+    clearTimeout(categoryDebounce.current[rowId])
+    categoryDebounce.current[rowId] = setTimeout(() => {
+      const dbVal = category?.trim() || null
+      supabase.from('wishlists').update({ category: dbVal }).eq('id', rowId)
+    }, 600)
   }
 
   async function togglePublic() {
