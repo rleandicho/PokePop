@@ -21,7 +21,7 @@ const WISHLIST_VIBE = { id: 'wishlist', label: 'Wishlist & Collection ✨📦', 
 
 // ─── Sets cache — memory + localStorage with 24-hour TTL ─────────────────────
 // v5: now fetches from Supabase tcg_sets instead of pokemontcg.io API
-const LS_KEY  = 'pokepop_sets_v5'
+const LS_KEY  = 'pokepop_sets_v6'
 const TTL_MS  = 24 * 60 * 60 * 1000
 const PROMO_KEY   = 'Promos'
 // Matches AestheticFilter promo detection AND cardDb.js PROMO_NAME_FRAGMENTS filter.

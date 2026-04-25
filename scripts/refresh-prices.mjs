@@ -25,7 +25,9 @@ import path from 'path'
 import { createClient } from '@supabase/supabase-js'
 
 // ── Load .env ─────────────────────────────────────────────────────────────────
-const envPath = new URL('../.env', import.meta.url).pathname.replace(/^\/([A-Z]:)/, '$1')
+// Use process.cwd() so this works reliably on Windows regardless of how Node
+// resolves import.meta.url paths. Run the script from the project root folder.
+const envPath = path.resolve(process.cwd(), '.env')
 if (fs.existsSync(envPath)) {
   const envText = fs.readFileSync(envPath, 'utf8')
   for (const line of envText.split('\n')) {
