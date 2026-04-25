@@ -45,7 +45,12 @@ const TCG_API_KEY     = process.env.VITE_TCG_API_KEY  || ''
 const EBAY_APP_ID     = process.env.EBAY_APP_ID       || ''
 
 if (!SUPABASE_URL || !SUPABASE_SVCKEY) {
-  console.error('ERROR: Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in your .env file.')
+  console.error('\nERROR: Missing Supabase credentials.')
+  console.error(`  .env path checked: ${envPath}`)
+  console.error(`  .env exists:       ${fs.existsSync(envPath)}`)
+  console.error(`  SUPABASE_URL:      ${SUPABASE_URL ? '✓ found' : '✗ missing (need SUPABASE_URL or VITE_SUPABASE_URL)'}`)
+  console.error(`  SUPABASE_KEY:      ${SUPABASE_SVCKEY ? '✓ found' : '✗ missing (need SUPABASE_SERVICE_ROLE_KEY or VITE_SUPABASE_ANON_KEY)'}`)
+  console.error('\nFix: make sure your .env file has VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY')
   process.exit(1)
 }
 
