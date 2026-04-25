@@ -137,36 +137,35 @@ function AestheticFilter({ active, onChange, setQuery, onSetQuery, user }) {
   // A vibe is "active" if it's not 'all', 'home', 'wishlist', and not null
   const vibeIsActive = active && active !== 'all' && active !== 'home' && active !== 'wishlist'
 
+  const allVibe = VIBES.find(x => x.id === 'all')
+  // Shared button class for uniform size across all 4 nav buttons
+  const navBtn = 'w-64 flex items-center justify-center gap-2 px-4 py-2.5 rounded-full font-bold text-sm transition-all shadow-sm'
+
   return (
     <div className="px-4 pb-2 max-w-4xl mx-auto">
 
-      {/* ── Top row: All Cards + Wishlist & Collection ─────────────────── */}
-      <div className="flex flex-wrap justify-center items-center gap-2 pt-3 pb-2">
-        {/* All Cards pill */}
-        {(() => {
-          const v = VIBES.find(x => x.id === 'all')
-          return (
-            <motion.button
-              key="all"
-              whileHover={{ scale: 1.08 }} whileTap={{ scale: 0.95 }}
-              onClick={() => handleVibe('all')}
-              className={`px-5 py-2 rounded-full font-bold text-sm transition-all shadow-sm
-                ${active === 'all'
-                  ? `${v.color} ring-2 ring-offset-1 ring-pink-400 shadow-md`
-                  : 'bg-white/60 text-gray-500 hover:bg-white/80'
-                }`}
-            >
-              {v.label}
-            </motion.button>
-          )
-        })()}
+      {/* ── 4-button navigation column ─────────────────────────────────── */}
+      <div className="flex flex-col items-center gap-2 pt-3 pb-1">
 
-        {/* Wishlist & Collection — logged-in users only */}
+        {/* 1. All Cards */}
+        <motion.button
+          whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }}
+          onClick={() => handleVibe('all')}
+          className={`${navBtn}
+            ${active === 'all'
+              ? `${allVibe.color} ring-2 ring-offset-1 ring-pink-400 shadow-md`
+              : 'bg-white/60 text-gray-500 hover:bg-white/80'
+            }`}
+        >
+          {allVibe.label}
+        </motion.button>
+
+        {/* 2. Wishlist & Collection — logged-in users only */}
         {user && (
           <motion.button
-            whileHover={{ scale: 1.08 }} whileTap={{ scale: 0.95 }}
+            whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }}
             onClick={() => handleVibe(WISHLIST_VIBE.id)}
-            className={`px-5 py-2 rounded-full font-bold text-sm transition-all shadow-sm
+            className={`${navBtn}
               ${active === WISHLIST_VIBE.id
                 ? `${WISHLIST_VIBE.color} ring-2 ring-offset-1 ring-pink-400 shadow-md`
                 : 'bg-white/60 text-gray-500 hover:bg-white/80'
@@ -175,94 +174,89 @@ function AestheticFilter({ active, onChange, setQuery, onSetQuery, user }) {
             {WISHLIST_VIBE.label}
           </motion.button>
         )}
-      </div>
 
-      {/* ── Browse by Vibe toggle ───────────────────────────────────────── */}
-      <div className="flex justify-center gap-2 mb-1 flex-wrap">
-        <motion.button
-          whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
-          onClick={() => setVibesOpen(o => !o)}
-          className={`flex items-center gap-2 px-5 py-2 rounded-2xl text-sm font-bold
-                      transition-all shadow-sm border
-                      ${vibesOpen || vibeIsActive
-                        ? 'bg-gradient-to-r from-pink-100 to-violet-100 text-violet-700 border-violet-200'
-                        : 'bg-white/60 text-gray-500 border-gray-200 hover:bg-white/80'
-                      }`}
-        >
-          🎨 Browse by Vibe
-          <motion.span
-            animate={{ rotate: vibesOpen ? 180 : 0 }}
-            transition={{ duration: 0.2 }}
-            className="inline-block leading-none text-xs"
+        {/* 3. Browse by Vibe (expandable) */}
+        <div className="flex flex-col items-center w-full">
+          <motion.button
+            whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }}
+            onClick={() => setVibesOpen(o => !o)}
+            className={`${navBtn}
+              ${vibesOpen || vibeIsActive
+                ? 'bg-gradient-to-r from-pink-100 to-violet-100 text-violet-700 ring-2 ring-offset-1 ring-violet-300 shadow-md'
+                : 'bg-white/60 text-gray-500 hover:bg-white/80'
+              }`}
           >
-            ▾
-          </motion.span>
-        </motion.button>
-      </div>
+            🎨 Browse by Vibe
+            <motion.span
+              animate={{ rotate: vibesOpen ? 180 : 0 }}
+              transition={{ duration: 0.2 }}
+              className="inline-block leading-none text-xs"
+            >
+              ▾
+            </motion.span>
+          </motion.button>
 
-      {/* ── Vibe pills (expandable) ─────────────────────────────────────── */}
-      <AnimatePresence>
-        {vibesOpen && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            exit={{ opacity: 0, height: 0 }}
-            className="overflow-hidden"
-          >
-            <div className="flex flex-wrap justify-center gap-2 py-3 border-t border-white/40">
-              {VIBES.filter(v => v.id !== 'all').map(v => (
-                <motion.button
-                  key={v.id}
-                  whileHover={{ scale: 1.08 }} whileTap={{ scale: 0.95 }}
-                  onClick={() => handleVibe(v.id)}
-                  className={`px-4 py-2 rounded-full font-semibold text-sm transition-all shadow-sm
-                    ${active === v.id
-                      ? `${v.color} ring-2 ring-offset-1 ring-pink-400 shadow-md`
-                      : 'bg-white/60 text-gray-500 hover:bg-white/80'
-                    }`}
-                >
-                  {v.label}
-                </motion.button>
-              ))}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+          <AnimatePresence>
+            {vibesOpen && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                className="overflow-hidden w-full"
+              >
+                <div className="flex flex-wrap justify-center gap-2 pt-3 pb-1">
+                  {VIBES.filter(v => v.id !== 'all').map(v => (
+                    <motion.button
+                      key={v.id}
+                      whileHover={{ scale: 1.08 }} whileTap={{ scale: 0.95 }}
+                      onClick={() => handleVibe(v.id)}
+                      className={`px-4 py-2 rounded-full font-semibold text-sm transition-all shadow-sm
+                        ${active === v.id
+                          ? `${v.color} ring-2 ring-offset-1 ring-pink-400 shadow-md`
+                          : 'bg-white/60 text-gray-500 hover:bg-white/80'
+                        }`}
+                    >
+                      {v.label}
+                    </motion.button>
+                  ))}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
 
-      {/* ── Browse Sets toggle ──────────────────────────────────────────── */}
-      <div className="flex justify-center mb-1">
-        <motion.button
-          whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.97 }}
-          onClick={() => setSetsOpen(o => !o)}
-          className={`flex items-center gap-1.5 px-4 py-1.5 rounded-full text-xs font-semibold
-                      transition-all border shadow-sm
-                      ${setsOpen || setQuery
-                        ? 'bg-sky-100 text-sky-600 border-sky-200'
-                        : 'bg-white/60 text-gray-400 border-white/60 hover:bg-white/80'
-                      }`}
-        >
-          <span>📚 Browse Sets</span>
-          <motion.span
-            animate={{ rotate: setsOpen ? 180 : 0 }}
-            transition={{ duration: 0.2 }}
-            className="inline-block leading-none"
+        {/* 4. Browse Sets (expandable) */}
+        <div className="flex flex-col items-center w-full">
+          <motion.button
+            whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.97 }}
+            onClick={() => setSetsOpen(o => !o)}
+            className={`${navBtn}
+              ${setsOpen || setQuery
+                ? 'bg-sky-100 text-sky-600 ring-2 ring-offset-1 ring-sky-300 shadow-md'
+                : 'bg-white/60 text-gray-500 hover:bg-white/80'
+              }`}
           >
-            ▾
-          </motion.span>
-        </motion.button>
-      </div>
+            📚 Browse Sets
+            <motion.span
+              animate={{ rotate: setsOpen ? 180 : 0 }}
+              transition={{ duration: 0.2 }}
+              className="inline-block leading-none text-xs"
+            >
+              ▾
+            </motion.span>
+          </motion.button>
 
-      {/* ── Sets accordion ─────────────────────────────────────────────── */}
-      <AnimatePresence>
-        {setsOpen && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            exit={{ opacity: 0, height: 0 }}
-            className="overflow-hidden"
-          >
-            <div className="border-t border-white/40 mt-1 pt-2 max-h-64 overflow-y-auto
-                            scrollbar-thin space-y-0.5 px-2 max-w-4xl mx-auto">
+          {/* ── Sets accordion ───────────────────────────────────────── */}
+          <AnimatePresence>
+            {setsOpen && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                className="overflow-hidden w-full"
+              >
+                <div className="mt-2 pt-2 max-h-64 overflow-y-auto
+                                scrollbar-thin space-y-0.5 px-2">
 
               {loadingSets && (
                 <div className="flex items-center justify-center gap-2 py-4 text-pink-400 text-xs font-medium">
@@ -345,10 +339,13 @@ function AestheticFilter({ active, onChange, setQuery, onSetQuery, user }) {
                   </div>
                 )
               })}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+
+      </div>
     </div>
   )
 }
