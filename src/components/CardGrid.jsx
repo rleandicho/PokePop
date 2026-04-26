@@ -53,7 +53,7 @@ function buildCacheKey(vibe, search, setQuery, sort) {
 // Persists non-price-sort results across page refreshes.
 // Price sorts are skipped — too many rows for reliable localStorage storage.
 // v2: card data now sourced from Supabase (different shape — invalidates v1 entries)
-const LS_PREFIX = 'pokepop_cards_v2|'
+const LS_PREFIX = 'pokepop_cards_v3|'
 const LS_TTL    = 60 * 60 * 1000  // 1 hour — card data rarely changes within a session
 
 function lsGet(key) {
@@ -235,11 +235,29 @@ function SortToolbar({ sortBy, onSortChange }) {
   )
 }
 
-function CardModal({ card, user, onToast, onClose, saveCard, collectionIds, ownedIds, onCardAdded, onCardRemoved }) {
-  const [saving,   setSaving]   = useState(false)
-  const [removing, setRemoving] = useState(false)
-  const [quantity, setQuantity] = useState(1)
-  const [imgSrc,   setImgSrc]   = useState(card.images?.small)
+const LANG_OPTIONS = [
+  { value: 'english',    label: 'English',               flag: '🇺🇸' },
+  { value: 'japanese',   label: 'Japanese',              flag: '🇯🇵' },
+  { value: 'korean',     label: 'Korean',                flag: '🇰🇷' },
+  { value: 'chinese_t',  label: 'Chinese (Traditional)', flag: '🇹🇼' },
+  { value: 'chinese_s',  label: 'Chinese (Simplified)',  flag: '🇨🇳' },
+  { value: 'french',     label: 'French',                flag: '🇫🇷' },
+  { value: 'german',     label: 'German',                flag: '🇩🇪' },
+  { value: 'italian',    label: 'Italian',               flag: '🇮🇹' },
+  { value: 'spanish',    label: 'Spanish',               flag: '🇪🇸' },
+  { value: 'portuguese', label: 'Portuguese',            flag: '🇧🇷' },
+  { value: 'thai',       label: 'Thai',                  flag: '🇹🇭' },
+  { value: 'indonesian', label: 'Indonesian',            flag: '🇮🇩' },
+  { value: 'russian',    label: 'Russian',               flag: '🇷🇺' },
+]
+
+function CardModal({ card, user, onToast, onClose, saveCard, collectionIds, ownedIds, collectionLanguages, onCardAdded, onCardRemoved }) {
+  const [saving,      setSaving]      = useState(false)
+  const [removing,    setRemoving]    = useState(false)
+  const [quantity,    setQuantity]    = useState(1)
+  const [imgSrc,      setImgSrc]      = useState(card.images?.small)
+  const [addLangMode, setAddLangMode] = useState(false)
+  const [newLang,     setNewLang]     = useState('')
 
   useEffect(() => {
     if (!card.images?.large || card.images.large === card.images.small) return
@@ -251,21 +269,36 @@ function CardModal({ card, user, onToast, onClose, saveCard, collectionIds, owne
   const prices     = card.tcgplayer?.prices ?? {}
   // All tiers that have a market price — shown in the breakdown and drive the version picker
   const priceRows  = Object.entries(prices).filter(([, v]) => v?.market != null)
-  const inList     = collectionIds?.has(card.id)
-  const isOwned    = ownedIds?.has(card.id)
+  const inList  = collectionIds?.has(card.id)
+  const isOwned = ownedIds?.has(card.id)
+  const myLangs = collectionLanguages?.get(card.id) ?? []
 
   // Version picker: default to whichever tier has the best market price
   const defaultVersion = priceRows.length > 0 ? priceRows[0][0] : ''
   const [version, setVersion] = useState(defaultVersion)
 
-  async function addCard(owned, qty = 1) {
+  async function addCard(owned, qty = 1, language = 'english') {
     if (!user) return
     setSaving(true)
-    const { error, toast } = await saveCard(card, owned, qty, version)
+    const { error, toast } = await saveCard(card, owned, qty, version, language)
     setSaving(false)
     if (!error) {
-      onCardAdded?.(card.id, owned)
+      onCardAdded?.(card.id, owned, language)
       onToast(owned ? 'Added to Collection! ✨📦' : 'Added to Wishlist! 💖')
+    }
+  }
+
+  async function addLanguageVariant() {
+    if (!newLang) { onToast('Pick a language first'); return }
+    if (myLangs.includes(newLang)) { onToast('You already have that language saved!'); return }
+    setSaving(true)
+    const { error, toast } = await saveCard(card, true, 1, version, newLang)
+    setSaving(false)
+    if (!error) {
+      onCardAdded?.(card.id, true, newLang)
+      onToast(toast ?? 'Language variant added! ✨')
+      setAddLangMode(false)
+      setNewLang('')
     }
   }
 
@@ -278,7 +311,7 @@ function CardModal({ card, user, onToast, onClose, saveCard, collectionIds, owne
       .eq('user_id', user.id)
       .eq('card_id', card.id)
     setRemoving(false)
-    if (!error) { onCardRemoved?.(card.id); onToast(isOwned ? 'Removed from Collection 🗑️' : 'Removed from Wishlist 🗑️') }
+    if (!error) { onCardRemoved?.(card.id, null); onToast(isOwned ? 'Removed from Collection 🗑️' : 'Removed from Wishlist 🗑️') }
   }
 
   return (
@@ -357,6 +390,23 @@ function CardModal({ card, user, onToast, onClose, saveCard, collectionIds, owne
         <div className="flex flex-col gap-2">
           {user ? (
             <>
+              {/* Owned language variants */}
+              {myLangs.length > 0 && (
+                <div className="flex flex-wrap items-center gap-1.5 justify-center py-1">
+                  {myLangs.map(lang => {
+                    const opt = LANG_OPTIONS.find(o => o.value === lang)
+                    return (
+                      <span key={lang}
+                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full
+                                   bg-pink-50 border border-pink-200 text-pink-600 text-xs font-medium"
+                      >
+                        {opt?.flag ?? '🌐'} {opt?.label ?? lang}
+                      </span>
+                    )
+                  })}
+                </div>
+              )}
+
               {/* Status note when card is already saved in any edition */}
               {inList && (
                 <p className="text-center text-xs font-semibold text-gray-400">
@@ -364,27 +414,70 @@ function CardModal({ card, user, onToast, onClose, saveCard, collectionIds, owne
                   {version && <span className="ml-1 text-pink-400 font-normal">· Adding as {tierLabel(version) ?? 'Unspecified'}</span>}
                 </p>
               )}
-              <QuantityStepper value={quantity} onChange={setQuantity} />
-              <div className="flex gap-2">
-                {!inList && (
-                  <button
-                    onClick={() => addCard(false)}
-                    disabled={saving}
-                    className="flex-1 bg-violet-100 hover:bg-violet-200 text-violet-700
-                               font-semibold py-2 rounded-2xl transition-colors disabled:opacity-60"
+
+              {/* Add language variant panel */}
+              {addLangMode ? (
+                <div className="flex flex-col gap-2 p-3 bg-violet-50 rounded-2xl border border-violet-200">
+                  <p className="text-xs font-semibold text-violet-600">Add language variant</p>
+                  <select
+                    value={newLang}
+                    onChange={e => setNewLang(e.target.value)}
+                    className="text-sm border border-violet-200 rounded-xl px-3 py-1.5 focus:outline-none focus:border-violet-400 bg-white"
                   >
-                    {saving ? '…' : '💖 Wishlist'}
-                  </button>
-                )}
-                <button
-                  onClick={() => addCard(true, quantity)}
-                  disabled={saving}
-                  className="flex-1 bg-emerald-400 hover:bg-emerald-500 text-white
-                             font-semibold py-2 rounded-2xl transition-colors disabled:opacity-60"
-                >
-                  {saving ? 'Saving…' : inList && isOwned ? `+ Add ${quantity} Cop${quantity === 1 ? 'y' : 'ies'}` : inList ? `Move to Collection ×${quantity}` : '✨ Collection'}
-                </button>
-              </div>
+                    <option value="">Select language…</option>
+                    {LANG_OPTIONS.filter(o => !myLangs.includes(o.value)).map(o => (
+                      <option key={o.value} value={o.value}>{o.flag} {o.label}</option>
+                    ))}
+                  </select>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => { setAddLangMode(false); setNewLang('') }}
+                      className="flex-1 border border-gray-200 text-gray-400 hover:bg-gray-50
+                                 font-semibold py-1.5 rounded-xl text-sm transition-colors"
+                    >Cancel</button>
+                    <button
+                      onClick={addLanguageVariant}
+                      disabled={saving || !newLang}
+                      className="flex-1 bg-violet-400 hover:bg-violet-500 text-white
+                                 font-semibold py-1.5 rounded-xl text-sm transition-colors disabled:opacity-60"
+                    >{saving ? '…' : 'Add'}</button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <QuantityStepper value={quantity} onChange={setQuantity} />
+                  <div className="flex gap-2">
+                    {!inList && (
+                      <button
+                        onClick={() => addCard(false)}
+                        disabled={saving}
+                        className="flex-1 bg-violet-100 hover:bg-violet-200 text-violet-700
+                                   font-semibold py-2 rounded-2xl transition-colors disabled:opacity-60"
+                      >
+                        {saving ? '…' : '💖 Wishlist'}
+                      </button>
+                    )}
+                    <button
+                      onClick={() => addCard(true, quantity)}
+                      disabled={saving}
+                      className="flex-1 bg-emerald-400 hover:bg-emerald-500 text-white
+                                 font-semibold py-2 rounded-2xl transition-colors disabled:opacity-60"
+                    >
+                      {saving ? 'Saving…' : inList && isOwned ? `+ Add ${quantity} Cop${quantity === 1 ? 'y' : 'ies'}` : inList ? `Move to Collection ×${quantity}` : '✨ Collection'}
+                    </button>
+                  </div>
+                  {inList && (
+                    <button
+                      onClick={() => setAddLangMode(true)}
+                      className="border border-violet-200 text-violet-500 hover:bg-violet-50
+                                 font-semibold py-2 rounded-2xl transition-colors text-sm"
+                    >
+                      🌐 Add language variant
+                    </button>
+                  )}
+                </>
+              )}
+
               {inList && (
                 <button
                   onClick={removeCard}
@@ -415,7 +508,9 @@ function CardModal({ card, user, onToast, onClose, saveCard, collectionIds, owne
 // ─── Card tile ────────────────────────────────────────────────────────────────
 // memo: only re-renders when inList/isOwned change for this specific card.
 // quickAdd/quickRemove are useCallback-stable so memo comparisons hold.
-const CardTile = memo(function CardTile({ card, inList, isOwned, quickAdd, quickRemove, setSelected }) {
+const LANG_FLAG_MAP = { japanese:'🇯🇵', korean:'🇰🇷', chinese_t:'🇹🇼', chinese_s:'🇨🇳', french:'🇫🇷', german:'🇩🇪', italian:'🇮🇹', spanish:'🇪🇸', portuguese:'🇧🇷', thai:'🇹🇭', indonesian:'🇮🇩', russian:'🇷🇺' }
+
+const CardTile = memo(function CardTile({ card, inList, isOwned, myLangs, quickAdd, quickRemove, setSelected }) {
   const [ownedQty, setOwnedQty] = useState(1)
 
   return (
@@ -436,6 +531,15 @@ const CardTile = memo(function CardTile({ card, inList, isOwned, quickAdd, quick
                           ${isOwned ? 'bg-emerald-500/90 text-white' : 'bg-violet-500/90 text-white'}`}>
           {isOwned ? '✅ Owned' : '💖 Wishlist'}
         </span>
+      )}
+      {/* Language variant flags — shown when the card is saved in multiple languages */}
+      {myLangs && myLangs.length > 1 && (
+        <div className="absolute top-6 left-1.5 z-10 flex flex-col gap-0.5">
+          {myLangs.filter(l => l !== 'english').map(lang => (
+            <span key={lang} className="text-[11px] leading-none drop-shadow-sm"
+                  title={lang}>{LANG_FLAG_MAP[lang]}</span>
+          ))}
+        </div>
       )}
       {inList && (
         <button
@@ -505,7 +609,7 @@ const CardTile = memo(function CardTile({ card, inList, isOwned, quickAdd, quick
 })
 
 // ─── Main grid ────────────────────────────────────────────────────────────────
-function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, user, onToast, activeBinderId, collectionIds, ownedIds, onCardAdded, onCardRemoved }) {
+function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, user, onToast, activeBinderId, collectionIds, ownedIds, collectionLanguages, onCardAdded, onCardRemoved }) {
   const [cards,      setCards]      = useState([])
   const [page,       setPage]       = useState(1)
   const [totalPages, setTotalPages] = useState(0)
@@ -666,7 +770,7 @@ function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, user, on
   }, [activeVibe, effectiveSearch, setQuery, sortBy, fetchCards]) // eslint-disable-line react-hooks/exhaustive-deps
 
 
-  const saveCard = useCallback(async (card, owned, quantity = 1, edition = '') => {
+  const saveCard = useCallback(async (card, owned, quantity = 1, edition = '', language = 'english') => {
     if (!user) return { error: new Error('Not signed in'), toast: '' }
 
     const normalizedQty = Math.max(1, quantity)
@@ -680,6 +784,7 @@ function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, user, on
       low_price:    edition ? (card.tcgplayer?.prices?.[edition]?.low    ?? card.low_price ?? null) : (card.low_price ?? null),
       owned,
       edition:      edition || 'unspecified',
+      language:     language || 'english',
     }
     if (owned) payload.quantity = normalizedQty
 
@@ -691,6 +796,7 @@ function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, user, on
         .select('owned, quantity')
         .eq('user_id', user.id)
         .eq('card_id', card.id)
+        .eq('language', language || 'english')
         .maybeSingle()
 
       if (existingError && existingError.code !== 'PGRST116') {
@@ -713,7 +819,7 @@ function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, user, on
 
     const { error } = await supabase
       .from('wishlists')
-      .upsert(payload, { onConflict: 'user_id,card_id,edition' })
+      .upsert(payload, { onConflict: 'user_id,card_id,edition,language' })
 
     return { error, toast }
   }, [user, activeBinderId])
@@ -781,6 +887,7 @@ function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, user, on
             card={card}
             inList={collectionIds?.has(card.id) ?? false}
             isOwned={ownedIds?.has(card.id) ?? false}
+            myLangs={collectionLanguages?.get(card.id)}
             quickAdd={quickAdd}
             quickRemove={quickRemove}
             setSelected={setSelected}
@@ -818,7 +925,7 @@ function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, user, on
 
       <AnimatePresence>
         {selected && (
-          <CardModal card={selected} user={user} onToast={onToast} onClose={() => setSelected(null)} saveCard={saveCard} collectionIds={collectionIds} ownedIds={ownedIds} onCardAdded={onCardAdded} onCardRemoved={onCardRemoved} />
+          <CardModal card={selected} user={user} onToast={onToast} onClose={() => setSelected(null)} saveCard={saveCard} collectionIds={collectionIds} ownedIds={ownedIds} collectionLanguages={collectionLanguages} onCardAdded={onCardAdded} onCardRemoved={onCardRemoved} />
         )}
       </AnimatePresence>
     </>

@@ -924,6 +924,10 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
   const [addingDetailFor,   setAddingDetailFor]   = useState(null) // row id showing the add-detail panel
   const [pendingNewLanguage, setPendingNewLanguage] = useState('')
 
+  // Tracks the current slotsPerPage of the active BinderView (reported via callback).
+  // Used by computeNextBinderSlot and handleInsertPage to stay consistent with the display.
+  const binderSlotsPerPage = useRef(9)
+
   // ── Pagination ────────────────────────────────────────────────────────────
   const [collectionPage, setCollectionPage] = useState(1)
   const [wishlistPage,   setWishlistPage]   = useState(1)
@@ -1478,7 +1482,7 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
   // Shifts slot_index of all cards on pages >= threshold by +slotsPerPage so
   // that an empty page appears at the requested position.
   async function handleInsertPage(pageNumber, direction) {
-    const SLOTS_PER_PAGE = 9  // default grid size
+    const SLOTS_PER_PAGE = binderSlotsPerPage.current
     // 'before' shifts page N onwards; 'after' shifts page N+1 onwards
     const threshold = direction === 'before'
       ? (pageNumber - 1) * SLOTS_PER_PAGE
@@ -1507,20 +1511,67 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
     onToast(`Blank page inserted ${direction === 'before' ? 'before' : 'after'} page ${pageNumber} 📄`)
   }
 
-  // Simulate buildSlotArray (BinderView's layout engine) with the current owned
-  // binder cards and return the index of the first visually empty slot.
-  // This matches exactly what BinderView will render, accounting for:
-  //   - cards whose slot_index >= totalSlots (displaced to first gap)
-  //   - un-owned cards that share a binder_id but are hidden in the binder view
-  //   - gaps left by previously removed cards
+  // Swaps two adjacent pages' worth of cards (pageNumber ↔ pageNumber±1).
+  async function handleMovePage(pageNumber, direction) {
+    const spp      = binderSlotsPerPage.current
+    const binderId = selectedBinder?.id
+    if (!binderId) return
+
+    const pageA = pageNumber
+    const pageB = direction === 'up' ? pageNumber - 1 : pageNumber + 1
+    if (pageB < 1) return
+
+    const slotA_start = (pageA - 1) * spp
+    const slotA_end   = pageA * spp - 1
+    const slotB_start = (pageB - 1) * spp
+    const slotB_end   = pageB * spp - 1
+
+    const all     = items.filter(i => i.binder_id === binderId && i.owned)
+    const onPageA = all.filter(i => {
+      const s = i.slot_index ?? 0
+      return s >= slotA_start && s <= slotA_end
+    })
+    const onPageB = all.filter(i => {
+      const s = i.slot_index ?? 0
+      return s >= slotB_start && s <= slotB_end
+    })
+
+    if (!onPageA.length && !onPageB.length) return
+
+    const delta = (pageB - pageA) * spp  // positive = moving page A forward
+    const updates = [
+      ...onPageA.map(i => ({ id: i.id, slot_index: (i.slot_index ?? 0) + delta })),
+      ...onPageB.map(i => ({ id: i.id, slot_index: (i.slot_index ?? 0) - delta })),
+    ]
+
+    // Optimistic update
+    setItems(prev => prev.map(i => {
+      const u = updates.find(u => u.id === i.id)
+      return u ? { ...i, slot_index: u.slot_index } : i
+    }))
+
+    await Promise.all(updates.map(u =>
+      supabase.from('wishlists').update({ slot_index: u.slot_index }).eq('id', u.id)
+    ))
+    onToast(`Page ${pageA} moved ${direction} 📄`)
+  }
+
+  // Mirror of BinderView's buildSlotArray logic — must stay in sync.
+  // Returns the index of the first visually empty slot so new cards land in the
+  // correct position without conflicting with existing placements.
   function computeNextBinderSlot(ownedBinderItems) {
-    const SLOTS_PER_PAGE = 9  // BinderView default (3×3); resets on every mount
-    const n          = ownedBinderItems.length
-    const totalPages = Math.max(1, Math.ceil(n / SLOTS_PER_PAGE))
-    const totalSlots = totalPages * SLOTS_PER_PAGE
+    const spp    = binderSlotsPerPage.current  // synced from BinderView via onSlotsPerPageChange
+    const n      = ownedBinderItems.length
+    if (n === 0) return 0
+
+    // Use the same totalSlots logic as buildSlotArray in BinderView
+    const maxSlot    = ownedBinderItems.reduce((m, i) => Math.max(m, i.slot_index ?? 0), 0)
+    const minNeeded  = Math.max(n, maxSlot + 1)
+    const totalPages = Math.max(1, Math.ceil(minNeeded / spp))
+    const totalSlots = totalPages * spp
 
     const occupied = new Array(totalSlots).fill(false)
-    const unplaced  = []
+    const unplaced = []
 
     for (const item of ownedBinderItems) {
       const idx = item.slot_index
@@ -1864,10 +1915,12 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
                 ) : (
                   <button
                     onClick={() => { setAddingDetailFor(item.id); setPendingNewLanguage('') }}
-                    className="mt-1 w-full text-[10px] text-center text-pink-400 hover:text-pink-600
-                               font-medium transition-colors"
+                    className="mt-1.5 w-full text-xs text-center font-semibold
+                               py-1.5 rounded-xl border border-dashed border-violet-300
+                               text-violet-400 hover:text-violet-600 hover:bg-violet-50
+                               hover:border-violet-400 transition-all"
                   >
-                    + Add another detail
+                    🌐 Add language variant
                   </button>
                 )
               )}
@@ -2228,6 +2281,8 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
               onSlotsSwapped={handleSlotsSwapped}
               onRemoveFromCollection={removeCard}
               onInsertPage={handleInsertPage}
+              onMovePage={handleMovePage}
+              onSlotsPerPageChange={spp => { binderSlotsPerPage.current = spp }}
             />
           ) : (
             <p className="text-center text-pink-300 font-semibold mt-16 text-sm">

@@ -22,6 +22,21 @@ const COVER_PRESETS = [
 
 const DEFAULT_THEME = { coverColor: '#a78bfa', pageStyle: 'white' }
 
+const LANG_FLAG = {
+  japanese:   '🇯🇵',
+  korean:     '🇰🇷',
+  chinese_t:  '🇹🇼',
+  chinese_s:  '🇨🇳',
+  french:     '🇫🇷',
+  german:     '🇩🇪',
+  italian:    '🇮🇹',
+  spanish:    '🇪🇸',
+  portuguese: '🇧🇷',
+  thai:       '🇹🇭',
+  indonesian: '🇮🇩',
+  russian:    '🇷🇺',
+}
+
 // ─── Utils ────────────────────────────────────────────────────────────────────
 function chunk(arr, n) {
   const out = []
@@ -214,12 +229,23 @@ function CardSlot({ item, isSelected, pageStyle, onClick, binders, onTransfer, c
       {onCardClick && !readOnly && !isSelected && (
         <button
           onClick={e => { e.stopPropagation(); onCardClick(item) }}
-          className="absolute top-1.5 right-1.5 z-30 w-4 h-4 rounded-full
-                     bg-black/35 hover:bg-black/60 text-white text-[8px]
+          className="absolute top-1.5 right-1.5 z-30 w-6 h-6 rounded-full
+                     bg-black/40 hover:bg-black/65 text-white text-[11px]
                      flex items-center justify-center backdrop-blur-sm transition-all
-                     leading-none font-bold pointer-events-auto"
+                     leading-none font-bold pointer-events-auto shadow-md"
           title="View card details"
         >ℹ</button>
+      )}
+
+      {/* ── Language badge (non-English) ─────────────────────────────────────── */}
+      {item.language && item.language !== 'english' && (
+        <div
+          className="absolute bottom-6 left-1 z-20 text-[10px] leading-none
+                     bg-black/50 backdrop-blur-sm rounded px-1 py-0.5 pointer-events-none"
+          title={item.language}
+        >
+          {LANG_FLAG[item.language] ?? '🌐'}
+        </div>
       )}
 
       {/* ── Action menu (move / remove) ────────────────────────────────────── */}
@@ -317,7 +343,7 @@ function CardSlot({ item, isSelected, pageStyle, onClick, binders, onTransfer, c
 }
 
 // ─── Single binder page ────────────────────────────────────────────────────────
-function BinderPage({ slots, cols, pageNumber, theme, selectedIdx, pageOffset, onSlotClick, binders, onTransfer, currentBinderId, readOnly, onCardClick, onRemoveFromCollection, onInsertPage, isLast }) {
+function BinderPage({ slots, cols, pageNumber, theme, selectedIdx, pageOffset, onSlotClick, binders, onTransfer, currentBinderId, readOnly, onCardClick, onRemoveFromCollection, onInsertPage, onMovePage, isLast }) {
   const { coverColor, pageStyle } = theme
   const dark = pageStyle === 'black'
 
@@ -384,12 +410,37 @@ function BinderPage({ slots, cols, pageNumber, theme, selectedIdx, pageOffset, o
             : `4px 4px 18px rgba(0,0,0,0.09), 1px 0 0 ${hexAlpha(coverColor, 0.08)}`,
         }}
       >
-        <p
-          className="text-[10px] font-medium text-right mb-3 pr-0.5 tracking-wide"
-          style={{ color: pageNumColor }}
-        >
-          {pageNumber}
-        </p>
+        <div className="flex items-center justify-between mb-3">
+          {/* Page reorder arrows */}
+          {!readOnly && onMovePage ? (
+            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+              <button
+                onClick={() => onMovePage(pageNumber, 'up')}
+                disabled={pageNumber === 1}
+                className="w-5 h-5 rounded-full flex items-center justify-center text-[10px]
+                           disabled:opacity-20 disabled:cursor-not-allowed transition-all
+                           hover:bg-violet-100 hover:text-violet-600"
+                style={{ color: pageNumColor }}
+                title="Move page up"
+              >↑</button>
+              <button
+                onClick={() => onMovePage(pageNumber, 'down')}
+                disabled={isLast}
+                className="w-5 h-5 rounded-full flex items-center justify-center text-[10px]
+                           disabled:opacity-20 disabled:cursor-not-allowed transition-all
+                           hover:bg-violet-100 hover:text-violet-600"
+                style={{ color: pageNumColor }}
+                title="Move page down"
+              >↓</button>
+            </div>
+          ) : <div />}
+          <p
+            className="text-[10px] font-medium pr-0.5 tracking-wide"
+            style={{ color: pageNumColor }}
+          >
+            {pageNumber}
+          </p>
+        </div>
 
         <div
           className="grid gap-2.5"
@@ -528,7 +579,7 @@ function ThemeControls({ theme, onThemeChange, binderSize, onSizeChange }) {
 }
 
 // ─── Main BinderView ──────────────────────────────────────────────────────────
-export default function BinderView({ items, user, readOnly = false, initialTheme, onThemeChange, binders, onTransfer, currentBinderId, onCardClick, onSlotsSwapped, onRemoveFromCollection, onInsertPage }) {
+export default function BinderView({ items, user, readOnly = false, initialTheme, onThemeChange, binders, onTransfer, currentBinderId, onCardClick, onSlotsSwapped, onRemoveFromCollection, onInsertPage, onMovePage, onSlotsPerPageChange }) {
   const [binderSize,   setBinderSize]   = useState('3x3')
   const [theme,        setTheme]        = useState(initialTheme ?? DEFAULT_THEME)
   const [slotArray,    setSlotArray]    = useState([])
@@ -545,15 +596,17 @@ export default function BinderView({ items, user, readOnly = false, initialTheme
   const cfg          = BINDER_SIZES.find(s => s.id === binderSize)
   const slotsPerPage = cfg.cols * cfg.cols
 
+  // Tell parent the current slotsPerPage so it can compute correct slot assignments
+  useEffect(() => { onSlotsPerPageChange?.(slotsPerPage) }, [slotsPerPage])
+
   // Rebuild slotArray whenever items or grid size changes.
-  // Uses slot_index from DB when available; fills gaps sequentially otherwise.
   // totalSlots is based on the HIGHEST slot_index present (not just item count)
-  // so that removing a card preserves blank spaces for remaining neighbours.
+  // so that removing a card preserves its blank space for neighbouring cards.
   useEffect(() => {
-    const maxSlot     = items.reduce((m, i) => Math.max(m, i.slot_index ?? 0), 0)
-    const minNeeded   = Math.max(items.length, items.length > 0 ? maxSlot + 1 : 0)
-    const totalPages  = Math.max(1, Math.ceil(minNeeded / slotsPerPage))
-    const totalSlots  = totalPages * slotsPerPage
+    const maxSlot    = items.reduce((m, i) => Math.max(m, i.slot_index ?? 0), 0)
+    const minNeeded  = Math.max(items.length, items.length > 0 ? maxSlot + 1 : 0)
+    const totalPages = Math.max(1, Math.ceil(minNeeded / slotsPerPage))
+    const totalSlots = totalPages * slotsPerPage
     setSlotArray(buildSlotArray(items, totalSlots))
     setSelectedIdx(null)
   }, [items, slotsPerPage])
@@ -662,6 +715,7 @@ export default function BinderView({ items, user, readOnly = false, initialTheme
               onCardClick={onCardClick}
               onRemoveFromCollection={onRemoveFromCollection}
               onInsertPage={onInsertPage}
+              onMovePage={onMovePage}
               isLast={pageIdx === pages.length - 1}
             />
           ))}

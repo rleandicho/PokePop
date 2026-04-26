@@ -24,8 +24,9 @@ export default function App() {
   const [toast,          setToast]          = useState('')
   const [activeBinderId, setActiveBinderId] = useState(null)   // tracks selected binder in Dashboard
   const [wishlistTab,    setWishlistTab]    = useState('collection') // which tab opens when navigating to wishlist
-  const [collectionIds,  setCollectionIds]  = useState(new Set()) // all card IDs in wishlists table
-  const [ownedIds,       setOwnedIds]       = useState(new Set()) // subset where owned = true
+  const [collectionIds,       setCollectionIds]       = useState(new Set()) // all card IDs in wishlists table
+  const [ownedIds,            setOwnedIds]            = useState(new Set()) // subset where owned = true
+  const [collectionLanguages, setCollectionLanguages] = useState(new Map()) // card_id → string[]
   const [themeMode,      setThemeMode]      = useState(() => getStoredTheme())
 
   useEffect(() => { applyTheme(themeMode) }, [themeMode])
@@ -43,7 +44,7 @@ export default function App() {
       const u = session?.user ?? null
       setUser(u)
       if (u) { fetchProfile(u.id); fetchCollectionIds(u.id) }
-      else  { setProfile(null); setProfileReady(true); setCollectionIds(new Set()); setOwnedIds(new Set()) }
+      else  { setProfile(null); setProfileReady(true); setCollectionIds(new Set()); setOwnedIds(new Set()); setCollectionLanguages(new Map()) }
     })
     return () => subscription.unsubscribe()
   }, [])
@@ -63,22 +64,48 @@ export default function App() {
     const rows = await fetchAllRows(() =>
       supabase
         .from('wishlists')
-        .select('card_id, owned')
+        .select('card_id, owned, language')
         .eq('user_id', userId)
     )
     setCollectionIds(new Set(rows.map(r => r.card_id)))
     setOwnedIds(new Set(rows.filter(r => r.owned).map(r => r.card_id)))
+    // Build language map: card_id → array of languages owned for that card
+    const langMap = new Map()
+    for (const r of rows) {
+      const lang = r.language ?? 'english'
+      if (!langMap.has(r.card_id)) langMap.set(r.card_id, [])
+      if (!langMap.get(r.card_id).includes(lang)) langMap.get(r.card_id).push(lang)
+    }
+    setCollectionLanguages(langMap)
   }
 
   // owned = false → wishlist entry; owned = true → collection entry
-  function handleCardAdded(cardId, owned = false) {
+  function handleCardAdded(cardId, owned = false, language = 'english') {
     setCollectionIds(prev => new Set([...prev, cardId]))
     if (owned) setOwnedIds(prev => new Set([...prev, cardId]))
+    setCollectionLanguages(prev => {
+      const next = new Map(prev)
+      const langs = next.get(cardId) ?? []
+      if (!langs.includes(language)) next.set(cardId, [...langs, language])
+      return next
+    })
   }
 
-  function handleCardRemoved(cardId) {
-    setCollectionIds(prev => { const n = new Set(prev); n.delete(cardId); return n })
-    setOwnedIds(prev => { const n = new Set(prev); n.delete(cardId); return n })
+  function handleCardRemoved(cardId, language = null) {
+    // If a specific language is removed and others remain, keep the card in collectionIds
+    setCollectionLanguages(prev => {
+      const next   = new Map(prev)
+      const langs  = next.get(cardId) ?? []
+      const remaining = language ? langs.filter(l => l !== language) : []
+      if (remaining.length) {
+        next.set(cardId, remaining)
+      } else {
+        next.delete(cardId)
+        setCollectionIds(p => { const n = new Set(p); n.delete(cardId); return n })
+        setOwnedIds(p => { const n = new Set(p); n.delete(cardId); return n })
+      }
+      return next
+    })
   }
 
   function handleOwnedChanged(cardId, isNowOwned) {
@@ -215,6 +242,7 @@ export default function App() {
             activeBinderId={activeBinderId}
             collectionIds={collectionIds}
             ownedIds={ownedIds}
+            collectionLanguages={collectionLanguages}
             onCardAdded={handleCardAdded}
             onCardRemoved={handleCardRemoved}
           />

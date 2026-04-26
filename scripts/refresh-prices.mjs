@@ -165,9 +165,28 @@ async function fetchEbayAvgPrice(cardName, setName) {
 }
 
 // ── Step 1: Gather card IDs from our DB ───────────────────────────────────────
+async function getAllCards(baseQuery) {
+  // PostgREST caps responses at 1000 rows. Page through until we get everything.
+  const PAGE = 1000
+  const all  = []
+  let   from = 0
+  while (true) {
+    const { data, error } = await baseQuery.range(from, from + PAGE - 1)
+    if (error) { console.error('getCardIds page error:', error.message); break }
+    if (!data?.length) break
+    all.push(...data)
+    if (data.length < PAGE) break   // last page
+    from += PAGE
+  }
+  return all
+}
+
 async function getCardIds() {
-  let query = supabase.from('tcg_cards').select('id, name, set_name, set_id')
-  if (setFilter) query = query.eq('set_id', setFilter)
+  const buildQuery = () => {
+    let q = supabase.from('tcg_cards').select('id, name, set_name, set_id')
+    if (setFilter) q = q.eq('set_id', setFilter)
+    return q
+  }
 
   if (staleOnly) {
     // Get IDs that either have no price row or haven't been updated in 7+ days
@@ -178,12 +197,11 @@ async function getCardIds() {
       .lt('updated_at', cutoff)
     const staleSet = new Set((staleIds ?? []).map(r => r.card_id))
 
-    const { data: allCards } = await query
-    return (allCards ?? []).filter(c => staleSet.has(c.id) || !staleSet.size)
+    const allCards = await getAllCards(buildQuery())
+    return allCards.filter(c => staleSet.has(c.id) || !staleSet.size)
   }
 
-  const { data } = await query
-  return data ?? []
+  return getAllCards(buildQuery())
 }
 
 // ── Step 2: Fetch prices from pokemontcg.io in batches ───────────────────────
