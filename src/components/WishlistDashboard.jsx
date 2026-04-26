@@ -810,6 +810,24 @@ function editionLabel(key) {
   return EDITION_LABELS[key] ?? key.replace(/([A-Z])/g, ' $1').trim()
 }
 
+// Language variants — used by "Add another detail" panel
+const LANGUAGE_OPTIONS = [
+  { value: 'english',    label: 'English',                flag: '🇺🇸' },
+  { value: 'japanese',   label: 'Japanese',               flag: '🇯🇵' },
+  { value: 'korean',     label: 'Korean',                 flag: '🇰🇷' },
+  { value: 'chinese_t',  label: 'Chinese (Traditional)',  flag: '🇹🇼' },
+  { value: 'chinese_s',  label: 'Chinese (Simplified)',   flag: '🇨🇳' },
+  { value: 'french',     label: 'French',                 flag: '🇫🇷' },
+  { value: 'german',     label: 'German',                 flag: '🇩🇪' },
+  { value: 'italian',    label: 'Italian',                flag: '🇮🇹' },
+  { value: 'spanish',    label: 'Spanish',                flag: '🇪🇸' },
+  { value: 'portuguese', label: 'Portuguese',             flag: '🇧🇷' },
+  { value: 'thai',       label: 'Thai',                   flag: '🇹🇭' },
+  { value: 'indonesian', label: 'Indonesian',             flag: '🇮🇩' },
+  { value: 'russian',    label: 'Russian',                flag: '🇷🇺' },
+]
+const LANGUAGE_FLAG = Object.fromEntries(LANGUAGE_OPTIONS.map(l => [l.value, l.flag]))
+
 // ─── Wishlist card detail modal ───────────────────────────────────────────────
 function WishlistCardModal({ item, onClose }) {
   const versionLabel = editionLabel(item.edition)
@@ -903,8 +921,8 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
   const [refreshProgress, setRefreshProgress] = useState({ done: 0, total: 0 })
   const [editingPriceId,  setEditingPriceId]  = useState(null)   // row id being manually priced
   const [manualInput,     setManualInput]     = useState('')
-  const [addingEditionFor, setAddingEditionFor] = useState(null) // row id showing the add-edition panel
-  const [pendingNewEdition, setPendingNewEdition] = useState('')
+  const [addingDetailFor,   setAddingDetailFor]   = useState(null) // row id showing the add-detail panel
+  const [pendingNewLanguage, setPendingNewLanguage] = useState('')
 
   // ── Pagination ────────────────────────────────────────────────────────────
   const [collectionPage, setCollectionPage] = useState(1)
@@ -928,7 +946,7 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
           .from('wishlists')
           // edition column: run migration before this works →
           //   ALTER TABLE wishlists ADD COLUMN IF NOT EXISTS edition TEXT NOT NULL DEFAULT 'unlimited';
-          .select('id, card_id, name, image, owned, market_price, mid_price, low_price, manual_price, slot_index, binder_id, edition, is_chase, is_favorite, quantity, category')
+          .select('id, card_id, name, image, owned, market_price, mid_price, low_price, manual_price, slot_index, binder_id, edition, is_chase, is_favorite, quantity, category, language')
           .eq('user_id', user.id)
           .order('created_at', { ascending: false })
       ),
@@ -1235,12 +1253,20 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
 
   async function toggleOwned(rowId, cardId, currentOwned) {
     const newOwned = !currentOwned
-    setItems(prev => prev.map(i => i.id === rowId ? { ...i, owned: newOwned } : i))
+    // Move the item to the front of the list so it appears at the top of
+    // the "newest first" sort in whichever tab it lands in.
+    setItems(prev => {
+      const target  = prev.find(i => i.id === rowId)
+      if (!target) return prev
+      const rest    = prev.filter(i => i.id !== rowId)
+      return [{ ...target, owned: newOwned }, ...rest]
+    })
     const { error } = await supabase
       .from('wishlists')
       .update({ owned: newOwned })
       .eq('id', rowId)
     if (error) {
+      // Revert: move back to original position is hard, just restore the flag
       setItems(prev => prev.map(i => i.id === rowId ? { ...i, owned: currentOwned } : i))
     } else {
       onOwnedChanged?.(cardId, newOwned)
@@ -1283,8 +1309,12 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
       .eq('id', rowId)
   }
 
-  async function addEdition(item, newEdition) {
-    if (!newEdition || newEdition === 'unspecified') { onToast('Please select an edition to add'); return }
+  async function addDetail(item, newLanguage) {
+    if (!newLanguage || newLanguage === 'english') { onToast('Please select a language variant to add'); return }
+    // Check: same card + same language + same edition already exists
+    const conflict = items.find(i => i.id !== item.id && i.card_id === item.card_id && i.language === newLanguage && i.edition === item.edition)
+    if (conflict) { onToast('You already have that language variant saved!'); return }
+
     const { data, error } = await supabase
       .from('wishlists')
       .insert({
@@ -1293,22 +1323,24 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
         name:         item.name,
         image:        item.image,
         owned:        item.owned,
-        edition:      newEdition,
+        edition:      item.edition,
+        language:     newLanguage,
         quantity:     1,
         market_price: null,
         mid_price:    null,
         low_price:    null,
       })
-      .select('id, card_id, name, image, owned, market_price, mid_price, low_price, manual_price, slot_index, binder_id, edition, is_chase, is_favorite, quantity')
+      .select('id, card_id, name, image, owned, market_price, mid_price, low_price, manual_price, slot_index, binder_id, edition, is_chase, is_favorite, quantity, category, language')
       .single()
     if (error) {
-      onToast(error.code === '23505' ? 'That edition is already saved for this card!' : 'Failed to add edition')
+      onToast('Failed to add language variant')
       return
     }
     setItems(prev => [data, ...prev])
-    setAddingEditionFor(null)
-    setPendingNewEdition('')
-    onToast(`${EDITION_LABELS[newEdition] ?? newEdition} added! ✨`)
+    setAddingDetailFor(null)
+    setPendingNewLanguage('')
+    const lang = LANGUAGE_OPTIONS.find(l => l.value === newLanguage)
+    onToast(`${lang?.flag ?? ''} ${lang?.label ?? newLanguage} variant added! ✨`)
   }
 
   async function toggleChase(rowId, currentVal) {
@@ -1440,6 +1472,39 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
       const swap = swaps.find(s => s.id === item.id)
       return swap ? { ...item, slot_index: swap.slot_index } : item
     }))
+  }
+
+  // Called by BinderView when the user clicks "Insert page above/below page N".
+  // Shifts slot_index of all cards on pages >= threshold by +slotsPerPage so
+  // that an empty page appears at the requested position.
+  async function handleInsertPage(pageNumber, direction) {
+    const SLOTS_PER_PAGE = 9  // default grid size
+    // 'before' shifts page N onwards; 'after' shifts page N+1 onwards
+    const threshold = direction === 'before'
+      ? (pageNumber - 1) * SLOTS_PER_PAGE
+      : pageNumber * SLOTS_PER_PAGE
+
+    const binderId = selectedBinder?.id
+    if (!binderId) return
+
+    const affected = items.filter(
+      i => i.binder_id === binderId && i.owned && (i.slot_index ?? 0) >= threshold
+    )
+    if (!affected.length) return
+
+    // Optimistic update
+    setItems(prev => prev.map(i => {
+      const hit = affected.find(a => a.id === i.id)
+      return hit ? { ...i, slot_index: (hit.slot_index ?? 0) + SLOTS_PER_PAGE } : i
+    }))
+
+    // Persist all shifts
+    await Promise.all(affected.map(i =>
+      supabase.from('wishlists')
+        .update({ slot_index: (i.slot_index ?? 0) + SLOTS_PER_PAGE })
+        .eq('id', i.id)
+    ))
+    onToast(`Blank page inserted ${direction === 'before' ? 'before' : 'after'} page ${pageNumber} 📄`)
   }
 
   // Simulate buildSlotArray (BinderView's layout engine) with the current owned
@@ -1734,14 +1799,30 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
           )
         })()}
 
-        {/* Edition — label + change dropdown + add-another-edition panel */}
+        {/* Edition + Language details ─────────────────────────────────── */}
         {(() => {
-          const currentLabel = EDITION_LABELS[item.edition] ?? item.edition ?? 'Unspecified'
-          const takenEditions = new Set(items.filter(i => i.card_id === item.card_id).map(i => i.edition))
-          const availableEditions = EDITION_OPTIONS.filter(e => !takenEditions.has(e.value))
-          const isAddingHere = addingEditionFor === item.id
+          // Language flag badge (shown above edition if not english)
+          const lang    = item.language ?? 'english'
+          const flag    = lang !== 'english' ? (LANGUAGE_FLAG[lang] ?? '🌐') : null
+          // Which language variants of this card already exist (to avoid duplicates)
+          const takenLangs = new Set(
+            items.filter(i => i.card_id === item.card_id && i.edition === item.edition).map(i => i.language ?? 'english')
+          )
+          const availableLangs = LANGUAGE_OPTIONS.filter(l => !takenLangs.has(l.value))
+          const isAddingHere   = addingDetailFor === item.id
+
           return (
             <div className="mt-2">
+              {/* Language flag pill */}
+              {flag && (
+                <span className="inline-flex items-center gap-1 text-[10px] font-semibold
+                                 bg-blue-50 text-blue-500 border border-blue-200
+                                 px-2 py-0.5 rounded-full mb-1">
+                  {flag} {LANGUAGE_OPTIONS.find(l => l.value === lang)?.label}
+                </span>
+              )}
+
+              {/* Edition dropdown */}
               <select
                 value={item.edition ?? 'unspecified'}
                 onChange={e => updateEdition(item.id, e.target.value)}
@@ -1752,38 +1833,41 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
                   <option key={e.value} value={e.value}>{e.label}</option>
                 ))}
               </select>
-              {availableEditions.length > 0 && (
+
+              {/* Add another detail — language variant */}
+              {availableLangs.length > 0 && (
                 isAddingHere ? (
                   <div className="mt-1.5 flex gap-1">
                     <select
-                      value={pendingNewEdition}
-                      onChange={e => setPendingNewEdition(e.target.value)}
+                      value={pendingNewLanguage}
+                      onChange={e => setPendingNewLanguage(e.target.value)}
                       className="flex-1 text-xs border border-pink-200 rounded-xl px-2 py-1.5
                                  bg-white/90 text-gray-600 focus:outline-none focus:ring-1 focus:ring-pink-300"
                     >
-                      <option value="">Pick edition…</option>
-                      {availableEditions.map(e => (
-                        <option key={e.value} value={e.value}>{e.label}</option>
+                      <option value="">Pick language…</option>
+                      {availableLangs.map(l => (
+                        <option key={l.value} value={l.value}>{l.flag} {l.label}</option>
                       ))}
                     </select>
                     <button
-                      onClick={() => addEdition(item, pendingNewEdition)}
+                      onClick={() => addDetail(item, pendingNewLanguage)}
                       className="px-2 py-1.5 rounded-xl bg-pink-400 text-white text-xs font-bold
-                                 hover:bg-pink-500 transition-colors"
+                                 hover:bg-pink-500 transition-colors flex-shrink-0"
                     >Add</button>
                     <button
-                      onClick={() => { setAddingEditionFor(null); setPendingNewEdition('') }}
+                      onClick={() => { setAddingDetailFor(null); setPendingNewLanguage('') }}
                       className="px-2 py-1.5 rounded-xl bg-gray-100 text-gray-400 text-xs font-bold
-                                 hover:bg-gray-200 transition-colors"
+                                 hover:bg-gray-200 transition-colors flex-shrink-0"
+                      title="Cancel"
                     >✕</button>
                   </div>
                 ) : (
                   <button
-                    onClick={() => { setAddingEditionFor(item.id); setPendingNewEdition('') }}
+                    onClick={() => { setAddingDetailFor(item.id); setPendingNewLanguage('') }}
                     className="mt-1 w-full text-[10px] text-center text-pink-400 hover:text-pink-600
                                font-medium transition-colors"
                   >
-                    + Add another edition
+                    + Add another detail
                   </button>
                 )
               )}
@@ -2142,6 +2226,8 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
               currentBinderId={selectedBinder.id}
               onCardClick={setSelectedItem}
               onSlotsSwapped={handleSlotsSwapped}
+              onRemoveFromCollection={removeCard}
+              onInsertPage={handleInsertPage}
             />
           ) : (
             <p className="text-center text-pink-300 font-semibold mt-16 text-sm">

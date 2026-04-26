@@ -7,6 +7,7 @@ const BINDER_SIZES = [
   { id: '1x1', cols: 1, label: '1×1' },
   { id: '2x2', cols: 2, label: '2×2' },
   { id: '3x3', cols: 3, label: '3×3' },
+  { id: '4x4', cols: 4, label: '4×4' },
 ]
 
 const COVER_PRESETS = [
@@ -132,7 +133,7 @@ function EmptySlot({ isSelected, pageStyle, onClick, readOnly }) {
 }
 
 // ─── Filled card slot ─────────────────────────────────────────────────────────
-function CardSlot({ item, isSelected, pageStyle, onClick, binders, onTransfer, currentBinderId, onCardClick, readOnly }) {
+function CardSlot({ item, isSelected, pageStyle, onClick, binders, onTransfer, currentBinderId, onCardClick, readOnly, onRemoveFromCollection }) {
   const dark        = pageStyle === 'black'
   const [showMenu, setShowMenu] = useState(false)
   // Show the action menu whenever the owner has the onTransfer callback (even if
@@ -256,12 +257,29 @@ function CardSlot({ item, isSelected, pageStyle, onClick, binders, onTransfer, c
                       setShowMenu(false)
                     }}
                     className="flex items-center gap-2 w-full px-3 py-2.5
-                               text-xs font-semibold text-red-400 hover:bg-red-50
+                               text-xs font-semibold text-orange-400 hover:bg-orange-50
                                transition-colors text-left border-b border-pink-50"
                   >
-                    <span>✕</span>
+                    <span>↩</span>
                     <span>Remove from binder</span>
                   </button>
+
+                  {/* Remove from collection entirely */}
+                  {onRemoveFromCollection && (
+                    <button
+                      onClick={e => {
+                        e.stopPropagation()
+                        onRemoveFromCollection(item)
+                        setShowMenu(false)
+                      }}
+                      className="flex items-center gap-2 w-full px-3 py-2.5
+                                 text-xs font-semibold text-red-500 hover:bg-red-50
+                                 transition-colors text-left border-b border-pink-50"
+                    >
+                      <span>🗑</span>
+                      <span>Remove from collection</span>
+                    </button>
+                  )}
 
                   {/* Move to another binder — only when others exist */}
                   {otherBinders.length > 0 && (
@@ -299,7 +317,7 @@ function CardSlot({ item, isSelected, pageStyle, onClick, binders, onTransfer, c
 }
 
 // ─── Single binder page ────────────────────────────────────────────────────────
-function BinderPage({ slots, cols, pageNumber, theme, selectedIdx, pageOffset, onSlotClick, binders, onTransfer, currentBinderId, readOnly, onCardClick }) {
+function BinderPage({ slots, cols, pageNumber, theme, selectedIdx, pageOffset, onSlotClick, binders, onTransfer, currentBinderId, readOnly, onCardClick, onRemoveFromCollection, onInsertPage, isLast }) {
   const { coverColor, pageStyle } = theme
   const dark = pageStyle === 'black'
 
@@ -310,13 +328,29 @@ function BinderPage({ slots, cols, pageNumber, theme, selectedIdx, pageOffset, o
   const dividerColor    = dark ? 'rgba(255,255,255,0.06)' : hexAlpha(coverColor, 0.15)
   const pageNumColor    = dark ? 'rgba(255,255,255,0.2)' : 'rgba(156,163,175,0.8)'
 
+  const insertBtn = (dir) => !readOnly && onInsertPage && (
+    <button
+      onClick={() => onInsertPage(pageNumber, dir)}
+      className="flex items-center gap-1 mx-auto px-3 py-1 rounded-full
+                 text-[10px] font-semibold text-gray-400 hover:text-violet-500
+                 bg-white/50 hover:bg-violet-50 border border-dashed border-gray-200
+                 hover:border-violet-300 transition-all opacity-0 group-hover:opacity-100"
+      title={dir === 'before' ? `Insert blank page before page ${pageNumber}` : `Insert blank page after page ${pageNumber}`}
+    >
+      {dir === 'before' ? '↑ Insert page above' : '↓ Insert page below'}
+    </button>
+  )
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 28 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
-      className="w-full relative max-w-xl mx-auto"
+      className="w-full relative max-w-xl mx-auto group"
     >
+      {/* ── Insert page above ─────────────────────────────────────────────── */}
+      <div className="flex justify-center mb-1.5 h-6">{insertBtn('before')}</div>
+
       {/* ── Binding strip ─────────────────────────────────────────────────── */}
       <div
         className="absolute left-0 top-0 bottom-0 w-6 rounded-l-2xl z-10"
@@ -376,6 +410,7 @@ function BinderPage({ slots, cols, pageNumber, theme, selectedIdx, pageOffset, o
                 currentBinderId={currentBinderId}
                 onCardClick={onCardClick}
                 readOnly={readOnly}
+                onRemoveFromCollection={onRemoveFromCollection}
               />
             ) : (
               <EmptySlot
@@ -391,6 +426,9 @@ function BinderPage({ slots, cols, pageNumber, theme, selectedIdx, pageOffset, o
 
         <div className="mt-4 h-px rounded-full" style={{ background: dividerColor }} />
       </div>
+
+      {/* ── Insert page below ──────────────────────────────────────────────── */}
+      <div className="flex justify-center mt-1.5 h-6">{insertBtn('after')}</div>
     </motion.div>
   )
 }
@@ -490,7 +528,7 @@ function ThemeControls({ theme, onThemeChange, binderSize, onSizeChange }) {
 }
 
 // ─── Main BinderView ──────────────────────────────────────────────────────────
-export default function BinderView({ items, user, readOnly = false, initialTheme, onThemeChange, binders, onTransfer, currentBinderId, onCardClick, onSlotsSwapped }) {
+export default function BinderView({ items, user, readOnly = false, initialTheme, onThemeChange, binders, onTransfer, currentBinderId, onCardClick, onSlotsSwapped, onRemoveFromCollection, onInsertPage }) {
   const [binderSize,   setBinderSize]   = useState('3x3')
   const [theme,        setTheme]        = useState(initialTheme ?? DEFAULT_THEME)
   const [slotArray,    setSlotArray]    = useState([])
@@ -509,9 +547,13 @@ export default function BinderView({ items, user, readOnly = false, initialTheme
 
   // Rebuild slotArray whenever items or grid size changes.
   // Uses slot_index from DB when available; fills gaps sequentially otherwise.
+  // totalSlots is based on the HIGHEST slot_index present (not just item count)
+  // so that removing a card preserves blank spaces for remaining neighbours.
   useEffect(() => {
-    const totalPages = Math.max(1, Math.ceil(items.length / slotsPerPage))
-    const totalSlots = totalPages * slotsPerPage
+    const maxSlot     = items.reduce((m, i) => Math.max(m, i.slot_index ?? 0), 0)
+    const minNeeded   = Math.max(items.length, items.length > 0 ? maxSlot + 1 : 0)
+    const totalPages  = Math.max(1, Math.ceil(minNeeded / slotsPerPage))
+    const totalSlots  = totalPages * slotsPerPage
     setSlotArray(buildSlotArray(items, totalSlots))
     setSelectedIdx(null)
   }, [items, slotsPerPage])
@@ -618,6 +660,9 @@ export default function BinderView({ items, user, readOnly = false, initialTheme
               currentBinderId={currentBinderId}
               readOnly={readOnly}
               onCardClick={onCardClick}
+              onRemoveFromCollection={onRemoveFromCollection}
+              onInsertPage={onInsertPage}
+              isLast={pageIdx === pages.length - 1}
             />
           ))}
         </motion.div>

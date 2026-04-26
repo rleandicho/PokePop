@@ -61,9 +61,13 @@ async function ensureBucket() {
   const { data: buckets } = await supabase.storage.listBuckets()
   if (buckets?.find(b => b.name === BUCKET)) return
 
+  // Try to create; if it already exists (RLS blocks listing but bucket is there), ignore the error
   const { error } = await supabase.storage.createBucket(BUCKET, { public: true })
-  if (error) throw new Error(`Failed to create bucket: ${error.message}`)
-  console.log(`Created storage bucket: ${BUCKET}`)
+  if (error && !error.message?.includes('already exists') && !error.message?.includes('policy')) {
+    throw new Error(`Failed to create bucket: ${error.message}`)
+  }
+  if (!error) console.log(`Created storage bucket: ${BUCKET}`)
+  else console.log(`Bucket '${BUCKET}' already exists — continuing.`)
 }
 
 async function downloadImage(url) {
