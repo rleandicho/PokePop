@@ -1001,6 +1001,11 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
   const [cardSort,       setCardSort]       = useState('newest')  // 'newest' | 'oldest'
   const [tagFilter,     setTagFilter]     = useState(null)  // null = all, string = specific tag
   const [tileTagInputs, setTileTagInputs] = useState({})    // rowId → current inline tag input value
+  const [soldModal,     setSoldModal]     = useState(null)  // item object when active
+  const [tradeModal,    setTradeModal]    = useState(null)  // item object when active
+  const [soldPrice,     setSoldPrice]     = useState('')
+  const [salesTotal,    setSalesTotal]    = useState(0)
+  const [tradeCount,    setTradeCount]    = useState(0)
 
   // Notify App whenever the active binder changes (so CardGrid can route new cards here)
   useEffect(() => { onBinderChange?.(selectedBinder?.id ?? null) }, [selectedBinder])
@@ -1048,6 +1053,14 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
 
     setItems(wishlist ?? [])
     setIsPublic(prof?.is_public ?? false)
+
+    // Fetch sales and trade totals
+    const [{ data: salesData }, { data: tradesData }] = await Promise.all([
+      supabase.from('card_sales').select('sale_price').eq('user_id', user.id),
+      supabase.from('card_trades').select('id').eq('user_id', user.id),
+    ])
+    setSalesTotal((salesData ?? []).reduce((acc, s) => acc + (s.sale_price ?? 0), 0))
+    setTradeCount((tradesData ?? []).length)
 
     let loadedBinders = binderData ?? []
 
@@ -1159,6 +1172,12 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
   // Items are fetched created_at DESC (newest first); 'oldest' just reverses that slice.
   // All unique tags across all wishlist/collection items (for tag filter pills)
   const allTags = useMemo(() => {
+    const tags = new Set(items.flatMap(i => i.tags ?? []).filter(Boolean))
+    return [...tags].sort()
+  }, [items])
+
+  // All unique tags the user has created across their whole collection — for autocomplete
+  const allUserTags = useMemo(() => {
     const tags = new Set(items.flatMap(i => i.tags ?? []).filter(Boolean))
     return [...tags].sort()
   }, [items])
@@ -1337,6 +1356,44 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
       onOwnedChanged?.(cardId, newOwned)
       onToast(newOwned ? 'Added to Collection! ✨📦' : 'Moved back to Wishlist 💖')
     }
+  }
+
+  async function handleSold(item, price) {
+    const salePrice = parseFloat(price)
+    if (isNaN(salePrice) || salePrice < 0) { onToast('Please enter a valid sale price'); return }
+    setSoldModal(null)
+    setSoldPrice('')
+    // Insert sale record
+    await supabase.from('card_sales').insert({
+      user_id:    user.id,
+      card_id:    item.card_id,
+      card_name:  item.name,
+      card_image: item.image,
+      sale_price: salePrice,
+    })
+    // Delete from wishlist
+    await supabase.from('wishlists').delete().eq('id', item.id)
+    setItems(prev => prev.filter(i => i.id !== item.id))
+    setSalesTotal(prev => prev + salePrice)
+    onCardRemoved?.(item.card_id)
+    onToast('Card sold! 💰')
+  }
+
+  async function handleTraded(item) {
+    setTradeModal(null)
+    // Insert trade record
+    await supabase.from('card_trades').insert({
+      user_id:    user.id,
+      card_id:    item.card_id,
+      card_name:  item.name,
+      card_image: item.image,
+    })
+    // Delete from wishlist
+    await supabase.from('wishlists').delete().eq('id', item.id)
+    setItems(prev => prev.filter(i => i.id !== item.id))
+    setTradeCount(prev => prev + 1)
+    onCardRemoved?.(item.card_id)
+    onToast('Card traded! 🤝')
   }
 
   async function updateQuantity(rowId, cardId, delta) {
@@ -1872,17 +1929,35 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
           </div>
         )}
 
-        <motion.button
-          whileTap={{ scale: 0.92 }}
-          onClick={() => toggleOwned(item.id, item.card_id, item.owned)}
-          className={`w-full text-xs font-semibold py-1.5 rounded-xl transition-all mt-1
-            ${item.owned
-              ? 'bg-emerald-400 text-white hover:bg-emerald-500'
-              : 'bg-white/70 text-gray-400 hover:bg-pink-50 hover:text-pink-500 border border-gray-200'
-            }`}
-        >
-          {item.owned ? '✅ I own this!' : '🌸 I own this'}
-        </motion.button>
+        {item.owned ? (
+          <div className="flex gap-1.5 mt-1">
+            <motion.button
+              whileTap={{ scale: 0.92 }}
+              onClick={() => { setSoldModal(item); setSoldPrice('') }}
+              className="flex-1 text-xs font-semibold py-1.5 rounded-xl transition-all
+                         bg-amber-100 text-amber-600 hover:bg-amber-200 border border-amber-200"
+            >
+              💰 Sold
+            </motion.button>
+            <motion.button
+              whileTap={{ scale: 0.92 }}
+              onClick={() => setTradeModal(item)}
+              className="flex-1 text-xs font-semibold py-1.5 rounded-xl transition-all
+                         bg-sky-100 text-sky-600 hover:bg-sky-200 border border-sky-200"
+            >
+              🤝 Traded
+            </motion.button>
+          </div>
+        ) : (
+          <motion.button
+            whileTap={{ scale: 0.92 }}
+            onClick={() => toggleOwned(item.id, item.card_id, item.owned)}
+            className="w-full text-xs font-semibold py-1.5 rounded-xl transition-all mt-1
+                       bg-white/70 text-gray-400 hover:bg-pink-50 hover:text-pink-500 border border-gray-200"
+          >
+            🌸 I own this
+          </motion.button>
+        )}
 
         {item.owned && (
           <div className="flex items-center justify-center gap-2 mt-1.5">
@@ -2058,27 +2133,56 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
           </p>
         ) : null}
 
-        {/* Inline tag input */}
-        <div className="mt-2">
-          <input
-            type="text"
-            value={tileTagInputs[item.id] ?? ''}
-            onChange={e => setTileTagInputs(prev => ({ ...prev, [item.id]: e.target.value }))}
-            onKeyDown={e => {
-              if (e.key === 'Enter') {
-                const t = (tileTagInputs[item.id] ?? '').trim()
-                if (t && !(item.tags ?? []).includes(t)) {
-                  saveTags(item.id, [...(item.tags ?? []), t])
-                }
-                setTileTagInputs(prev => ({ ...prev, [item.id]: '' }))
-              }
-            }}
-            placeholder="+ Add tag…"
-            className="w-full text-xs border border-gray-200 rounded-xl px-2 py-1.5
-                       bg-white/80 text-gray-500 placeholder-gray-300
-                       focus:outline-none focus:ring-1 focus:ring-rose-300"
-          />
-        </div>
+        {/* Inline tag input with autocomplete */}
+        {(() => {
+          const currentInput = tileTagInputs[item.id] ?? ''
+          const existingTags = item.tags ?? []
+          const suggestions  = currentInput.trim().length > 0
+            ? allUserTags.filter(t =>
+                t.toLowerCase().includes(currentInput.trim().toLowerCase()) &&
+                !existingTags.includes(t)
+              )
+            : []
+          const addTag = (t) => {
+            const trimmed = t.trim()
+            if (trimmed && !existingTags.includes(trimmed)) {
+              saveTags(item.id, [...existingTags, trimmed])
+            }
+            setTileTagInputs(prev => ({ ...prev, [item.id]: '' }))
+          }
+          return (
+            <div className="mt-2 relative">
+              <input
+                type="text"
+                value={currentInput}
+                onChange={e => setTileTagInputs(prev => ({ ...prev, [item.id]: e.target.value }))}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') { addTag(currentInput); e.preventDefault() }
+                  if (e.key === 'Escape') setTileTagInputs(prev => ({ ...prev, [item.id]: '' }))
+                }}
+                placeholder="+ Add tag…"
+                className="w-full text-xs border border-gray-200 rounded-xl px-2 py-1.5
+                           bg-white/80 text-gray-500 placeholder-gray-300
+                           focus:outline-none focus:ring-1 focus:ring-rose-300"
+              />
+              {suggestions.length > 0 && (
+                <div className="absolute left-0 right-0 top-full mt-0.5 z-30 bg-white border border-gray-200
+                                rounded-xl shadow-lg overflow-hidden max-h-32 overflow-y-auto">
+                  {suggestions.slice(0, 6).map(s => (
+                    <button
+                      key={s}
+                      onMouseDown={e => { e.preventDefault(); addTag(s) }}
+                      className="w-full text-left px-2.5 py-1.5 text-xs text-gray-600
+                                 hover:bg-rose-50 hover:text-rose-500 transition-colors"
+                    >
+                      {s}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )
+        })()}
       </div>
     </motion.div>
   )
@@ -2159,6 +2263,8 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
           <StatCard icon="✨" label="Wishlist Value"    value={wishlistValue}   color="lilac" prefix="$" decimals={2} />
           <StatCard icon="💖" label="Total Cards"       value={totalCount}      color="pink"  />
           <StatCard icon="✅" label="Collection Progress" value={totalCount > 0 ? Math.round((ownedCount / totalCount) * 100) : 0} color="lilac" suffix="%" />
+          <StatCard icon="💰" label="Total Sales"       value={salesTotal}      color="mint"  prefix="$" decimals={2} />
+          <StatCard icon="🤝" label="Cards Traded"      value={tradeCount}      color="pink"  />
         </div>
         <ShowcasePanels ownedItems={ownedItemsList} allItems={items} onCardClick={setSelectedItem} />
       </>}
@@ -2662,6 +2768,96 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
             onClose={() => setSelectedItem(null)}
             onSaveTags={saveTags}
           />
+        )}
+      </AnimatePresence>
+
+      {/* ── Sold Modal ─────────────────────────────────────────────── */}
+      <AnimatePresence>
+        {soldModal && (
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm px-4"
+            onClick={() => setSoldModal(null)}
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-sm"
+              onClick={e => e.stopPropagation()}
+            >
+              <h2 className="text-base font-bold text-gray-700 mb-1">💰 Mark as Sold</h2>
+              <p className="text-sm text-gray-400 mb-4">
+                <span className="font-semibold text-gray-600">{soldModal.name}</span> will be removed from your collection.
+              </p>
+              <label className="block text-xs font-semibold text-gray-500 mb-1">Sale price (USD)</label>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={soldPrice}
+                onChange={e => setSoldPrice(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') handleSold(soldModal, soldPrice) }}
+                placeholder="e.g. 24.99"
+                autoFocus
+                className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-700
+                           focus:outline-none focus:ring-2 focus:ring-amber-300 mb-4"
+              />
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setSoldModal(null)}
+                  className="flex-1 py-2 rounded-xl text-sm font-semibold border border-gray-200
+                             text-gray-400 hover:bg-gray-50 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => handleSold(soldModal, soldPrice)}
+                  className="flex-1 py-2 rounded-xl text-sm font-semibold bg-amber-400 text-white
+                             hover:bg-amber-500 transition-colors"
+                >
+                  Confirm Sale
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── Trade Confirmation Modal ────────────────────────────────── */}
+      <AnimatePresence>
+        {tradeModal && (
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm px-4"
+            onClick={() => setTradeModal(null)}
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-sm"
+              onClick={e => e.stopPropagation()}
+            >
+              <h2 className="text-base font-bold text-gray-700 mb-1">🤝 Mark as Traded</h2>
+              <p className="text-sm text-gray-400 mb-6">
+                Are you sure you traded <span className="font-semibold text-gray-600">{tradeModal.name}</span>?
+                It will be removed from your collection.
+              </p>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setTradeModal(null)}
+                  className="flex-1 py-2 rounded-xl text-sm font-semibold border border-gray-200
+                             text-gray-400 hover:bg-gray-50 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => handleTraded(tradeModal)}
+                  className="flex-1 py-2 rounded-xl text-sm font-semibold bg-sky-400 text-white
+                             hover:bg-sky-500 transition-colors"
+                >
+                  Yes, Traded!
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
         )}
       </AnimatePresence>
     </>
