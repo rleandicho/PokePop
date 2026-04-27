@@ -693,7 +693,6 @@ function NewBinderModal({ onSave, onClose }) {
   const [color,  setColor]  = useState('#a78bfa')
   const [saving, setSaving] = useState(false)
   const colorRef           = useRef(null)
-  const categoryDebounce   = useRef({})    // rowId → setTimeout handle for debounced DB writes
 
   async function handleSave() {
     const trimmed = name.trim()
@@ -1000,8 +999,8 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
   const [wishlistPage,   setWishlistPage]   = useState(1)
   const [cardSearch,     setCardSearch]     = useState('')
   const [cardSort,       setCardSort]       = useState('newest')  // 'newest' | 'oldest'
-  const [categoryFilter, setCategoryFilter] = useState(null)      // null = all, string = specific category
-  const [tagFilter,      setTagFilter]      = useState(null)      // null = all, string = specific tag
+  const [tagFilter,     setTagFilter]     = useState(null)  // null = all, string = specific tag
+  const [tileTagInputs, setTileTagInputs] = useState({})    // rowId → current inline tag input value
 
   // Notify App whenever the active binder changes (so CardGrid can route new cards here)
   useEffect(() => { onBinderChange?.(selectedBinder?.id ?? null) }, [selectedBinder])
@@ -1018,7 +1017,7 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
           .from('wishlists')
           // edition column: run migration before this works →
           //   ALTER TABLE wishlists ADD COLUMN IF NOT EXISTS edition TEXT NOT NULL DEFAULT 'unlimited';
-          .select('id, card_id, name, image, owned, market_price, mid_price, low_price, manual_price, price_source, slot_index, binder_id, edition, is_chase, is_favorite, quantity, category, language, tags')
+          .select('id, card_id, name, image, owned, market_price, mid_price, low_price, manual_price, price_source, slot_index, binder_id, edition, is_chase, is_favorite, quantity, language, tags')
           .eq('user_id', user.id)
           .order('created_at', { ascending: false })
       ),
@@ -1158,12 +1157,6 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
 
   // Search-filtered + sorted views
   // Items are fetched created_at DESC (newest first); 'oldest' just reverses that slice.
-  // All unique non-empty categories across the full list (for filter pills)
-  const allCategories = useMemo(() => {
-    const cats = new Set(items.map(i => i.category).filter(Boolean))
-    return [...cats].sort()
-  }, [items])
-
   // All unique tags across all wishlist/collection items (for tag filter pills)
   const allTags = useMemo(() => {
     const tags = new Set(items.flatMap(i => i.tags ?? []).filter(Boolean))
@@ -1173,30 +1166,16 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
   const filteredOwnedItems = useMemo(() => {
     const q = cardSearch.trim().toLowerCase()
     let filtered = q ? ownedItemsList.filter(i => i.name?.toLowerCase().includes(q)) : ownedItemsList
-    if (categoryFilter) filtered = filtered.filter(i => i.category === categoryFilter)
-    if (tagFilter)      filtered = filtered.filter(i => (i.tags ?? []).includes(tagFilter))
+    if (tagFilter) filtered = filtered.filter(i => (i.tags ?? []).includes(tagFilter))
     return cardSort === 'oldest' ? [...filtered].reverse() : filtered
-  }, [ownedItemsList, cardSearch, cardSort, categoryFilter, tagFilter])
+  }, [ownedItemsList, cardSearch, cardSort, tagFilter])
 
   const filteredWishlistItems = useMemo(() => {
     const q = cardSearch.trim().toLowerCase()
     let filtered = q ? wishlistItemsList.filter(i => i.name?.toLowerCase().includes(q)) : wishlistItemsList
-    if (categoryFilter) filtered = filtered.filter(i => i.category === categoryFilter)
-    if (tagFilter)      filtered = filtered.filter(i => (i.tags ?? []).includes(tagFilter))
+    if (tagFilter) filtered = filtered.filter(i => (i.tags ?? []).includes(tagFilter))
     return cardSort === 'oldest' ? [...filtered].reverse() : filtered
-  }, [wishlistItemsList, cardSearch, cardSort, categoryFilter, tagFilter])
-
-  function updateCategory(rowId, category) {
-    // Keep raw value in state (preserves spaces while typing)
-    const rawVal = category === '' ? null : category
-    setItems(prev => prev.map(i => i.id === rowId ? { ...i, category: rawVal } : i))
-    // Debounce DB write: only persist after 600ms of quiet, and trim only for storage
-    clearTimeout(categoryDebounce.current[rowId])
-    categoryDebounce.current[rowId] = setTimeout(() => {
-      const dbVal = category?.trim() || null
-      supabase.from('wishlists').update({ category: dbVal }).eq('id', rowId)
-    }, 600)
-  }
+  }, [wishlistItemsList, cardSearch, cardSort, tagFilter])
 
   async function saveTags(rowId, tags) {
     setItems(prev => prev.map(i => i.id === rowId ? { ...i, tags } : i))
@@ -1429,7 +1408,7 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
         mid_price:    null,
         low_price:    null,
       })
-      .select('id, card_id, name, image, owned, market_price, mid_price, low_price, manual_price, price_source, slot_index, binder_id, edition, is_chase, is_favorite, quantity, category, language')
+      .select('id, card_id, name, image, owned, market_price, mid_price, low_price, manual_price, price_source, slot_index, binder_id, edition, is_chase, is_favorite, quantity, language, tags')
       .single()
     if (error) {
       onToast('Failed to add language variant')
@@ -1878,8 +1857,16 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
         {(item.tags ?? []).length > 0 && (
           <div className="flex flex-wrap gap-1 justify-center mb-1">
             {item.tags.map(t => (
-              <span key={t} className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-rose-100 text-rose-500">
+              <span key={t}
+                className="inline-flex items-center gap-0.5 text-[9px] font-semibold
+                           px-1.5 py-0.5 rounded-full bg-rose-100 text-rose-500"
+              >
                 {t}
+                <button
+                  onClick={e => { e.stopPropagation(); saveTags(item.id, (item.tags ?? []).filter(x => x !== t)) }}
+                  className="text-rose-300 hover:text-rose-500 leading-none ml-0.5"
+                  aria-label={`Remove tag ${t}`}
+                >✕</button>
               </span>
             ))}
           </div>
@@ -2071,23 +2058,26 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
           </p>
         ) : null}
 
-        {/* Category tag input */}
+        {/* Inline tag input */}
         <div className="mt-2">
           <input
             type="text"
-            list={`cats-${item.id}`}
-            value={item.category ?? ''}
-            onChange={e => updateCategory(item.id, e.target.value)}
-            placeholder="+ Add category…"
+            value={tileTagInputs[item.id] ?? ''}
+            onChange={e => setTileTagInputs(prev => ({ ...prev, [item.id]: e.target.value }))}
+            onKeyDown={e => {
+              if (e.key === 'Enter') {
+                const t = (tileTagInputs[item.id] ?? '').trim()
+                if (t && !(item.tags ?? []).includes(t)) {
+                  saveTags(item.id, [...(item.tags ?? []), t])
+                }
+                setTileTagInputs(prev => ({ ...prev, [item.id]: '' }))
+              }
+            }}
+            placeholder="+ Add tag…"
             className="w-full text-xs border border-gray-200 rounded-xl px-2 py-1.5
                        bg-white/80 text-gray-500 placeholder-gray-300
-                       focus:outline-none focus:ring-1 focus:ring-violet-300"
+                       focus:outline-none focus:ring-1 focus:ring-rose-300"
           />
-          {allCategories.length > 0 && (
-            <datalist id={`cats-${item.id}`}>
-              {allCategories.map(c => <option key={c} value={c} />)}
-            </datalist>
-          )}
         </div>
       </div>
     </motion.div>
@@ -2252,42 +2242,10 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
             ))}
           </div>
 
-          {/* Category filter pills — only show when categories exist */}
-          {allCategories.length > 0 && (
-            <div className="flex items-center gap-1.5 flex-wrap">
-              <span className="text-xs font-medium" style={{ color: 'var(--app-text)', opacity: 0.6 }}>Category:</span>
-              <motion.button
-                whileTap={{ scale: 0.95 }}
-                onClick={() => { setCategoryFilter(null); setCollectionPage(1); setWishlistPage(1) }}
-                className={`text-xs font-semibold px-3 py-1 rounded-full border transition-all
-                  ${!categoryFilter
-                    ? 'bg-sky-400 text-white border-sky-400'
-                    : 'bg-white/60 text-gray-500 border-gray-200 hover:bg-white/80'
-                  }`}
-              >
-                All
-              </motion.button>
-              {allCategories.map(cat => (
-                <motion.button
-                  key={cat}
-                  whileTap={{ scale: 0.95 }}
-                  onClick={() => { setCategoryFilter(categoryFilter === cat ? null : cat); setCollectionPage(1); setWishlistPage(1) }}
-                  className={`text-xs font-semibold px-3 py-1 rounded-full border transition-all
-                    ${categoryFilter === cat
-                      ? 'bg-violet-400 text-white border-violet-400'
-                      : 'bg-white/60 text-gray-500 border-gray-200 hover:bg-white/80'
-                    }`}
-                >
-                  {cat}
-                </motion.button>
-              ))}
-            </div>
-          )}
-
           {/* Tag filter pills — only show when any tags exist */}
           {allTags.length > 0 && (
             <div className="flex items-center gap-1.5 flex-wrap">
-              <span className="text-xs font-medium" style={{ color: 'var(--app-text)', opacity: 0.6 }}>🏷️ Tag:</span>
+              <span className="text-xs font-medium" style={{ color: 'var(--app-text)', opacity: 0.6 }}>🏷️ Tags:</span>
               <motion.button
                 whileTap={{ scale: 0.95 }}
                 onClick={() => { setTagFilter(null); setCollectionPage(1); setWishlistPage(1) }}
