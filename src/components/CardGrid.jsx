@@ -45,8 +45,8 @@ function tierLabel(key) {
 // Cache key includes sort so each sort+filter combo has its own cache slot.
 // Switching sorts never re-uses data fetched under a different sort's API ordering.
 // v2: rebuilt after price-sort ordering fix (oldest-first for both price directions).
-function buildCacheKey(vibe, search, setQuery, sort) {
-  return `v2|${vibe ?? ''}|${search ?? ''}|${setQuery ?? ''}|${sort ?? ''}`
+function buildCacheKey(vibe, search, setQuery, sort, engOnly) {
+  return `v2|${vibe ?? ''}|${search ?? ''}|${setQuery ?? ''}|${sort ?? ''}|${engOnly ? 'en' : 'all'}`
 }
 
 // ─── localStorage card cache ──────────────────────────────────────────────────
@@ -214,26 +214,42 @@ function PaginationBar({ currentPage, totalPages, onPageChange }) {
   )
 }
 
-function SortToolbar({ sortBy, onSortChange }) {
+function SortToolbar({ sortBy, onSortChange, engOnly, onEngOnlyToggle }) {
   return (
-    <div className="flex justify-end items-center flex-wrap px-4 pt-2 pb-1 gap-2">
-      <span className="text-xs text-gray-400 font-medium whitespace-nowrap">Sort by</span>
-      <div className="relative">
-        <select
-          value={sortBy}
-          onChange={e => onSortChange(e.target.value)}
-          className="appearance-none bg-white/70 border border-pink-200 text-pink-600 text-xs
-                     font-semibold rounded-full pl-3 pr-7 py-1.5 focus:outline-none
-                     focus:ring-2 focus:ring-pink-300 cursor-pointer shadow-sm hover:bg-white/90
-                     transition-all max-w-[200px]"
-        >
-          {SORT_OPTIONS.map(o => (
-            <option key={o.id} value={o.id}>{o.label}</option>
-          ))}
-        </select>
-        <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-pink-400 text-xs">
-          ▾
-        </span>
+    <div className="flex justify-between items-center flex-wrap px-4 pt-2 pb-1 gap-2">
+      {/* Left — language filter */}
+      <button
+        onClick={onEngOnlyToggle}
+        title={engOnly ? 'Showing English only — click to show all languages' : 'Show English cards only'}
+        className={`text-xs font-bold px-3 py-1.5 rounded-full border transition-all shadow-sm
+          ${engOnly
+            ? 'bg-sky-400 text-white border-sky-400'
+            : 'bg-white/70 text-gray-400 border-gray-200 hover:bg-white/90 hover:text-sky-500 hover:border-sky-300'
+          }`}
+      >
+        🇺🇸 ENG
+      </button>
+
+      {/* Right — sort */}
+      <div className="flex items-center gap-2">
+        <span className="text-xs text-gray-400 font-medium whitespace-nowrap">Sort by</span>
+        <div className="relative">
+          <select
+            value={sortBy}
+            onChange={e => onSortChange(e.target.value)}
+            className="appearance-none bg-white/70 border border-pink-200 text-pink-600 text-xs
+                       font-semibold rounded-full pl-3 pr-7 py-1.5 focus:outline-none
+                       focus:ring-2 focus:ring-pink-300 cursor-pointer shadow-sm hover:bg-white/90
+                       transition-all max-w-[200px]"
+          >
+            {SORT_OPTIONS.map(o => (
+              <option key={o.id} value={o.id}>{o.label}</option>
+            ))}
+          </select>
+          <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-pink-400 text-xs">
+            ▾
+          </span>
+        </div>
       </div>
     </div>
   )
@@ -682,6 +698,7 @@ function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, user, on
   const [loading,  setLoading]  = useState(() => !!(activeVibe || setQuery || search))
   const [dbError,  setDbError]  = useState(null)   // set when card DB isn't ready yet
   const [selected, setSelected] = useState(null)
+  const [engOnly,  setEngOnly]  = useState(false)  // when true, hides non-English cards
 
   // Lazy price refresh — fires when a card modal opens.
   // Silently fetches a fresh price from pokemontcg.io if the stored price is > 24h old,
@@ -731,8 +748,8 @@ function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, user, on
     clearTimeout(searchTimerRef.current)
   }
 
-  const fetchCards = useCallback(async (vibe, srch, sq, sort, pg) => {
-    const key = buildCacheKey(vibe, srch, sq, sort)
+  const fetchCards = useCallback(async (vibe, srch, sq, sort, pg, engOnlyFlag) => {
+    const key = buildCacheKey(vibe, srch, sq, sort, engOnlyFlag)
     activeKeyRef.current = key
 
     // Abort any previous Supabase fetch (bumping reqId is how we discard stale responses)
@@ -753,6 +770,7 @@ function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, user, on
         setQuery: sq,
         sort,
         page: pg,
+        engOnly: engOnlyFlag,
       })
 
       // A newer request has already started — discard this response
@@ -794,7 +812,7 @@ function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, user, on
     const hasFilter = activeVibe || setQuery || effectiveSearch
     if (!hasFilter) return
 
-    const key = buildCacheKey(activeVibe, effectiveSearch, setQuery, sortBy)
+    const key = buildCacheKey(activeVibe, effectiveSearch, setQuery, sortBy, engOnly)
     activeKeyRef.current = key
 
     // Cancel any in-flight request when filter/sort changes.
@@ -829,10 +847,10 @@ function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, user, on
         // Full cache miss: fresh fetch with the correct API ordering for this sort
         setPage(1)
         setCards([])
-        fetchCards(activeVibe, effectiveSearch, setQuery, sortBy, 1)
+        fetchCards(activeVibe, effectiveSearch, setQuery, sortBy, 1, engOnly)
       }
     }
-  }, [activeVibe, effectiveSearch, setQuery, sortBy, fetchCards]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [activeVibe, effectiveSearch, setQuery, sortBy, engOnly, fetchCards]) // eslint-disable-line react-hooks/exhaustive-deps
 
 
   const saveCard = useCallback(async (card, owned, quantity = 1, edition = '', language = 'english') => {
@@ -939,7 +957,12 @@ function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, user, on
         onChange={setInlineSearch}
         onClear={handleInlineClear}
       />
-      <SortToolbar sortBy={sortBy} onSortChange={onSortChange} />
+      <SortToolbar
+        sortBy={sortBy}
+        onSortChange={onSortChange}
+        engOnly={engOnly}
+        onEngOnlyToggle={() => setEngOnly(v => !v)}
+      />
 
       <motion.div
         key={`${activeVibe}-${setQuery}-${effectiveSearch}`}
@@ -983,7 +1006,7 @@ function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, user, on
           totalPages={totalPages}
           onPageChange={p => {
             setPage(p)
-            fetchCards(activeVibe, effectiveSearch, setQuery, sortBy, p)
+            fetchCards(activeVibe, effectiveSearch, setQuery, sortBy, p, engOnly)
             gridTopRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
           }}
         />

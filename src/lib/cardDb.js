@@ -150,7 +150,7 @@ function normaliseCard(row) {
 }
 
 // ── Main query function ───────────────────────────────────────────────────────
-export async function fetchCardsFromDb({ vibe, search, setQuery, sort, page = 1, pageSize } = {}) {
+export async function fetchCardsFromDb({ vibe, search, setQuery, sort, page = 1, pageSize, engOnly = false } = {}) {
   const isPriceSort   = sort === 'price-high' || sort === 'price-low'
   const effectiveSize = isPriceSort ? PRICE_PAGE_SIZE : (pageSize ?? PAGE_SIZE)
   const from          = (page - 1) * effectiveSize
@@ -189,6 +189,11 @@ export async function fetchCardsFromDb({ vibe, search, setQuery, sort, page = 1,
       q = q.or(promoOr)
     }
     // Unknown formats fall through with no filter (shows all cards)
+  }
+
+  // ── English-only filter ──────────────────────────────────────
+  if (engOnly) {
+    q = q.eq('card_language', 'en')
   }
 
   // ── Apply name search ────────────────────────────────────────
