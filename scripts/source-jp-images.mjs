@@ -64,16 +64,31 @@ const HEADERS = {
   'Referer':    'https://bulbapedia.bulbagarden.net/',
 }
 
+// ── DB set_name → Bulbapedia set name mapping ────────────────────────────────
+// The TCG API stores abbreviated set names; Bulbapedia uses the full name.
+const SET_NAME_MAP = {
+  'Base':                    'Base Set',
+  'Scarlet & Violet':        'Scarlet & Violet',   // sv1 — Bulbapedia pages sparse
+  'Paldea Evolved':          'Paldea Evolved',
+  'Expedition Base Set':     'Expedition',
+}
+
+function bulbaSetName(dbSetName) {
+  return SET_NAME_MAP[dbSetName] ?? dbSetName
+}
+
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)) }
 
 // ── Bulbapedia page title for a TCG card ─────────────────────────────────────
 // e.g. name="Charizard", setName="Base Set", number="4" → "Charizard (Base Set 4)"
 function bulbaTitle(name, setName, number) {
-  return `${name} (${setName} ${number})`
+  return `${name} (${bulbaSetName(setName)} ${number})`
 }
 
 // ── Get the jpimage field from a card's Bulbapedia wikitext ──────────────────
-// Returns null if no separate JP image exists (EN/JP share the same art).
+// Returns the JP-specific filename only when Bulbapedia explicitly marks a card
+// as having distinct Japanese artwork via the |jpimage= infobox field.
+// Returns null for all other cases (page missing, no separate JP art, etc.).
 async function getJpImageFilename(pageTitle) {
   const params = new URLSearchParams({
     action: 'parse', page: pageTitle, prop: 'wikitext', format: 'json', origin: '*',
@@ -85,16 +100,10 @@ async function getJpImageFilename(pageTitle) {
 
   const wikitext = json.parse?.wikitext?.['*'] ?? ''
 
-  // Look for |jpimage= field in the infobox (some cards have a separate JP scan)
+  // |jpimage= is only present when the JP version has genuinely different art.
+  // If absent, EN and JP share the same artwork — return null to skip.
   const jpImgMatch = wikitext.match(/\|jpimage\s*=\s*([^\n|}\]]+)/)
-  if (jpImgMatch) return jpImgMatch[1].trim()
-
-  // Extract the primary |image= and check if a separate Japanese image file exists
-  // by looking for filenames that contain Japanese set keywords
-  const imgMatch = wikitext.match(/\|image\s*=\s*([^\n|}\]]+)/)
-  const primaryImg = imgMatch ? imgMatch[1].trim() : null
-
-  return primaryImg  // Return primary image (may be same as EN — caller will detect and skip)
+  return jpImgMatch ? jpImgMatch[1].trim() : null
 }
 
 // ── Compute Bulbapedia archive URL from filename ──────────────────────────────
@@ -154,24 +163,21 @@ const { data: cards, error: dbErr } = await supabase
 if (dbErr) { console.error('DB error:', dbErr.message); process.exit(1) }
 if (!cards?.length) { console.error('No cards found for set:', setId); process.exit(1) }
 
-// Also fetch current EN image filenames to detect duplicates
-const { data: currentImages } = await supabase
-  .from('tcg_cards').select('id, image_small').eq('set_id', setId)
-const enImageMap = new Map((currentImages ?? []).map(c => [c.id, c.image_small]))
-
 console.log(`Found ${cards.length} cards in ${setId}\n`)
 
-let found = 0, skipped = 0, failed = 0, same = 0
+let found = 0, skipped = 0, failed = 0
 
 for (const card of cards) {
   const title = bulbaTitle(card.name, card.set_name, card.number)
   process.stdout.write(`  [${card.id}] ${title.slice(0, 45).padEnd(45)} `)
 
   try {
+    // getJpImageFilename returns non-null ONLY when |jpimage= is explicitly set,
+    // meaning Bulbapedia has confirmed the JP art differs from EN.
     const jpFilename = await getJpImageFilename(title)
 
     if (!jpFilename) {
-      console.log('no Bulbapedia page')
+      console.log('no distinct JP image')
       skipped++
       await sleep(300)
       continue
@@ -182,17 +188,6 @@ for (const card of cards) {
     if (!imageUrl) {
       console.log('no image URL')
       skipped++
-      await sleep(300)
-      continue
-    }
-
-    // Check if this is the same as the English card image (same filename → same art)
-    const enImg = enImageMap.get(card.id) ?? ''
-    const jpBase = jpFilename.toLowerCase().replace(/[^a-z0-9]/g, '')
-    const enBase = (enImg.split('/').pop() ?? '').toLowerCase().replace(/[^a-z0-9]/g, '')
-    if (jpBase === enBase) {
-      console.log('same as EN (identical art)')
-      same++
       await sleep(300)
       continue
     }
@@ -218,12 +213,12 @@ for (const card of cards) {
 
 console.log()
 console.log(`Done:`)
-console.log(`  ${found}  uploaded (distinct JP art)`)
-console.log(`  ${same}   skipped — identical art to EN (expected for WotC-era sets)`)
-console.log(`  ${skipped} skipped — no Bulbapedia page or image`)
+console.log(`  ${found}   uploaded (distinct JP art found via Bulbapedia |jpimage= field)`)
+console.log(`  ${skipped} skipped  — no Bulbapedia page or no distinct JP image`)
 console.log(`  ${failed}  failed`)
-if (same > 0 && found === 0) {
+if (found === 0) {
   console.log()
-  console.log('Note: This set\'s English and Japanese cards share the same artwork.')
-  console.log('The app will show the English image + a language flag badge for JP variants.')
+  console.log('Note: No distinct JP art was found for this set.')
+  console.log('This is expected for WotC-era sets (identical EN/JP artwork).')
+  console.log('Users can still paste custom JP image URLs in the language variant panel.')
 }
