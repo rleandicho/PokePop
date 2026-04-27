@@ -17,11 +17,11 @@ function getDisplayPrice(item) {
 // getPriceInfo: returns { value, label } so the tile can show source context
 // 'Manual' label signals the value is user-entered, not live TCGPlayer data
 function getPriceInfo(item) {
-  if (item.manual_price) return { value: item.manual_price, label: 'Manual' }
-  if (item.market_price) return { value: item.market_price, label: '' }
-  if (item.mid_price)    return { value: item.mid_price,    label: 'Mid' }
-  if (item.low_price)    return { value: item.low_price,    label: 'Low' }
-  return { value: 0, label: '' }
+  if (item.manual_price) return { value: item.manual_price, label: 'Manual',   source: null }
+  if (item.market_price) return { value: item.market_price, label: '',         source: item.price_source ?? null }
+  if (item.mid_price)    return { value: item.mid_price,    label: 'Mid',      source: null }
+  if (item.low_price)    return { value: item.low_price,    label: 'Low',      source: null }
+  return { value: 0, label: '', source: null }
 }
 
 // ─── Count-up hook ────────────────────────────────────────────────────────────
@@ -833,9 +833,10 @@ function WishlistCardModal({ item, onClose }) {
   const versionLabel = editionLabel(item.edition)
 
   // Stored prices with version context in the header
+  const isEbayPrice = item.price_source === 'ebay'
   const rows = [
     item.manual_price && { label: 'Manual (Override)', value: item.manual_price, highlight: true },
-    item.market_price && { label: 'Market',            value: item.market_price },
+    item.market_price && { label: isEbayPrice ? 'Market (avg. 10 eBay sales)' : 'Market', value: item.market_price, ebay: isEbayPrice },
     item.mid_price    && { label: 'Mid',               value: item.mid_price    },
     item.low_price    && { label: 'Low',               value: item.low_price    },
   ].filter(Boolean)
@@ -874,10 +875,15 @@ function WishlistCardModal({ item, onClose }) {
                 ? <><span className="text-pink-500 font-bold">{versionLabel}</span> · Stored Prices</>
                 : 'Stored Prices'}
             </p>
-            {rows.map(({ label, value, highlight }) => (
-              <div key={label} className={`flex justify-between items-center px-3 py-2 text-sm ${highlight ? 'bg-violet-50' : 'bg-white'}`}>
-                <span className={highlight ? 'text-violet-600 font-medium' : 'text-gray-500'}>{label}</span>
-                <span className={`font-bold ${highlight ? 'text-violet-600' : 'text-pink-600'}`}>${Number(value).toFixed(2)}</span>
+            {rows.map(({ label, value, highlight, ebay }) => (
+              <div key={label} className={`flex justify-between items-center px-3 py-2 text-sm
+                ${highlight ? 'bg-violet-50' : ebay ? 'bg-amber-50' : 'bg-white'}`}>
+                <span className={highlight ? 'text-violet-600 font-medium' : ebay ? 'text-amber-600 font-medium' : 'text-gray-500'}>
+                  {label}
+                </span>
+                <span className={`font-bold ${highlight ? 'text-violet-600' : ebay ? 'text-amber-700' : 'text-pink-600'}`}>
+                  ${Number(value).toFixed(2)}
+                </span>
               </div>
             ))}
           </div>
@@ -951,7 +957,7 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
           .from('wishlists')
           // edition column: run migration before this works →
           //   ALTER TABLE wishlists ADD COLUMN IF NOT EXISTS edition TEXT NOT NULL DEFAULT 'unlimited';
-          .select('id, card_id, name, image, owned, market_price, mid_price, low_price, manual_price, slot_index, binder_id, edition, is_chase, is_favorite, quantity, category, language')
+          .select('id, card_id, name, image, owned, market_price, mid_price, low_price, manual_price, price_source, slot_index, binder_id, edition, is_chase, is_favorite, quantity, category, language')
           .eq('user_id', user.id)
           .order('created_at', { ascending: false })
       ),
@@ -1167,7 +1173,7 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
     // Batch fetch ALL prices in one round-trip
     const { data: priceRows } = await supabase
       .from('tcg_prices')
-      .select('card_id, holofoil_market, holofoil_mid, holofoil_low, normal_market, normal_mid, normal_low, reverse_holo_market, first_ed_holo_market, first_ed_normal_market, other_market, other_mid, other_low')
+      .select('card_id, price_source, holofoil_market, holofoil_mid, holofoil_low, normal_market, normal_mid, normal_low, reverse_holo_market, first_ed_holo_market, first_ed_normal_market, other_market, other_mid, other_low, ebay_market')
       .in('card_id', uniqueBaseIds)
 
     if (!priceRows?.length) {
@@ -1193,14 +1199,13 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
         continue
       }
 
-      // Unlimited: prefer holofoil → normal → reverse holo → other (e.g. Perfect Order)
-      const unlMarket = p.holofoil_market ?? p.normal_market ?? p.reverse_holo_market ?? p.other_market ?? null
+      // Unlimited: prefer holofoil → normal → reverse holo → other → eBay fallback
+      const unlMarket = p.holofoil_market ?? p.normal_market ?? p.reverse_holo_market ?? p.other_market ?? p.ebay_market ?? null
       const unlMid    = p.holofoil_mid    ?? p.normal_mid    ?? p.other_mid    ?? null
       const unlLow    = p.holofoil_low    ?? p.normal_low    ?? p.other_low    ?? null
 
-      let market, mid, low
+      let market, mid, low, priceSource
       if (is1st) {
-        // 1st Ed: use 1st Ed market, fall back to unlimited for mid/low (not stored separately)
         market = p.first_ed_holo_market ?? p.first_ed_normal_market ?? unlMarket
         mid    = unlMid
         low    = unlLow
@@ -1209,10 +1214,12 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
         mid    = unlMid
         low    = unlLow
       }
+      // Track source: if we fell back to ebay_market, record that
+      priceSource = (market === p.ebay_market && p.price_source === 'ebay') ? 'ebay' : (p.price_source ?? 'tcgplayer')
 
       const { error } = await supabase
         .from('wishlists')
-        .update({ market_price: market, mid_price: mid, low_price: low })
+        .update({ market_price: market, mid_price: mid, low_price: low, price_source: priceSource })
         .eq('id', item.id)
 
       if (!error) updated++
@@ -1348,7 +1355,7 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
         mid_price:    null,
         low_price:    null,
       })
-      .select('id, card_id, name, image, owned, market_price, mid_price, low_price, manual_price, slot_index, binder_id, edition, is_chase, is_favorite, quantity, category, language')
+      .select('id, card_id, name, image, owned, market_price, mid_price, low_price, manual_price, price_source, slot_index, binder_id, edition, is_chase, is_favorite, quantity, category, language')
       .single()
     if (error) {
       onToast('Failed to add language variant')
@@ -1708,7 +1715,8 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
         <p className="text-sm font-bold text-gray-700 truncate">{item.name}</p>
 
         {(() => {
-          const { value: p, label } = getPriceInfo(item)
+          const { value: p, label, source } = getPriceInfo(item)
+          const isEbay    = source === 'ebay'
           const is1st     = item.card_id?.endsWith('-1st')
           const hasMarket = !!item.market_price
           const isEditing = editingPriceId === item.id
@@ -1744,12 +1752,17 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
           return (
             <div className="flex items-center justify-center gap-1 mb-1 flex-wrap">
               {p > 0 ? (
-                <span className={`text-xs font-semibold px-2 py-0.5 rounded-full
-                  ${label === 'Manual'
-                    ? 'text-violet-600 bg-violet-100'
-                    : 'text-pink-600 bg-pink-100'
-                  }`}>
-                  ${p.toFixed(2)}{label ? ` (${label})` : ''}
+                <span
+                  className={`text-xs font-semibold px-2 py-0.5 rounded-full
+                    ${label === 'Manual'
+                      ? 'text-violet-600 bg-violet-100'
+                      : isEbay
+                        ? 'text-amber-700 bg-amber-100'
+                        : 'text-pink-600 bg-pink-100'
+                    }`}
+                  title={isEbay ? 'avg. of last 10 eBay sales' : undefined}
+                >
+                  ${p.toFixed(2)}{isEbay ? ' ⊕' : label ? ` (${label})` : ''}
                 </span>
               ) : (
                 <span className="text-xs font-medium text-gray-300 bg-gray-100 px-2 py-0.5 rounded-full">

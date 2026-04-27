@@ -138,6 +138,8 @@ function normaliseCard(row) {
     mid_price:      row.holofoil_mid ?? row.normal_mid ?? row.other_mid ?? null,
     low_price:      row.holofoil_low ?? row.normal_low ?? row.other_low ?? null,
     price_updated_at: row.price_updated_at ?? null,
+    price_source:   row.price_source ?? null,   // 'tcgplayer' | 'ebay' | null
+    ebay_market:    row.ebay_market ?? null,
     _is_wotc:       row.is_wotc ?? false,
     jp_image_small: row.jp_image_small ?? null,
     jp_image_large: row.jp_image_large ?? null,

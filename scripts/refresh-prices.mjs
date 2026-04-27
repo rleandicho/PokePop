@@ -92,6 +92,7 @@ function parseTcgPrices(prices, cardId) {
 
   return {
     card_id:                cardId,
+    price_source:           'tcgplayer',
     normal_market:          p.normal?.market          ?? null,
     normal_mid:             p.normal?.mid             ?? null,
     normal_low:             p.normal?.low             ?? null,
@@ -106,6 +107,7 @@ function parseTcgPrices(prices, cardId) {
     other_market:           other?.market ?? null,
     other_mid:              other?.mid    ?? null,
     other_low:              other?.low    ?? null,
+    ebay_market:            null,
     updated_at:             new Date().toISOString(),
   }
 }
@@ -257,10 +259,10 @@ async function addEbayFallbacks(cards, tcgPriceMap) {
   for (const card of missing) {
     const avg = await fetchEbayAvgPrice(card.name, card.set_name)
     if (avg != null) {
-      // Store as "other" tier since it's not a standard TCGPlayer tier
       tcgPriceMap[card.id] = {
         card_id:      card.id,
-        other_market: parseFloat(avg.toFixed(2)),
+        price_source: 'ebay',
+        ebay_market:  parseFloat(avg.toFixed(2)),
         updated_at:   new Date().toISOString(),
       }
       filled++

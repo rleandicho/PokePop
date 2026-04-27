@@ -104,11 +104,15 @@ function sortCards(cards, sort) {
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 function PriceTag({ card }) {
-  const val = card.market_price
+  const val = card.market_price ?? card.ebay_market
   if (!val) return null
+  const isEbay = card.price_source === 'ebay'
   return (
-    <span className="text-xs font-semibold text-pink-600 bg-pink-100 px-2 py-0.5 rounded-full">
-      ${Number(val).toFixed(2)}
+    <span className={`text-xs font-semibold px-2 py-0.5 rounded-full
+      ${isEbay ? 'text-amber-700 bg-amber-100' : 'text-pink-600 bg-pink-100'}`}
+      title={isEbay ? 'avg. of last 10 eBay sales' : undefined}
+    >
+      ${Number(val).toFixed(2)}{isEbay ? ' ⊕' : ''}
     </span>
   )
 }
@@ -360,6 +364,25 @@ function CardModal({ card, user, onToast, onClose, saveCard, collectionIds, owne
              className="w-full rounded-2xl mb-4 shadow-md" />
         <h2 className="text-xl font-bold text-pink-500 mb-0.5">{card.name}</h2>
         <p className="text-sm text-gray-400 mb-3">{card.set?.name} · {card.rarity}</p>
+
+        {/* ── eBay average price (cards not on TCGPlayer) ── */}
+        {card.price_source === 'ebay' && card.ebay_market != null && (
+          <div className="mb-3 rounded-2xl overflow-hidden border border-amber-100 bg-amber-50">
+            <div className="flex items-center justify-between px-3 pt-2.5 pb-2.5">
+              <div>
+                <p className="text-[10px] font-semibold text-amber-600 uppercase tracking-wide">
+                  Market Price
+                </p>
+                <p className="text-[10px] text-amber-500 normal-case">
+                  avg. of last 10 eBay sales
+                </p>
+              </div>
+              <span className="text-xl font-bold text-amber-700">
+                ${Number(card.ebay_market).toFixed(2)}
+              </span>
+            </div>
+          </div>
+        )}
 
         {/* ── Price tiers — tap a row to select the version when saving ── */}
         {priceRows.length > 0 && (
