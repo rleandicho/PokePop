@@ -134,11 +134,13 @@ function normaliseCard(row) {
       }
     },
     // Convenience fields CardGrid reads directly
-    market_price: row.best_market_price ?? null,
-    mid_price:    row.holofoil_mid ?? row.normal_mid ?? row.other_mid ?? null,
-    low_price:    row.holofoil_low ?? row.normal_low ?? row.other_low ?? null,
+    market_price:   row.best_market_price ?? null,
+    mid_price:      row.holofoil_mid ?? row.normal_mid ?? row.other_mid ?? null,
+    low_price:      row.holofoil_low ?? row.normal_low ?? row.other_low ?? null,
     price_updated_at: row.price_updated_at ?? null,
-    _is_wotc:     row.is_wotc ?? false,
+    _is_wotc:       row.is_wotc ?? false,
+    jp_image_small: row.jp_image_small ?? null,
+    jp_image_large: row.jp_image_large ?? null,
   }
 }
 

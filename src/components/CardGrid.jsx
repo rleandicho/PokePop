@@ -256,8 +256,9 @@ function CardModal({ card, user, onToast, onClose, saveCard, collectionIds, owne
   const [removing,    setRemoving]    = useState(false)
   const [quantity,    setQuantity]    = useState(1)
   const [imgSrc,      setImgSrc]      = useState(card.images?.small)
-  const [addLangMode, setAddLangMode] = useState(false)
-  const [newLang,     setNewLang]     = useState('')
+  const [addLangMode,  setAddLangMode]  = useState(false)
+  const [newLang,      setNewLang]      = useState('')
+  const [newLangImage, setNewLangImage] = useState('')
 
   useEffect(() => {
     if (!card.images?.large || card.images.large === card.images.small) return
@@ -292,13 +293,32 @@ function CardModal({ card, user, onToast, onClose, saveCard, collectionIds, owne
     if (!newLang) { onToast('Pick a language first'); return }
     if (myLangs.includes(newLang)) { onToast('You already have that language saved!'); return }
     setSaving(true)
-    const { error, toast } = await saveCard(card, true, 1, version, newLang)
+    // Image priority: user-provided URL > JP image from DB > English fallback
+    let langCard = card
+    const customImg = newLangImage.trim()
+    if (customImg) {
+      langCard = { ...card, images: { small: customImg, large: customImg } }
+    } else if (newLang === 'japanese') {
+      const { data: cardRow } = await supabase
+        .from('tcg_cards')
+        .select('jp_image_small, jp_image_large')
+        .eq('id', card.id)
+        .maybeSingle()
+      if (cardRow?.jp_image_small) {
+        langCard = {
+          ...card,
+          images: { small: cardRow.jp_image_small, large: cardRow.jp_image_large ?? cardRow.jp_image_small },
+        }
+      }
+    }
+    const { error, toast } = await saveCard(langCard, true, 1, version, newLang)
     setSaving(false)
     if (!error) {
       onCardAdded?.(card.id, true, newLang)
       onToast(toast ?? 'Language variant added! ✨')
       setAddLangMode(false)
       setNewLang('')
+      setNewLangImage('')
     }
   }
 
@@ -429,9 +449,21 @@ function CardModal({ card, user, onToast, onClose, saveCard, collectionIds, owne
                       <option key={o.value} value={o.value}>{o.flag} {o.label}</option>
                     ))}
                   </select>
+                  <input
+                    type="url"
+                    value={newLangImage}
+                    onChange={e => setNewLangImage(e.target.value)}
+                    placeholder="Card image URL (optional)"
+                    className="text-sm border border-violet-200 rounded-xl px-3 py-1.5
+                               focus:outline-none focus:border-violet-400 bg-white
+                               placeholder:text-gray-300"
+                  />
+                  <p className="text-[10px] text-violet-400 -mt-1">
+                    Paste a card image URL to show the foreign print. Leave blank to use the English art with a language flag.
+                  </p>
                   <div className="flex gap-2">
                     <button
-                      onClick={() => { setAddLangMode(false); setNewLang('') }}
+                      onClick={() => { setAddLangMode(false); setNewLang(''); setNewLangImage('') }}
                       className="flex-1 border border-gray-200 text-gray-400 hover:bg-gray-50
                                  font-semibold py-1.5 rounded-xl text-sm transition-colors"
                     >Cancel</button>

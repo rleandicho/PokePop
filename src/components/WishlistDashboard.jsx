@@ -923,6 +923,7 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
   const [manualInput,     setManualInput]     = useState('')
   const [addingDetailFor,   setAddingDetailFor]   = useState(null) // row id showing the add-detail panel
   const [pendingNewLanguage, setPendingNewLanguage] = useState('')
+  const [pendingNewImageUrl, setPendingNewImageUrl] = useState('')
 
   // Tracks the current slotsPerPage of the active BinderView (reported via callback).
   // Used by computeNextBinderSlot and handleInsertPage to stay consistent with the display.
@@ -1319,13 +1320,26 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
     const conflict = items.find(i => i.id !== item.id && i.card_id === item.card_id && i.language === newLanguage && i.edition === item.edition)
     if (conflict) { onToast('You already have that language variant saved!'); return }
 
+    // Image priority: user-provided URL > JP image from DB > English fallback
+    let imageUrl = item.image
+    if (pendingNewImageUrl.trim()) {
+      imageUrl = pendingNewImageUrl.trim()
+    } else if (newLanguage === 'japanese') {
+      const { data: cardRow } = await supabase
+        .from('tcg_cards')
+        .select('jp_image_small')
+        .eq('id', item.card_id)
+        .maybeSingle()
+      if (cardRow?.jp_image_small) imageUrl = cardRow.jp_image_small
+    }
+
     const { data, error } = await supabase
       .from('wishlists')
       .insert({
         user_id:      user.id,
         card_id:      item.card_id,
         name:         item.name,
-        image:        item.image,
+        image:        imageUrl,
         owned:        item.owned,
         edition:      item.edition,
         language:     newLanguage,
@@ -1343,6 +1357,7 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
     setItems(prev => [data, ...prev])
     setAddingDetailFor(null)
     setPendingNewLanguage('')
+    setPendingNewImageUrl('')
     const lang = LANGUAGE_OPTIONS.find(l => l.value === newLanguage)
     onToast(`${lang?.flag ?? ''} ${lang?.label ?? newLanguage} variant added! ✨`)
   }
@@ -1888,29 +1903,40 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
               {/* Add another detail — language variant */}
               {availableLangs.length > 0 && (
                 isAddingHere ? (
-                  <div className="mt-1.5 flex gap-1">
-                    <select
-                      value={pendingNewLanguage}
-                      onChange={e => setPendingNewLanguage(e.target.value)}
-                      className="flex-1 text-xs border border-pink-200 rounded-xl px-2 py-1.5
-                                 bg-white/90 text-gray-600 focus:outline-none focus:ring-1 focus:ring-pink-300"
-                    >
-                      <option value="">Pick language…</option>
-                      {availableLangs.map(l => (
-                        <option key={l.value} value={l.value}>{l.flag} {l.label}</option>
-                      ))}
-                    </select>
-                    <button
-                      onClick={() => addDetail(item, pendingNewLanguage)}
-                      className="px-2 py-1.5 rounded-xl bg-pink-400 text-white text-xs font-bold
-                                 hover:bg-pink-500 transition-colors flex-shrink-0"
-                    >Add</button>
-                    <button
-                      onClick={() => { setAddingDetailFor(null); setPendingNewLanguage('') }}
-                      className="px-2 py-1.5 rounded-xl bg-gray-100 text-gray-400 text-xs font-bold
-                                 hover:bg-gray-200 transition-colors flex-shrink-0"
-                      title="Cancel"
-                    >✕</button>
+                  <div className="mt-1.5 flex flex-col gap-1">
+                    <div className="flex gap-1">
+                      <select
+                        value={pendingNewLanguage}
+                        onChange={e => setPendingNewLanguage(e.target.value)}
+                        className="flex-1 text-xs border border-pink-200 rounded-xl px-2 py-1.5
+                                   bg-white/90 text-gray-600 focus:outline-none focus:ring-1 focus:ring-pink-300"
+                      >
+                        <option value="">Pick language…</option>
+                        {availableLangs.map(l => (
+                          <option key={l.value} value={l.value}>{l.flag} {l.label}</option>
+                        ))}
+                      </select>
+                      <button
+                        onClick={() => addDetail(item, pendingNewLanguage)}
+                        className="px-2 py-1.5 rounded-xl bg-pink-400 text-white text-xs font-bold
+                                   hover:bg-pink-500 transition-colors flex-shrink-0"
+                      >Add</button>
+                      <button
+                        onClick={() => { setAddingDetailFor(null); setPendingNewLanguage(''); setPendingNewImageUrl('') }}
+                        className="px-2 py-1.5 rounded-xl bg-gray-100 text-gray-400 text-xs font-bold
+                                   hover:bg-gray-200 transition-colors flex-shrink-0"
+                        title="Cancel"
+                      >✕</button>
+                    </div>
+                    <input
+                      type="url"
+                      value={pendingNewImageUrl}
+                      onChange={e => setPendingNewImageUrl(e.target.value)}
+                      placeholder="Card image URL (optional)"
+                      className="w-full text-xs border border-pink-100 rounded-xl px-2 py-1.5
+                                 bg-white/90 text-gray-500 focus:outline-none focus:ring-1 focus:ring-pink-200
+                                 placeholder:text-gray-300"
+                    />
                   </div>
                 ) : (
                   <button
