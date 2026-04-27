@@ -11,7 +11,8 @@
     "refresh-prices": "node scripts/refresh-prices.mjs",
     "upload-mep-images": "node scripts/upload-mep-images.mjs",
     "source-jp-images": "node scripts/source-jp-images.mjs",
-    "seed-chinese": "node scripts/seed-chinese-exclusives.mjs"
+    "seed-chinese": "node scripts/seed-chinese-exclusives.mjs",
+    "seed-tcgdex": "node scripts/seed-tcgdex.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.102.1",

@@ -126,7 +126,7 @@ function hasPriceData(row) {
 async function fetchEbayAvgPrice(cardName, setName) {
   if (!EBAY_APP_ID) return null
 
-  const keywords = encodeURIComponent(`pokemon ${cardName} ${setName} card`)
+  const keywords = encodeURIComponent(`${cardName} ${setName} pokemon card`)
   const url = [
     'https://svcs.ebay.com/services/search/FindingService/v1',
     '?OPERATION-NAME=findCompletedItems',
@@ -137,16 +137,16 @@ async function fetchEbayAvgPrice(cardName, setName) {
     '&categoryId=183454',
     '&itemFilter(0).name=SoldItemsOnly',
     '&itemFilter(0).value=true',
-    '&itemFilter(1).name=Condition',
-    '&itemFilter(1).value=3000',   // 3000 = Used (excludes PSA/BGS graded slabs)
     '&sortOrder=EndTimeSoonest',
     '&paginationInput.entriesPerPage=10',
   ].join('')
 
   try {
     const res  = await fetch(url)
-    if (!res.ok) return null
+    if (!res.ok) { if (process.env.EBAY_DEBUG) console.error('\neBay HTTP', res.status, await res.text()); return null }
     const json = await res.json()
+    // Debug: print the raw response for the first call to verify API shape
+    if (process.env.EBAY_DEBUG) console.log('\neBay sample response:', JSON.stringify(json).slice(0, 500))
     const items = json
       ?.findCompletedItemsResponse?.[0]
       ?.searchResult?.[0]
@@ -246,6 +246,22 @@ async function fetchTcgPricesForIds(cardIds) {
   return results
 }
 
+// ── Concurrency pool — run up to `limit` async tasks at once ─────────────────
+async function poolMap(items, limit, fn) {
+  const results = new Array(items.length)
+  let next = 0
+
+  async function worker() {
+    while (next < items.length) {
+      const i = next++
+      results[i] = await fn(items[i], i)
+    }
+  }
+
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker))
+  return results
+}
+
 // ── Step 3: eBay fallback for cards still missing prices ─────────────────────
 async function addEbayFallbacks(cards, tcgPriceMap) {
   if (noEbay || !EBAY_APP_ID) return
@@ -253,11 +269,13 @@ async function addEbayFallbacks(cards, tcgPriceMap) {
   const missing = cards.filter(c => !tcgPriceMap[c.id])
   if (!missing.length) { console.log('\nNo cards need eBay fallback.'); return }
 
-  console.log(`\nFetching eBay prices for ${missing.length} unpriced cards…`)
+  console.log(`\nFetching eBay prices for ${missing.length} unpriced cards (5 concurrent)…`)
   let filled = 0
+  let done   = 0
 
-  for (const card of missing) {
+  await poolMap(missing, 5, async (card) => {
     const avg = await fetchEbayAvgPrice(card.name, card.set_name)
+    done++
     if (avg != null) {
       tcgPriceMap[card.id] = {
         card_id:      card.id,
@@ -267,10 +285,12 @@ async function addEbayFallbacks(cards, tcgPriceMap) {
       }
       filled++
     }
-    await sleep(250)  // eBay Finding API limit: ~5 000 req/day
-  }
+    if (done % 100 === 0 || done === missing.length) {
+      process.stdout.write(`\r  ${done}/${missing.length} checked, ${filled} filled…`)
+    }
+  })
 
-  console.log(`eBay filled ${filled} / ${missing.length} cards.`)
+  console.log(`\neBay filled ${filled} / ${missing.length} cards.`)
 }
 
 // ── Step 4: Upsert to Supabase ────────────────────────────────────────────────

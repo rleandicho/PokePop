@@ -7,6 +7,7 @@ import SearchBar from './SearchBar'
 
 const PAGE_SIZE   = 20
 const CACHE_LIMIT = 10   // max unique filter combinations held in memory
+const CARD_BACK   = 'https://images.pokemontcg.io/cardback.jpg'
 
 // ─── Sort options ─────────────────────────────────────────────────────────────
 export const SORT_OPTIONS = [
@@ -275,7 +276,7 @@ function CardModal({ card, user, onToast, onClose, saveCard, collectionIds, owne
   const [saving,      setSaving]      = useState(false)
   const [removing,    setRemoving]    = useState(false)
   const [quantity,    setQuantity]    = useState(1)
-  const [imgSrc,      setImgSrc]      = useState(card.images?.small)
+  const [imgSrc,      setImgSrc]      = useState(card.images?.small || CARD_BACK)
   const [addLangMode,  setAddLangMode]  = useState(false)
   const [newLang,      setNewLang]      = useState('')
   const [newLangImage, setNewLangImage] = useState('')
@@ -283,7 +284,8 @@ function CardModal({ card, user, onToast, onClose, saveCard, collectionIds, owne
   useEffect(() => {
     if (!card.images?.large || card.images.large === card.images.small) return
     const img = new Image()
-    img.onload = () => setImgSrc(card.images.large)
+    img.onload  = () => setImgSrc(card.images.large)
+    img.onerror = () => setImgSrc(CARD_BACK)
     img.src = card.images.large
   }, [card.images?.large]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -377,7 +379,8 @@ function CardModal({ card, user, onToast, onClose, saveCard, collectionIds, owne
         </button>
 
         <img src={imgSrc} alt={card.name}
-             className="w-full rounded-2xl mb-4 shadow-md" />
+             className="w-full rounded-2xl mb-4 shadow-md"
+             onError={e => { e.currentTarget.src = CARD_BACK }} />
         <h2 className="text-xl font-bold text-pink-500 mb-0.5">{card.name}</h2>
         <p className="text-sm text-gray-400 mb-3">{card.set?.name} · {card.rarity}</p>
 
@@ -629,7 +632,13 @@ const CardTile = memo(function CardTile({ card, inList, isOwned, myLangs, quickA
           {{ zh:'🇨🇳 ZH', ja:'🇯🇵 JA', ko:'🇰🇷 KO', fr:'🇫🇷 FR', de:'🇩🇪 DE' }[card.card_language] ?? card.card_language.toUpperCase()}
         </span>
       )}
-      <img src={card.images?.small} alt={card.name} className="w-full" loading="lazy" />
+      <img
+        src={card.images?.small || CARD_BACK}
+        alt={card.name}
+        className="w-full"
+        loading="lazy"
+        onError={e => { e.currentTarget.src = CARD_BACK }}
+      />
       <div className="p-2 text-center">
         <p className="text-sm font-bold text-gray-700 truncate">{card.name}</p>
         {card.card_language && card.card_language !== 'en' && card.english_name && (
