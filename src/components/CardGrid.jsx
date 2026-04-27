@@ -215,21 +215,34 @@ function PaginationBar({ currentPage, totalPages, onPageChange }) {
   )
 }
 
-function SortToolbar({ sortBy, onSortChange, engOnly, onEngOnlyToggle }) {
+function SortToolbar({ sortBy, onSortChange, engOnly, onEngOnlyToggle, hasActiveFilters, onClearFilters }) {
   return (
     <div className="flex justify-between items-center flex-wrap px-4 pt-2 pb-1 gap-2">
-      {/* Left — language filter */}
-      <button
-        onClick={onEngOnlyToggle}
-        title={engOnly ? 'Showing English only — click to show all languages' : 'Show English cards only'}
-        className={`text-xs font-bold px-3 py-1.5 rounded-full border transition-all shadow-sm
-          ${engOnly
-            ? 'bg-sky-400 text-white border-sky-400'
-            : 'bg-white/70 text-gray-400 border-gray-200 hover:bg-white/90 hover:text-sky-500 hover:border-sky-300'
-          }`}
-      >
-        🇺🇸 ENG
-      </button>
+      {/* Left — language filter + clear */}
+      <div className="flex items-center gap-2">
+        <button
+          onClick={onEngOnlyToggle}
+          title={engOnly ? 'Showing English only — click to show all languages' : 'Show English cards only'}
+          className={`text-xs font-bold px-3 py-1.5 rounded-full border transition-all shadow-sm
+            ${engOnly
+              ? 'bg-sky-400 text-white border-sky-400'
+              : 'bg-white/70 text-gray-400 border-gray-200 hover:bg-white/90 hover:text-sky-500 hover:border-sky-300'
+            }`}
+        >
+          🇺🇸 ENG
+        </button>
+        {hasActiveFilters && (
+          <button
+            onClick={onClearFilters}
+            title="Clear all active filters"
+            className="text-xs font-semibold px-3 py-1.5 rounded-full border border-rose-200
+                       bg-white/70 text-rose-400 hover:bg-rose-50 hover:text-rose-500
+                       hover:border-rose-300 transition-all shadow-sm"
+          >
+            × Clear filters
+          </button>
+        )}
+      </div>
 
       {/* Right — sort */}
       <div className="flex items-center gap-2">
@@ -698,7 +711,7 @@ const CardTile = memo(function CardTile({ card, inList, isOwned, myLangs, quickA
 })
 
 // ─── Main grid ────────────────────────────────────────────────────────────────
-function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, user, onToast, activeBinderId, collectionIds, ownedIds, collectionLanguages, onCardAdded, onCardRemoved }) {
+function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, onClearFilters, user, onToast, activeBinderId, collectionIds, ownedIds, collectionLanguages, onCardAdded, onCardRemoved }) {
   const gridTopRef   = useRef(null)
   const [cards,      setCards]      = useState([])
   const [page,       setPage]       = useState(1)
@@ -756,6 +769,19 @@ function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, user, on
     setDebouncedInline('')   // clear immediately — no 500 ms wait on reset
     clearTimeout(searchTimerRef.current)
   }
+
+  function handleClearAllFilters() {
+    handleInlineClear()
+    setEngOnly(false)
+    onClearFilters?.()   // resets activeVibe → 'all' and setQuery → null in App
+  }
+
+  const hasActiveFilters = !!(
+    (activeVibe && activeVibe !== 'all') ||
+    setQuery ||
+    engOnly ||
+    inlineSearch
+  )
 
   const fetchCards = useCallback(async (vibe, srch, sq, sort, pg, engOnlyFlag) => {
     const key = buildCacheKey(vibe, srch, sq, sort, engOnlyFlag)
@@ -971,6 +997,8 @@ function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, user, on
         onSortChange={onSortChange}
         engOnly={engOnly}
         onEngOnlyToggle={() => setEngOnly(v => !v)}
+        hasActiveFilters={hasActiveFilters}
+        onClearFilters={handleClearAllFilters}
       />
 
       <motion.div

@@ -144,6 +144,11 @@ export default function App() {
     setSetQuery(q)
   }
 
+  function handleClearFilters() {
+    setActiveVibe('all')
+    setSetQuery(null)
+  }
+
   const showToast     = useCallback((msg) => setToast(msg), [])
   const isHome        = activeVibe === 'home'
   const isWishlist    = activeVibe === 'wishlist'
@@ -237,6 +242,7 @@ export default function App() {
             setQuery={setQuery}
             sortBy={sortBy}
             onSortChange={setSortBy}
+            onClearFilters={handleClearFilters}
             user={user}
             onToast={showToast}
             activeBinderId={activeBinderId}
