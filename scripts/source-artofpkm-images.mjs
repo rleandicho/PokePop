@@ -82,6 +82,12 @@ const ALL_SET_IDS = [
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)) }
 
+async function poolMap(items, limit, fn) {
+  let next = 0
+  async function worker() { while (next < items.length) { const i = next++; await fn(items[i], i) } }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker))
+}
+
 // ── Parse artofpkm filename → { rawSetId, number } ───────────────────────────
 // Standard pattern: pcg3002.png → rawSetId=pcg3, number=002
 // We match letters+digits(optional) at the start, then a 3-4 digit number.
@@ -140,6 +146,22 @@ async function scrapeSet(setId, setIdMap = {}) {
   }
 
   return cards
+}
+
+// ── Bulk UPDATE image URLs ─────────────────────────────────────────────────────
+// Uses individual .update() calls (no upsert — avoids NOT NULL constraint on name).
+// Runs up to 20 concurrent updates for speed.
+async function flushUpdates(rows) {
+  let done = 0
+  await poolMap(rows, 20, async (u) => {
+    const { error } = await supabase
+      .from('tcg_cards')
+      .update({ image_small: u.image_small, image_large: u.image_large })
+      .eq('id', u.id)
+    if (error) { process.stdout.write('x') }
+    else { totalUpdated++; done++ }
+  })
+  if (done) process.stdout.write(`+${done} `)
 }
 
 // ── Build set ID case map ─────────────────────────────────────────────────────
@@ -244,18 +266,8 @@ for (const setId of setIds) {
 
   // Flush updates every 500 cards
   if (updates.length >= 500) {
-    if (!dryRun) {
-      for (let i = 0; i < updates.length; i += 200) {
-        const batch = updates.slice(i, i + 200)
-        const { error } = await supabase
-          .from('tcg_cards')
-          .upsert(batch, { onConflict: 'id', ignoreDuplicates: false })
-        if (error) console.error('\nUpsert error:', error.message)
-        else { process.stdout.write('+'); totalUpdated += batch.length }
-      }
-    } else {
-      totalUpdated += updates.length
-    }
+    if (!dryRun) await flushUpdates(updates)
+    else totalUpdated += updates.length
     updates.length = 0
   }
 
@@ -264,17 +276,9 @@ for (const setId of setIds) {
 }
 
 // Flush remaining updates
-if (updates.length && !dryRun) {
-  for (let i = 0; i < updates.length; i += 200) {
-    const batch = updates.slice(i, i + 200)
-    const { error } = await supabase
-      .from('tcg_cards')
-      .upsert(batch, { onConflict: 'id', ignoreDuplicates: false })
-    if (error) console.error('\nUpsert error:', error.message)
-    else { process.stdout.write('+'); totalUpdated += batch.length }
-  }
-} else if (updates.length && dryRun) {
-  totalUpdated += updates.length
+if (updates.length) {
+  if (!dryRun) await flushUpdates(updates)
+  else totalUpdated += updates.length
 }
 
 console.log(`\n\n─────────────────────────────────`)

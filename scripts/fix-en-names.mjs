@@ -179,13 +179,15 @@ if (!updates.length) {
 
 console.log(`Writing ${updates.length} english_name updates to DB…`)
 
-for (let i = 0; i < updates.length; i += 200) {
-  const batch = updates.slice(i, i + 200)
+// Use individual .update() — avoids NOT NULL constraint on 'name' that upsert would hit
+let written = 0
+await poolMap(updates, 20, async (u) => {
   const { error } = await supabase
     .from('tcg_cards')
-    .upsert(batch, { onConflict: 'id', ignoreDuplicates: false })
-  if (error) console.error('\nUpsert error:', error.message)
-  else process.stdout.write('.')
-}
+    .update({ english_name: u.english_name })
+    .eq('id', u.id)
+  if (error) process.stdout.write('x')
+  else { written++; if (written % 100 === 0) process.stdout.write('.') }
+})
 
-console.log(`\n\nDone! ${filled} Pokémon cards now have English names.`)
+console.log(`\n\nDone! ${written} Pokémon cards now have English names.`)
