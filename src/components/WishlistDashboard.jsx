@@ -829,8 +829,25 @@ const LANGUAGE_OPTIONS = [
 const LANGUAGE_FLAG = Object.fromEntries(LANGUAGE_OPTIONS.map(l => [l.value, l.flag]))
 
 // ─── Wishlist card detail modal ───────────────────────────────────────────────
-function WishlistCardModal({ item, onClose }) {
+function WishlistCardModal({ item, onClose, onSaveTags }) {
   const versionLabel = editionLabel(item.edition)
+  const [tagInput,  setTagInput]  = useState('')
+  const [localTags, setLocalTags] = useState(item.tags ?? [])
+
+  function addTag() {
+    const t = tagInput.trim()
+    if (!t || localTags.includes(t)) { setTagInput(''); return }
+    const next = [...localTags, t]
+    setLocalTags(next)
+    setTagInput('')
+    onSaveTags?.(item.id, next)
+  }
+
+  function removeTag(tag) {
+    const next = localTags.filter(t => t !== tag)
+    setLocalTags(next)
+    onSaveTags?.(item.id, next)
+  }
 
   // Stored prices with version context in the header
   const isEbayPrice = item.price_source === 'ebay'
@@ -889,6 +906,49 @@ function WishlistCardModal({ item, onClose }) {
           </div>
         )}
 
+        {/* ── Tags ─────────────────────────────────────────────────────── */}
+        <div className="mb-4">
+          <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1.5">
+            🏷️ Tags
+          </p>
+          {localTags.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 mb-2">
+              {localTags.map(tag => (
+                <span key={tag}
+                  className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full
+                             bg-rose-100 text-rose-600 text-xs font-semibold"
+                >
+                  {tag}
+                  <button
+                    onClick={() => removeTag(tag)}
+                    className="text-rose-400 hover:text-rose-600 leading-none text-[10px] font-bold ml-0.5"
+                    aria-label={`Remove tag ${tag}`}
+                  >✕</button>
+                </span>
+              ))}
+            </div>
+          )}
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={tagInput}
+              onChange={e => setTagInput(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && addTag()}
+              placeholder="Add a tag…"
+              className="flex-1 text-xs border border-gray-200 rounded-full px-3 py-1.5
+                         focus:outline-none focus:border-rose-300 focus:ring-1 focus:ring-rose-200"
+            />
+            <button
+              onClick={addTag}
+              disabled={!tagInput.trim()}
+              className="text-xs font-semibold px-3 py-1.5 rounded-full bg-rose-400 text-white
+                         disabled:opacity-40 hover:bg-rose-500 transition-colors"
+            >
+              Add
+            </button>
+          </div>
+        </div>
+
         <a
           href={`https://www.tcgplayer.com/search/pokemon/product?q=${encodeURIComponent(item.name)}`}
           target="_blank"
@@ -941,6 +1001,7 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
   const [cardSearch,     setCardSearch]     = useState('')
   const [cardSort,       setCardSort]       = useState('newest')  // 'newest' | 'oldest'
   const [categoryFilter, setCategoryFilter] = useState(null)      // null = all, string = specific category
+  const [tagFilter,      setTagFilter]      = useState(null)      // null = all, string = specific tag
 
   // Notify App whenever the active binder changes (so CardGrid can route new cards here)
   useEffect(() => { onBinderChange?.(selectedBinder?.id ?? null) }, [selectedBinder])
@@ -1103,19 +1164,27 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
     return [...cats].sort()
   }, [items])
 
+  // All unique tags across all wishlist/collection items (for tag filter pills)
+  const allTags = useMemo(() => {
+    const tags = new Set(items.flatMap(i => i.tags ?? []).filter(Boolean))
+    return [...tags].sort()
+  }, [items])
+
   const filteredOwnedItems = useMemo(() => {
     const q = cardSearch.trim().toLowerCase()
     let filtered = q ? ownedItemsList.filter(i => i.name?.toLowerCase().includes(q)) : ownedItemsList
     if (categoryFilter) filtered = filtered.filter(i => i.category === categoryFilter)
+    if (tagFilter)      filtered = filtered.filter(i => (i.tags ?? []).includes(tagFilter))
     return cardSort === 'oldest' ? [...filtered].reverse() : filtered
-  }, [ownedItemsList, cardSearch, cardSort, categoryFilter])
+  }, [ownedItemsList, cardSearch, cardSort, categoryFilter, tagFilter])
 
   const filteredWishlistItems = useMemo(() => {
     const q = cardSearch.trim().toLowerCase()
     let filtered = q ? wishlistItemsList.filter(i => i.name?.toLowerCase().includes(q)) : wishlistItemsList
     if (categoryFilter) filtered = filtered.filter(i => i.category === categoryFilter)
+    if (tagFilter)      filtered = filtered.filter(i => (i.tags ?? []).includes(tagFilter))
     return cardSort === 'oldest' ? [...filtered].reverse() : filtered
-  }, [wishlistItemsList, cardSearch, cardSort, categoryFilter])
+  }, [wishlistItemsList, cardSearch, cardSort, categoryFilter, tagFilter])
 
   function updateCategory(rowId, category) {
     // Keep raw value in state (preserves spaces while typing)
@@ -1127,6 +1196,11 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
       const dbVal = category?.trim() || null
       supabase.from('wishlists').update({ category: dbVal }).eq('id', rowId)
     }, 600)
+  }
+
+  async function saveTags(rowId, tags) {
+    setItems(prev => prev.map(i => i.id === rowId ? { ...i, tags } : i))
+    await supabase.from('wishlists').update({ tags }).eq('id', rowId)
   }
 
   async function togglePublic() {
@@ -1801,6 +1875,16 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
           </span>
         )}
 
+        {(item.tags ?? []).length > 0 && (
+          <div className="flex flex-wrap gap-1 justify-center mb-1">
+            {item.tags.map(t => (
+              <span key={t} className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-rose-100 text-rose-500">
+                {t}
+              </span>
+            ))}
+          </div>
+        )}
+
         <motion.button
           whileTap={{ scale: 0.92 }}
           onClick={() => toggleOwned(item.id, item.card_id, item.owned)}
@@ -2199,6 +2283,38 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
               ))}
             </div>
           )}
+
+          {/* Tag filter pills — only show when any tags exist */}
+          {allTags.length > 0 && (
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span className="text-xs font-medium" style={{ color: 'var(--app-text)', opacity: 0.6 }}>🏷️ Tag:</span>
+              <motion.button
+                whileTap={{ scale: 0.95 }}
+                onClick={() => { setTagFilter(null); setCollectionPage(1); setWishlistPage(1) }}
+                className={`text-xs font-semibold px-3 py-1 rounded-full border transition-all
+                  ${!tagFilter
+                    ? 'bg-rose-400 text-white border-rose-400'
+                    : 'bg-white/60 text-gray-500 border-gray-200 hover:bg-white/80'
+                  }`}
+              >
+                All
+              </motion.button>
+              {allTags.map(tag => (
+                <motion.button
+                  key={tag}
+                  whileTap={{ scale: 0.95 }}
+                  onClick={() => { setTagFilter(tagFilter === tag ? null : tag); setCollectionPage(1); setWishlistPage(1) }}
+                  className={`text-xs font-semibold px-3 py-1 rounded-full border transition-all
+                    ${tagFilter === tag
+                      ? 'bg-rose-400 text-white border-rose-400'
+                      : 'bg-white/60 text-gray-500 border-gray-200 hover:bg-white/80'
+                    }`}
+                >
+                  {tag}
+                </motion.button>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -2586,6 +2702,7 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
           <WishlistCardModal
             item={selectedItem}
             onClose={() => setSelectedItem(null)}
+            onSaveTags={saveTags}
           />
         )}
       </AnimatePresence>

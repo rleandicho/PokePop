@@ -133,6 +133,9 @@ function normaliseCard(row) {
         ...(row.other_market != null ? { other: { market: row.other_market, mid: row.other_mid, low: row.other_low } } : {}),
       }
     },
+    // Language of this card's printing (e.g. 'en', 'zh', 'ja')
+    card_language:  row.card_language ?? 'en',
+    english_name:   row.english_name  ?? row.name,
     // Convenience fields CardGrid reads directly
     market_price:   row.best_market_price ?? null,
     mid_price:      row.holofoil_mid ?? row.normal_mid ?? row.other_mid ?? null,
@@ -189,8 +192,12 @@ export async function fetchCardsFromDb({ vibe, search, setQuery, sort, page = 1,
   }
 
   // ── Apply name search ────────────────────────────────────────
+  // Search both the card's native name AND its normalized English name so that
+  // typing "Gengar" surfaces Chinese/Japanese exclusive variants whose english_name
+  // is "Gengar" even though their displayed name is in another script.
   if (search && search.trim()) {
-    q = q.ilike('name', `%${search.trim()}%`)
+    const s = search.trim()
+    q = q.or(`name.ilike.%${s}%,english_name.ilike.%${s}%`)
   }
 
   // ── Apply sort + pagination ──────────────────────────────────

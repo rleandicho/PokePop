@@ -607,9 +607,18 @@ const CardTile = memo(function CardTile({ card, inList, isOwned, myLangs, quickA
           −
         </button>
       )}
+      {card.card_language && card.card_language !== 'en' && (
+        <span className="absolute bottom-1.5 left-1.5 z-10 text-[10px] font-bold
+                         px-1.5 py-0.5 rounded-full bg-sky-500/90 text-white shadow-sm leading-tight">
+          {{ zh:'🇨🇳 ZH', ja:'🇯🇵 JA', ko:'🇰🇷 KO', fr:'🇫🇷 FR', de:'🇩🇪 DE' }[card.card_language] ?? card.card_language.toUpperCase()}
+        </span>
+      )}
       <img src={card.images?.small} alt={card.name} className="w-full" loading="lazy" />
       <div className="p-2 text-center">
         <p className="text-sm font-bold text-gray-700 truncate">{card.name}</p>
+        {card.card_language && card.card_language !== 'en' && card.english_name && (
+          <p className="text-[10px] text-sky-500 truncate font-medium">{card.english_name}</p>
+        )}
         <p className="text-xs text-gray-400 truncate">{card.set?.name}</p>
         <VariantBadges card={card} />
         <PriceTag card={card} />
@@ -665,6 +674,7 @@ const CardTile = memo(function CardTile({ card, inList, isOwned, myLangs, quickA
 
 // ─── Main grid ────────────────────────────────────────────────────────────────
 function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, user, onToast, activeBinderId, collectionIds, ownedIds, collectionLanguages, onCardAdded, onCardRemoved }) {
+  const gridTopRef   = useRef(null)
   const [cards,      setCards]      = useState([])
   const [page,       setPage]       = useState(1)
   const [totalPages, setTotalPages] = useState(0)
@@ -923,6 +933,7 @@ function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, user, on
 
   return (
     <>
+      <div ref={gridTopRef} />
       <SearchBar
         value={inlineSearch}
         onChange={setInlineSearch}
@@ -973,7 +984,7 @@ function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, user, on
           onPageChange={p => {
             setPage(p)
             fetchCards(activeVibe, effectiveSearch, setQuery, sortBy, p)
-            window.scrollTo({ top: 0, behavior: 'smooth' })
+            gridTopRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
           }}
         />
       )}
