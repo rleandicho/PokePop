@@ -40,15 +40,17 @@ if (!SUPABASE_URL || !SUPABASE_SVCKEY) { console.error('Missing Supabase credent
 const supabase = createClient(SUPABASE_URL, SUPABASE_SVCKEY, { auth: { persistSession: false } })
 
 // ── CLI args ──────────────────────────────────────────────────────────────────
-const args      = process.argv.slice(2)
-const langIdx   = args.indexOf('--lang')
-const setIdx    = args.indexOf('--set')
-const lang      = langIdx !== -1 ? args[langIdx + 1] : null
-const setFilter = setIdx  !== -1 ? args[setIdx  + 1] : null
-const dryRun    = args.includes('--dry-run')
+const args       = process.argv.slice(2)
+const langIdx    = args.indexOf('--lang')
+const setIdx     = args.indexOf('--set')
+const lang       = langIdx !== -1 ? args[langIdx + 1] : null
+const setFilter  = setIdx  !== -1 ? args[setIdx  + 1] : null
+const dryRun     = args.includes('--dry-run')
+const fixEnNames = args.includes('--fix-en-names')
 
-if (!lang) {
+if (!fixEnNames && !lang) {
   console.error('Usage: node scripts/seed-tcgdex.mjs --lang <code> [--set <setId>] [--dry-run]')
+  console.error('       node scripts/seed-tcgdex.mjs --fix-en-names [--lang ja]')
   console.error('Supported: ja, zh-tw, zh-cn, ko, fr, de, es, it, pt, ru, nl, pl, id, th')
   process.exit(1)
 }
@@ -131,6 +133,78 @@ async function fetchSetCards(setId) {
 // ── Step 4: Fetch full card detail ───────────────────────────────────────────
 async function fetchCard(setId, localId) {
   return fetchJson(`${BASE}/${lang}/cards/${setId}-${localId}`)
+}
+
+// ── Fix EN Names mode ─────────────────────────────────────────────────────────
+// Fetches English names card-by-card from TCGDex for all foreign cards
+// where english_name is currently NULL.
+// Tries: GET /v2/en/cards/{rawSetId}-{localId}
+// The rawSetId is the TCGDex set ID without the lang prefix (e.g. "E3" from "ja-E3").
+if (fixEnNames) {
+  const targetLangs = lang ? [lang] : ['ja', 'zh-cn', 'zh-tw', 'ko']
+  console.log(`\nPokePop – Fix EN Names`)
+  console.log(`Languages: ${targetLangs.join(', ')}`)
+  console.log()
+
+  // Page through all foreign cards with null english_name
+  const PAGE = 1000
+  let allMissing = []
+  for (const l of targetLangs) {
+    let from = 0
+    while (true) {
+      const { data, error } = await supabase
+        .from('tcg_cards')
+        .select('id, name, number, set_id, card_language')
+        .eq('card_language', l)
+        .is('english_name', null)
+        .range(from, from + PAGE - 1)
+      if (error) { console.error('DB error:', error.message); break }
+      if (!data?.length) break
+      allMissing.push(...data)
+      if (data.length < PAGE) break
+      from += PAGE
+    }
+  }
+
+  console.log(`→ ${allMissing.length} cards with missing english_name\n`)
+
+  let filled = 0
+  let done   = 0
+  const updates = []
+
+  await poolMap(allMissing, 20, async (card) => {
+    // set_id format: "ja-E3" → rawSetId = "E3"
+    const parts    = card.set_id.split('-')
+    const rawSetId = parts.slice(1).join('-')   // everything after lang prefix
+    const localId  = card.number
+
+    const enCard = await fetchJson(`${BASE}/en/cards/${rawSetId}-${localId}`)
+    done++
+
+    if (enCard?.name) {
+      updates.push({ id: card.id, english_name: enCard.name })
+      filled++
+    }
+
+    if (done % 200 === 0 || done === allMissing.length) {
+      process.stdout.write(`\r  ${done}/${allMissing.length} checked, ${filled} names found…`)
+    }
+  })
+
+  console.log(`\n\nUpdating ${updates.length} records in DB…`)
+
+  // Batch update — Supabase doesn't support bulk UPDATE by id, so upsert with just id + english_name
+  for (let i = 0; i < updates.length; i += 200) {
+    const batch = updates.slice(i, i + 200)
+    const { error } = await supabase
+      .from('tcg_cards')
+      .upsert(batch, { onConflict: 'id', ignoreDuplicates: false })
+    if (error) console.error('\nUpsert error:', error.message)
+    else process.stdout.write('.')
+  }
+
+  console.log(`\n\nDone! ${filled} english names backfilled out of ${allMissing.length} cards.`)
+  process.exit(0)
 }
 
 // ── Main ──────────────────────────────────────────────────────────────────────

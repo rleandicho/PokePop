@@ -12,7 +12,8 @@
     "upload-mep-images": "node scripts/upload-mep-images.mjs",
     "source-jp-images": "node scripts/source-jp-images.mjs",
     "seed-chinese": "node scripts/seed-chinese-exclusives.mjs",
-    "seed-tcgdex": "node scripts/seed-tcgdex.mjs"
+    "seed-tcgdex": "node scripts/seed-tcgdex.mjs",
+    "fix-en-names": "node scripts/fix-en-names.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.102.1",
