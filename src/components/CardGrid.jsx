@@ -46,8 +46,8 @@ function tierLabel(key) {
 // Cache key includes sort so each sort+filter combo has its own cache slot.
 // Switching sorts never re-uses data fetched under a different sort's API ordering.
 // v2: rebuilt after price-sort ordering fix (oldest-first for both price directions).
-function buildCacheKey(vibe, search, setQuery, sort, engOnly) {
-  return `v2|${vibe ?? ''}|${search ?? ''}|${setQuery ?? ''}|${sort ?? ''}|${engOnly ? 'en' : 'all'}`
+function buildCacheKey(vibe, search, setQuery, sort, langFilter) {
+  return `v2|${vibe ?? ''}|${search ?? ''}|${setQuery ?? ''}|${sort ?? ''}|${langFilter ?? 'all'}`
 }
 
 // ─── localStorage card cache ──────────────────────────────────────────────────
@@ -215,22 +215,80 @@ function PaginationBar({ currentPage, totalPages, onPageChange }) {
   )
 }
 
-function SortToolbar({ sortBy, onSortChange, engOnly, onEngOnlyToggle, hasActiveFilters, onClearFilters }) {
+const LANG_PICKER_OPTIONS = [
+  { code: 'en',    label: 'English',  flag: '🇺🇸' },
+  { code: 'ja',    label: 'Japanese', flag: '🇯🇵' },
+  { code: 'zh-tw', label: 'Chinese (TW)', flag: '🇹🇼' },
+  { code: 'zh-cn', label: 'Chinese (CN)', flag: '🇨🇳' },
+  { code: 'fr',    label: 'French',   flag: '🇫🇷' },
+  { code: 'de',    label: 'German',   flag: '🇩🇪' },
+]
+
+function SortToolbar({ sortBy, onSortChange, langFilter, onLangChange, hasActiveFilters, onClearFilters }) {
+  const [langOpen, setLangOpen] = useState(false)
+  const langRef = useRef(null)
+
+  useEffect(() => {
+    if (!langOpen) return
+    function handleClick(e) {
+      if (!langRef.current?.contains(e.target)) setLangOpen(false)
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [langOpen])
+
+  const current = LANG_PICKER_OPTIONS.find(l => l.code === langFilter)
+
   return (
     <div className="flex justify-between items-center flex-wrap px-4 pt-2 pb-1 gap-2">
-      {/* Left — language filter + clear */}
-      <div className="flex items-center gap-2">
+      {/* Left — language picker + global + clear */}
+      <div className="flex items-center gap-2 flex-wrap">
+        {/* Language dropdown */}
+        <div className="relative" ref={langRef}>
+          <button
+            onClick={() => setLangOpen(v => !v)}
+            className={`flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-full border
+                        transition-all shadow-sm
+                        ${langFilter
+                          ? 'bg-sky-400 text-white border-sky-400'
+                          : 'bg-white/70 text-gray-400 border-gray-200 hover:bg-white/90 hover:text-sky-500 hover:border-sky-300'
+                        }`}
+          >
+            <span>{current ? `${current.flag} ${current.label}` : '🌐 Language'}</span>
+            <span className="text-[10px] opacity-70">▾</span>
+          </button>
+          {langOpen && (
+            <div className="absolute top-full left-0 mt-1 bg-white rounded-2xl shadow-lg
+                            border border-pink-100 py-1.5 z-50 min-w-[160px]">
+              {LANG_PICKER_OPTIONS.map(l => (
+                <button
+                  key={l.code}
+                  onClick={() => { onLangChange(l.code); setLangOpen(false) }}
+                  className={`w-full text-left text-xs px-4 py-2 flex items-center gap-2
+                              hover:bg-pink-50 transition-colors
+                              ${langFilter === l.code ? 'font-bold text-sky-500' : 'text-gray-600'}`}
+                >
+                  <span>{l.flag}</span> {l.label}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Global / All languages */}
         <button
-          onClick={onEngOnlyToggle}
-          title={engOnly ? 'Showing English only — click to show all languages' : 'Show English cards only'}
+          onClick={() => onLangChange(null)}
+          title="Search across all languages"
           className={`text-xs font-bold px-3 py-1.5 rounded-full border transition-all shadow-sm
-            ${engOnly
-              ? 'bg-sky-400 text-white border-sky-400'
-              : 'bg-white/70 text-gray-400 border-gray-200 hover:bg-white/90 hover:text-sky-500 hover:border-sky-300'
+            ${!langFilter
+              ? 'bg-violet-400 text-white border-violet-400'
+              : 'bg-white/70 text-gray-400 border-gray-200 hover:bg-white/90 hover:text-violet-500 hover:border-violet-300'
             }`}
         >
-          🇺🇸 ENG
+          🌐 Global
         </button>
+
+        {/* Clear all filters */}
         {hasActiveFilters && (
           <button
             onClick={onClearFilters}
@@ -720,7 +778,7 @@ function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, onClearF
   const [loading,  setLoading]  = useState(() => !!(activeVibe || setQuery || search))
   const [dbError,  setDbError]  = useState(null)   // set when card DB isn't ready yet
   const [selected, setSelected] = useState(null)
-  const [engOnly,  setEngOnly]  = useState(false)  // when true, hides non-English cards
+  const [langFilter, setLangFilter] = useState('en')  // null = all languages; 'en','ja','zh-tw',etc
 
   // Lazy price refresh — fires when a card modal opens.
   // Silently fetches a fresh price from pokemontcg.io if the stored price is > 24h old,
@@ -772,19 +830,19 @@ function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, onClearF
 
   function handleClearAllFilters() {
     handleInlineClear()
-    setEngOnly(false)
+    setLangFilter('en')
     onClearFilters?.()   // resets activeVibe → 'all' and setQuery → null in App
   }
 
   const hasActiveFilters = !!(
     (activeVibe && activeVibe !== 'all') ||
     setQuery ||
-    engOnly ||
+    (langFilter && langFilter !== 'en') ||
     inlineSearch
   )
 
-  const fetchCards = useCallback(async (vibe, srch, sq, sort, pg, engOnlyFlag) => {
-    const key = buildCacheKey(vibe, srch, sq, sort, engOnlyFlag)
+  const fetchCards = useCallback(async (vibe, srch, sq, sort, pg, langFilterArg) => {
+    const key = buildCacheKey(vibe, srch, sq, sort, langFilterArg)
     activeKeyRef.current = key
 
     // Abort any previous Supabase fetch (bumping reqId is how we discard stale responses)
@@ -805,7 +863,7 @@ function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, onClearF
         setQuery: sq,
         sort,
         page: pg,
-        engOnly: engOnlyFlag,
+        langFilter: langFilterArg,
       })
 
       // A newer request has already started — discard this response
@@ -847,7 +905,7 @@ function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, onClearF
     const hasFilter = activeVibe || setQuery || effectiveSearch
     if (!hasFilter) return
 
-    const key = buildCacheKey(activeVibe, effectiveSearch, setQuery, sortBy, engOnly)
+    const key = buildCacheKey(activeVibe, effectiveSearch, setQuery, sortBy, langFilter)
     activeKeyRef.current = key
 
     // Cancel any in-flight request when filter/sort changes.
@@ -882,10 +940,10 @@ function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, onClearF
         // Full cache miss: fresh fetch with the correct API ordering for this sort
         setPage(1)
         setCards([])
-        fetchCards(activeVibe, effectiveSearch, setQuery, sortBy, 1, engOnly)
+        fetchCards(activeVibe, effectiveSearch, setQuery, sortBy, 1, langFilter)
       }
     }
-  }, [activeVibe, effectiveSearch, setQuery, sortBy, engOnly, fetchCards]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [activeVibe, effectiveSearch, setQuery, sortBy, langFilter, fetchCards]) // eslint-disable-line react-hooks/exhaustive-deps
 
 
   const saveCard = useCallback(async (card, owned, quantity = 1, edition = '', language = 'english') => {
@@ -995,8 +1053,8 @@ function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, onClearF
       <SortToolbar
         sortBy={sortBy}
         onSortChange={onSortChange}
-        engOnly={engOnly}
-        onEngOnlyToggle={() => setEngOnly(v => !v)}
+        langFilter={langFilter}
+        onLangChange={setLangFilter}
         hasActiveFilters={hasActiveFilters}
         onClearFilters={handleClearAllFilters}
       />
@@ -1043,7 +1101,7 @@ function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, onClearF
           totalPages={totalPages}
           onPageChange={p => {
             setPage(p)
-            fetchCards(activeVibe, effectiveSearch, setQuery, sortBy, p, engOnly)
+            fetchCards(activeVibe, effectiveSearch, setQuery, sortBy, p, langFilter)
             gridTopRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
           }}
         />
