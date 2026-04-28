@@ -63,15 +63,15 @@ function StatCard({ label, value, prefix = '', suffix = '', decimals = 0, color 
       onClick={onClick}
       whileHover={onClick ? { scale: 1.03 } : undefined}
       whileTap={onClick ? { scale: 0.97 } : undefined}
-      className={`stat-card h-full rounded-2xl border bg-gradient-to-br p-4 shadow-sm ${palette[color]}
+      className={`stat-card h-full rounded-2xl border bg-gradient-to-br p-3 shadow-sm ${palette[color]}
                   ${onClick ? 'cursor-pointer w-full text-left' : ''}`}
     >
-      <p className="text-2xl mb-1">{icon}</p>
-      <p className="text-xs text-gray-400 font-medium uppercase tracking-wide mb-0.5">{label}</p>
-      <p className="text-2xl font-bold text-gray-700">
+      <p className="text-xl mb-0.5">{icon}</p>
+      <p className="text-[10px] text-gray-400 font-medium uppercase tracking-wide mb-0.5 leading-tight">{label}</p>
+      <p className="text-lg font-bold text-gray-700 leading-tight">
         {prefix}{display}{suffix}
       </p>
-      {onClick && <p className="text-[10px] text-gray-300 mt-1">tap to view history</p>}
+      {onClick && <p className="text-[9px] text-gray-300 mt-0.5">tap to view</p>}
     </Tag>
   )
 }
@@ -2345,13 +2345,13 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
 
       {/* ── Shared stats + HighRollers (collection & wishlist tabs only) ── */}
       {(activeTab === 'collection' || activeTab === 'wishlist') && items.length > 0 && <>
-        <div className="grid grid-cols-2 gap-3 px-4 pb-4">
-          <StatCard icon="📦" label="Collection Value" value={collectionValue} color="mint"  prefix="$" decimals={2} />
-          <StatCard icon="✨" label="Wishlist Value"    value={wishlistValue}   color="lilac" prefix="$" decimals={2} />
-          <StatCard icon="💖" label="Total Cards"       value={totalCount}      color="pink"  />
-          <StatCard icon="✅" label="Collection Progress" value={totalCount > 0 ? Math.round((ownedCount / totalCount) * 100) : 0} color="lilac" suffix="%" />
-          <StatCard icon="💰" label="Total Sales"  value={salesTotal} color="mint"  prefix="$" decimals={2} onClick={openSalesHistory} />
-          <StatCard icon="🤝" label="Cards Traded" value={tradeCount} color="pink"  onClick={openTradesHistory} />
+        <div className="grid grid-cols-3 gap-3 px-4 pb-4">
+          <StatCard icon="📦" label="Collection Value"    value={collectionValue} color="mint"  prefix="$" decimals={2} />
+          <StatCard icon="✨" label="Wishlist Value"       value={wishlistValue}   color="lilac" prefix="$" decimals={2} />
+          <StatCard icon="💖" label="Total Cards"          value={totalCount}      color="pink"  />
+          <StatCard icon="✅" label="Progress"             value={totalCount > 0 ? Math.round((ownedCount / totalCount) * 100) : 0} color="lilac" suffix="%" />
+          <StatCard icon="💰" label="Total Sales"          value={salesTotal}      color="mint"  prefix="$" decimals={2} onClick={openSalesHistory} />
+          <StatCard icon="🤝" label="Cards Traded"         value={tradeCount}      color="pink"  onClick={openTradesHistory} />
         </div>
         <ShowcasePanels ownedItems={ownedItemsList} allItems={items} onCardClick={setSelectedItem} />
       </>}
