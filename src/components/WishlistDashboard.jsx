@@ -109,7 +109,8 @@ function ShowcaseCard({ item, badge, borderColor, delay, onCardClick }) {
     >
       <div className="relative">
         {badge}
-        <img src={item.image} alt={item.name} className={`w-12 rounded-xl shadow-md border-2 ${borderColor}`} />
+        <img src={item.image} alt={item.name} className={`w-12 rounded-xl shadow-md border-2 ${borderColor}`}
+             onError={e => { e.currentTarget.src = 'https://images.pokemontcg.io/cardback.jpg' }} />
       </div>
       <p className="text-[10px] font-bold text-gray-600 text-center w-12 truncate">{item.name}</p>
     </motion.div>
@@ -284,6 +285,7 @@ function MiniCardRow({ cards, emptyColor = 'pink', badge, onCardClick }) {
             alt={card.name}
             className="w-full rounded-lg shadow-sm hover:opacity-90 transition-opacity"
             loading="lazy"
+            onError={e => { e.currentTarget.src = 'https://images.pokemontcg.io/cardback.jpg' }}
           />
           {badge && getDisplayPrice(card) > 0 && (
             <span
@@ -898,7 +900,8 @@ function WishlistCardModal({ item, onClose, onSaveTags }) {
           aria-label="Close"
         >✕</button>
 
-        <img src={item.image} alt={item.name} className="w-full rounded-2xl mb-4 shadow-md" />
+        <img src={item.image} alt={item.name} className="w-full rounded-2xl mb-4 shadow-md"
+             onError={e => { e.currentTarget.src = 'https://images.pokemontcg.io/cardback.jpg' }} />
 
         <h2 className="text-xl font-bold text-pink-500 mb-0.5">{item.name}</h2>
         <p className="text-sm text-gray-400 mb-3">
@@ -1235,7 +1238,7 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
   async function openSalesHistory() {
     const { data } = await supabase
       .from('card_sales')
-      .select('id, card_name, card_image, sale_price, sold_at')
+      .select('id, card_id, card_name, card_image, sale_price, sold_at')
       .eq('user_id', user.id)
       .order('sold_at', { ascending: false })
     setSalesHistory(data ?? [])
@@ -1245,7 +1248,7 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
   async function openTradesHistory() {
     const { data } = await supabase
       .from('card_trades')
-      .select('id, card_name, card_image, traded_at')
+      .select('id, card_id, card_name, card_image, traded_at')
       .eq('user_id', user.id)
       .order('traded_at', { ascending: false })
     setTradesHistory(data ?? [])
@@ -1923,6 +1926,7 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
           className="w-full cursor-pointer"
           loading="lazy"
           onClick={() => setSelectedItem(item)}
+          onError={e => { e.currentTarget.src = 'https://images.pokemontcg.io/cardback.jpg' }}
         />
         {item.owned && (item.quantity || 1) > 1 && (
           <span className="absolute bottom-1.5 right-1.5 text-[11px] font-bold bg-emerald-500 text-white
@@ -2964,7 +2968,8 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
                 onClick={() => setSelectedFollowedCard(null)}
                 className="absolute top-4 right-4 w-7 h-7 flex items-center justify-center rounded-full bg-gray-100 text-gray-400 hover:bg-gray-200 text-sm"
               >✕</button>
-              <img src={selectedFollowedCard.image} alt={selectedFollowedCard.name} className="w-full rounded-xl mb-3 shadow-md" />
+              <img src={selectedFollowedCard.image} alt={selectedFollowedCard.name} className="w-full rounded-xl mb-3 shadow-md"
+                   onError={e => { e.currentTarget.src = 'https://images.pokemontcg.io/cardback.jpg' }} />
               <h3 className="text-base font-bold text-gray-700 mb-1">{selectedFollowedCard.name}</h3>
               {getDisplayPrice(selectedFollowedCard) > 0 && (
                 <p className="text-sm font-semibold text-pink-500 mb-2">
