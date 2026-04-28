@@ -827,6 +827,16 @@ const LANGUAGE_OPTIONS = [
 ]
 const LANGUAGE_FLAG = Object.fromEntries(LANGUAGE_OPTIONS.map(l => [l.value, l.flag]))
 
+// Card condition grades (TCG standard)
+const CONDITION_OPTIONS = [
+  { value: '',                  label: 'Condition…' },
+  { value: 'near_mint',         label: 'Near Mint' },
+  { value: 'lightly_played',    label: 'Lightly Played' },
+  { value: 'moderately_played', label: 'Moderately Played' },
+  { value: 'heavily_played',    label: 'Heavily Played' },
+  { value: 'damaged',           label: 'Damaged' },
+]
+
 // ─── Wishlist card detail modal ───────────────────────────────────────────────
 function WishlistCardModal({ item, onClose, onSaveTags }) {
   const versionLabel = editionLabel(item.edition)
@@ -1022,7 +1032,7 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
           .from('wishlists')
           // edition column: run migration before this works →
           //   ALTER TABLE wishlists ADD COLUMN IF NOT EXISTS edition TEXT NOT NULL DEFAULT 'unlimited';
-          .select('id, card_id, name, image, owned, market_price, mid_price, low_price, manual_price, price_source, slot_index, binder_id, edition, is_chase, is_favorite, quantity, language, tags')
+          .select('id, card_id, name, image, owned, market_price, mid_price, low_price, manual_price, price_source, slot_index, binder_id, edition, is_chase, is_favorite, quantity, language, tags, condition')
           .eq('user_id', user.id)
           .order('created_at', { ascending: false })
       ),
@@ -1199,6 +1209,11 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
   async function saveTags(rowId, tags) {
     setItems(prev => prev.map(i => i.id === rowId ? { ...i, tags } : i))
     await supabase.from('wishlists').update({ tags }).eq('id', rowId)
+  }
+
+  async function saveCondition(rowId, condition) {
+    setItems(prev => prev.map(i => i.id === rowId ? { ...i, condition } : i))
+    await supabase.from('wishlists').update({ condition: condition || null }).eq('id', rowId)
   }
 
   async function togglePublic() {
@@ -2059,56 +2074,17 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
                 ))}
               </select>
 
-              {/* Add another detail — language variant */}
-              {availableLangs.length > 0 && (
-                isAddingHere ? (
-                  <div className="mt-1.5 flex flex-col gap-1">
-                    <div className="flex gap-1">
-                      <select
-                        value={pendingNewLanguage}
-                        onChange={e => setPendingNewLanguage(e.target.value)}
-                        className="flex-1 text-xs border border-pink-200 rounded-xl px-2 py-1.5
-                                   bg-white/90 text-gray-600 focus:outline-none focus:ring-1 focus:ring-pink-300"
-                      >
-                        <option value="">Pick language…</option>
-                        {availableLangs.map(l => (
-                          <option key={l.value} value={l.value}>{l.flag} {l.label}</option>
-                        ))}
-                      </select>
-                      <button
-                        onClick={() => addDetail(item, pendingNewLanguage)}
-                        className="px-2 py-1.5 rounded-xl bg-pink-400 text-white text-xs font-bold
-                                   hover:bg-pink-500 transition-colors flex-shrink-0"
-                      >Add</button>
-                      <button
-                        onClick={() => { setAddingDetailFor(null); setPendingNewLanguage(''); setPendingNewImageUrl('') }}
-                        className="px-2 py-1.5 rounded-xl bg-gray-100 text-gray-400 text-xs font-bold
-                                   hover:bg-gray-200 transition-colors flex-shrink-0"
-                        title="Cancel"
-                      >✕</button>
-                    </div>
-                    <input
-                      type="url"
-                      value={pendingNewImageUrl}
-                      onChange={e => setPendingNewImageUrl(e.target.value)}
-                      placeholder="Card image URL (optional)"
-                      className="w-full text-xs border border-pink-100 rounded-xl px-2 py-1.5
-                                 bg-white/90 text-gray-500 focus:outline-none focus:ring-1 focus:ring-pink-200
-                                 placeholder:text-gray-300"
-                    />
-                  </div>
-                ) : (
-                  <button
-                    onClick={() => { setAddingDetailFor(item.id); setPendingNewLanguage('') }}
-                    className="mt-1.5 w-full text-xs text-center font-semibold
-                               py-1.5 rounded-xl border border-dashed border-violet-300
-                               text-violet-400 hover:text-violet-600 hover:bg-violet-50
-                               hover:border-violet-400 transition-all"
-                  >
-                    🌐 Add language variant
-                  </button>
-                )
-              )}
+              {/* Card condition selector */}
+              <select
+                value={item.condition ?? ''}
+                onChange={e => saveCondition(item.id, e.target.value)}
+                className="mt-1.5 w-full text-xs border border-gray-200 rounded-xl px-2 py-1.5
+                           bg-white/80 text-gray-500 focus:outline-none focus:ring-1 focus:ring-pink-300"
+              >
+                {CONDITION_OPTIONS.map(c => (
+                  <option key={c.value} value={c.value}>{c.label}</option>
+                ))}
+              </select>
             </div>
           )
         })()}
@@ -2190,7 +2166,7 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
   return (
     <>
       {/* ── Tab bar ────────────────────────────────────────────────── */}
-      <div className="flex justify-center items-center gap-2 px-4 pt-2 pb-4 flex-wrap">
+      <div className="grid grid-cols-2 sm:flex sm:flex-wrap sm:justify-center sm:items-center gap-2 px-4 pt-2 pb-4">
         {[
           {
             id:       'cards',
@@ -2221,7 +2197,7 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
             key={tab.id}
             whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }}
             onClick={tab.action}
-            className={`px-5 py-2 rounded-full text-sm font-semibold transition-all border shadow-sm
+            className={`w-full sm:w-auto px-5 py-2 rounded-full text-sm font-semibold transition-all border shadow-sm
               ${tab.isActive
                 ? 'bg-pink-400 text-white border-pink-400 shadow-pink-200'
                 : 'bg-white/60 text-gray-500 border-gray-200 hover:bg-white/80'
@@ -2230,30 +2206,31 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
             {tab.label}
           </motion.button>
         ))}
-        {/* Share Collection button — only visible when profile is public */}
-        {isPublic && (
-          <motion.button
-            whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }}
-            onClick={handleShare}
-            className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5
-                       bg-violet-400 hover:bg-violet-500 text-white rounded-full
-                       shadow-sm transition-colors"
-          >
-            ↗ Share
-          </motion.button>
-        )}
+        {/* Share + Settings — span full width on mobile so they sit centred below the 2×2 grid */}
+        <div className="col-span-2 sm:col-span-1 sm:contents flex justify-center items-center gap-2">
+          {isPublic && (
+            <motion.button
+              whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }}
+              onClick={handleShare}
+              className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5
+                         bg-violet-400 hover:bg-violet-500 text-white rounded-full
+                         shadow-sm transition-colors"
+            >
+              ↗ Share
+            </motion.button>
+          )}
 
-        {/* Settings gear */}
-        <motion.button
-          whileHover={{ scale: 1.1, rotate: 30 }} whileTap={{ scale: 0.92 }}
-          onClick={() => setShowSettings(true)}
-          className="w-9 h-9 flex items-center justify-center rounded-full
-                     bg-white/60 border border-gray-200 text-gray-400 hover:text-gray-600
-                     hover:bg-white/80 shadow-sm transition-colors text-base"
-          title="Account Settings"
-        >
-          ⚙️
-        </motion.button>
+          <motion.button
+            whileHover={{ scale: 1.1, rotate: 30 }} whileTap={{ scale: 0.92 }}
+            onClick={() => setShowSettings(true)}
+            className="w-9 h-9 flex items-center justify-center rounded-full
+                       bg-white/60 border border-gray-200 text-gray-400 hover:text-gray-600
+                       hover:bg-white/80 shadow-sm transition-colors text-base"
+            title="Account Settings"
+          >
+            ⚙️
+          </motion.button>
+        </div>
       </div>
 
       {/* ── Shared stats + HighRollers (collection & wishlist tabs only) ── */}

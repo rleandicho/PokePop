@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { supabase } from '../lib/supabase'
 
-export default function Auth({ user, username }) {
+export default function Auth({ user, username, isDark }) {
   const [open,         setOpen]         = useState(false)
   const [isSignUp,     setIsSignUp]     = useState(false)
   const [isForgot,     setIsForgot]     = useState(false)
@@ -115,7 +115,7 @@ export default function Auth({ user, username }) {
         className="text-xs bg-white/60 hover:bg-white/90 text-pink-500 font-semibold
                    px-4 py-1.5 rounded-full border border-pink-200 transition-all shadow-sm"
       >
-        Login to save cards 💖
+        Login to save cards
       </button>
 
       <AnimatePresence>
@@ -136,7 +136,9 @@ export default function Auth({ user, username }) {
               className="bg-white/90 backdrop-blur-md rounded-3xl shadow-2xl p-8 w-full max-w-sm text-center"
             >
               <h2 className="text-2xl font-bold text-pink-500 mb-1">
-                {isForgot ? 'Reset Password 🔑' : isSignUp ? 'Create account 🌷' : 'Welcome back! 🌸'}
+                {isForgot ? 'Reset Password 🔑' : isSignUp
+                  ? `Create account ${isDark ? '🖤' : '🌷'}`
+                  : `Welcome back! ${isDark ? '🖤' : '🌸'}`}
               </h2>
               <p className="text-sm text-gray-400 mb-5">
                 {isForgot
@@ -278,7 +280,7 @@ export default function Auth({ user, username }) {
                   >
                     {loading
                       ? (isSignUp ? 'Creating account…' : 'Signing in…')
-                      : (isSignUp ? 'Create Account 🌸' : 'Log In ✨')}
+                      : (isSignUp ? 'Create Account' : 'Log In')}
                   </button>
                 </form>
               )}

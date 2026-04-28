@@ -197,7 +197,7 @@ export default function App() {
         <p className="theme-subtle font-medium text-sm">
           Discover Pokémon cards by vibe ✨
         </p>
-        <Auth user={user} username={profile?.username} />
+        <Auth user={user} username={profile?.username} isDark={isDark} />
       </header>
 
       {/* ── Filters — hidden on the home page ──────────────────────────── */}
@@ -261,7 +261,7 @@ export default function App() {
       {showBackTop && (
         <button
           onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-          className="fixed bottom-20 right-4 z-50 sm:bottom-16 sm:right-5
+          className="fixed bottom-6 right-4 z-50 sm:bottom-16 sm:right-5
                      w-9 h-9 flex items-center justify-center
                      bg-white/80 hover:bg-white text-pink-400 hover:text-pink-500
                      rounded-full border border-pink-200 shadow-md

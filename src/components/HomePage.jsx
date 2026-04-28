@@ -35,7 +35,6 @@ export default function HomePage({ user, collectionIds, ownedIds, onNavigate }) 
                    bg-gradient-to-br from-pink-100 via-white to-sky-100
                    border border-pink-200 shadow-md"
       >
-        <p className="text-4xl mb-2">🌸</p>
         <h2 className="text-2xl sm:text-3xl font-bold text-pink-500 mb-1">
           {user ? 'Welcome back!' : 'Discover your vibe'}
         </h2>
@@ -118,9 +117,9 @@ export default function HomePage({ user, collectionIds, ownedIds, onNavigate }) 
           <h3 className="text-sm font-semibold text-gray-400 mb-2 px-1">Browse by Vibe</h3>
           <motion.div
             variants={container} initial="hidden" animate="show"
-            className="grid grid-cols-2 md:grid-cols-3 gap-3"
+            className="grid grid-cols-2 md:grid-cols-6 gap-3"
           >
-            {ALL_VIBES.map(v => (
+            {ALL_VIBES.map((v, idx) => (
               <motion.button
                 key={v.id}
                 variants={item}
@@ -128,7 +127,8 @@ export default function HomePage({ user, collectionIds, ownedIds, onNavigate }) 
                 whileTap={{ scale: 0.97 }}
                 onClick={() => onNavigate(v.id)}
                 className={`${v.bg} ${v.border} ${v.text} border rounded-2xl p-4 text-left
-                            shadow-sm transition-all cursor-pointer`}
+                            shadow-sm transition-all cursor-pointer
+                            ${idx >= ALL_VIBES.length - 2 ? 'md:col-span-3' : 'md:col-span-2'}`}
               >
                 <p className="text-2xl mb-1">{v.emoji}</p>
                 <p className="font-bold text-sm leading-tight">{v.label}</p>
