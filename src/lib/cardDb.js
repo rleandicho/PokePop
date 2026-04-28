@@ -210,6 +210,12 @@ export async function fetchCardsFromDb({ vibe, search, setQuery, sort, page = 1,
   if (isPriceSort) {
     // Sort by best available price, nulls last
     q = q.order('best_market_price', { ascending: sort === 'price-low', nullsFirst: false })
+  } else if (search && search.trim() && sort === 'newest') {
+    // When searching, group same-Pokémon cards together across all languages
+    // instead of burying older-release languages (e.g. Japanese) on later pages
+    q = q.order('english_name', { ascending: true, nullsFirst: false })
+         .order('number',        { ascending: true })
+         .order('release_date',  { ascending: false })
   } else if (sort === 'newest') {
     q = q.order('release_date', { ascending: false }).order('number', { ascending: true })
   } else if (sort === 'alpha') {

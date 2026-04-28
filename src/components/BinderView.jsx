@@ -188,6 +188,7 @@ function CardSlot({ item, isSelected, pageStyle, onClick, binders, onTransfer, c
           className="w-full h-full object-cover"
           loading="lazy"
           draggable={false}
+          onError={e => { e.currentTarget.src = 'https://images.pokemontcg.io/cardback.jpg' }}
         />
         {/* Plastic sleeve glare */}
         <div

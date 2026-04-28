@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useParams, Link } from 'react-router-dom'
+
+const CARD_BACK = 'https://images.pokemontcg.io/cardback.jpg'
 import { motion, AnimatePresence } from 'framer-motion'
 import { supabase } from '../lib/supabase'
 import { fetchAllRows } from '../lib/fetchAllRows'
@@ -90,7 +92,7 @@ function ShowcasePanels({ items, onCardClick }) {
               <motion.div key={item.card_id} initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} whileHover={{ scale: 1.08 }} transition={{ delay: i * 0.1 }} className="flex flex-col items-center gap-1 cursor-pointer" onClick={() => onCardClick?.(item)}>
                 <div className="relative">
                   {i === 0 && <span className="absolute -top-2 -right-2 text-sm z-10">👑</span>}
-                  <img src={item.image} alt={item.name} className="w-12 rounded-xl shadow-md border-2 border-yellow-300" />
+                  <img src={item.image} alt={item.name} className="w-12 rounded-xl shadow-md border-2 border-yellow-300" onError={e => { e.currentTarget.src = CARD_BACK }} />
                 </div>
                 <p className="text-[10px] font-bold text-gray-600 text-center w-12 truncate">{item.name}</p>
               </motion.div>
@@ -105,7 +107,7 @@ function ShowcasePanels({ items, onCardClick }) {
           <div className="flex gap-2 justify-center flex-wrap">
             {chaseCards.map((item, i) => (
               <motion.div key={item.card_id} initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} whileHover={{ scale: 1.08 }} transition={{ delay: i * 0.1 }} className="flex flex-col items-center gap-1 cursor-pointer" onClick={() => onCardClick?.(item)}>
-                <img src={item.image} alt={item.name} className="w-12 rounded-xl shadow-md border-2 border-pink-300" />
+                <img src={item.image} alt={item.name} className="w-12 rounded-xl shadow-md border-2 border-pink-300" onError={e => { e.currentTarget.src = CARD_BACK }} />
                 <p className="text-[10px] font-bold text-gray-600 text-center w-12 truncate">{item.name}</p>
               </motion.div>
             ))}
@@ -119,7 +121,7 @@ function ShowcasePanels({ items, onCardClick }) {
           <div className="flex gap-2 justify-center flex-wrap">
             {favoriteCards.map((item, i) => (
               <motion.div key={item.card_id} initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} whileHover={{ scale: 1.08 }} transition={{ delay: i * 0.1 }} className="flex flex-col items-center gap-1 cursor-pointer" onClick={() => onCardClick?.(item)}>
-                <img src={item.image} alt={item.name} className="w-12 rounded-xl shadow-md border-2 border-indigo-300" />
+                <img src={item.image} alt={item.name} className="w-12 rounded-xl shadow-md border-2 border-indigo-300" onError={e => { e.currentTarget.src = CARD_BACK }} />
                 <p className="text-[10px] font-bold text-gray-600 text-center w-12 truncate">{item.name}</p>
               </motion.div>
             ))}
@@ -189,9 +191,9 @@ export default function PublicWishlist() {
         fetchAllRows(() =>
           supabase
             .from('wishlists')
-            .select('card_id, name, image, owned, market_price, mid_price, low_price, manual_price, slot_index, binder_id, is_chase, is_favorite, quantity')
+            .select('card_id, name, image, owned, market_price, mid_price, low_price, manual_price, slot_index, binder_id, is_chase, is_favorite, quantity, created_at')
             .eq('user_id', userId)
-            .order('slot_index', { ascending: true, nullsFirst: false })
+            .order('created_at', { ascending: false })
         ),
         supabase
           .from('binders')
@@ -272,23 +274,49 @@ export default function PublicWishlist() {
   async function addToMyWishlist(item, asOwned = false) {
     if (!viewer) return
     setSavingCardId(item.card_id)
-    const { error } = await supabase
+
+    // Check-then-insert: the unique constraint is (user_id, card_id, edition, language)
+    // so we check first to avoid silent upsert failures from column mismatch
+    const { data: existing } = await supabase
       .from('wishlists')
-      .upsert({
-        user_id:      viewer.id,
-        card_id:      item.card_id,
-        name:         item.name,
-        image:        item.image,
-        owned:        asOwned,
-        market_price: item.market_price ?? 0,
-        mid_price:    item.mid_price    ?? 0,
-        low_price:    item.low_price    ?? 0,
-        edition:      'unspecified',
-      }, { onConflict: 'user_id,card_id,edition' })
+      .select('id')
+      .eq('user_id', viewer.id)
+      .eq('card_id', item.card_id)
+      .eq('edition', 'unspecified')
+      .eq('language', 'english')
+      .maybeSingle()
+
+    let error = null
+    if (!existing) {
+      const { error: insertError } = await supabase
+        .from('wishlists')
+        .insert({
+          user_id:      viewer.id,
+          card_id:      item.card_id,
+          name:         item.name,
+          image:        item.image,
+          owned:        asOwned,
+          market_price: item.market_price ?? 0,
+          mid_price:    item.mid_price    ?? 0,
+          low_price:    item.low_price    ?? 0,
+          edition:      'unspecified',
+          language:     'english',
+        })
+      error = insertError
+    } else if (asOwned) {
+      // Card already on wishlist — just update owned flag
+      const { error: updateError } = await supabase
+        .from('wishlists')
+        .update({ owned: true })
+        .eq('id', existing.id)
+      error = updateError
+    }
+
     setSavingCardId(null)
     if (!error) {
       if (asOwned) {
         setViewerOwnedIds(prev => new Set([...prev, item.card_id]))
+        setViewerWishlistIds(prev => { const n = new Set(prev); n.delete(item.card_id); return n })
       } else {
         setViewerWishlistIds(prev => new Set([...prev, item.card_id]))
       }
@@ -390,7 +418,8 @@ export default function PublicWishlist() {
         onClick={() => setSelectedShowcaseItem(item)}
       >
         <div className="relative">
-          <img src={item.image} alt={item.name} className="w-full" loading="lazy" />
+          <img src={item.image} alt={item.name} className="w-full" loading="lazy"
+               onError={e => { e.currentTarget.src = CARD_BACK }} />
           {item.owned && (item.quantity || 1) > 1 && (
             <span className="absolute bottom-1.5 right-1.5 text-[11px] font-bold bg-emerald-500 text-white
                              px-1.5 py-0.5 rounded-full shadow leading-none">
@@ -775,7 +804,8 @@ export default function PublicWishlist() {
                 aria-label="Close"
               >✕</button>
 
-              <img src={selectedShowcaseItem.image} alt={selectedShowcaseItem.name} className="w-full rounded-2xl mb-4 shadow-md" />
+              <img src={selectedShowcaseItem.image} alt={selectedShowcaseItem.name} className="w-full rounded-2xl mb-4 shadow-md"
+                   onError={e => { e.currentTarget.src = CARD_BACK }} />
 
               <h2 className="text-xl font-bold text-pink-500 mb-0.5">{selectedShowcaseItem.name}</h2>
               <p className="text-sm text-gray-400 mb-3">

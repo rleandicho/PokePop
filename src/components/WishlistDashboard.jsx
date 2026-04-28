@@ -1253,15 +1253,59 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
   }
 
   async function deleteSaleRecord(id, price) {
+    const record = salesHistory.find(r => r.id === id)
     await supabase.from('card_sales').delete().eq('id', id)
     setSalesHistory(prev => prev.filter(r => r.id !== id))
     setSalesTotal(prev => Math.max(0, prev - price))
+    // Restore card back to collection
+    if (record) {
+      const { data: restored } = await supabase
+        .from('wishlists')
+        .insert({
+          user_id:   user.id,
+          card_id:   record.card_id,
+          name:      record.card_name,
+          image:     record.card_image,
+          owned:     true,
+          edition:   'unspecified',
+          language:  'english',
+        })
+        .select('id, card_id, name, image, owned, market_price, mid_price, low_price, manual_price, price_source, slot_index, binder_id, edition, is_chase, is_favorite, quantity, language, tags, condition')
+        .single()
+      if (restored) {
+        setItems(prev => [restored, ...prev])
+        onOwnedChanged?.(record.card_id, true)
+        onToast('Card restored to Collection ✨')
+      }
+    }
   }
 
   async function deleteTradeRecord(id) {
+    const record = tradesHistory.find(r => r.id === id)
     await supabase.from('card_trades').delete().eq('id', id)
     setTradesHistory(prev => prev.filter(r => r.id !== id))
     setTradeCount(prev => Math.max(0, prev - 1))
+    // Restore card back to collection
+    if (record) {
+      const { data: restored } = await supabase
+        .from('wishlists')
+        .insert({
+          user_id:   user.id,
+          card_id:   record.card_id,
+          name:      record.card_name,
+          image:     record.card_image,
+          owned:     true,
+          edition:   'unspecified',
+          language:  'english',
+        })
+        .select('id, card_id, name, image, owned, market_price, mid_price, low_price, manual_price, price_source, slot_index, binder_id, edition, is_chase, is_favorite, quantity, language, tags, condition')
+        .single()
+      if (restored) {
+        setItems(prev => [restored, ...prev])
+        onOwnedChanged?.(record.card_id, true)
+        onToast('Card restored to Collection ✨')
+      }
+    }
   }
 
   async function togglePublic() {
@@ -1406,15 +1450,19 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
       const target  = prev.find(i => i.id === rowId)
       if (!target) return prev
       const rest    = prev.filter(i => i.id !== rowId)
-      return [{ ...target, owned: newOwned }, ...rest]
+      // When moving to collection, clear the chase flag
+      return [{ ...target, owned: newOwned, ...(newOwned ? { is_chase: false } : {}) }, ...rest]
     })
+    const updatePayload = newOwned
+      ? { owned: newOwned, is_chase: false }
+      : { owned: newOwned }
     const { error } = await supabase
       .from('wishlists')
-      .update({ owned: newOwned })
+      .update(updatePayload)
       .eq('id', rowId)
     if (error) {
       // Revert: move back to original position is hard, just restore the flag
-      setItems(prev => prev.map(i => i.id === rowId ? { ...i, owned: currentOwned } : i))
+      setItems(prev => prev.map(i => i.id === rowId ? { ...i, owned: currentOwned, is_chase: i.is_chase } : i))
     } else {
       onOwnedChanged?.(cardId, newOwned)
       onToast(newOwned ? 'Added to Collection! ✨📦' : 'Moved back to Wishlist 💖')
@@ -2016,9 +2064,19 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
             whileTap={{ scale: 0.92 }}
             onClick={() => toggleOwned(item.id, item.card_id, item.owned)}
             className="w-full text-xs font-semibold py-1.5 rounded-xl transition-all mt-1
-                       bg-white/70 text-gray-400 hover:bg-pink-50 hover:text-pink-500 border border-gray-200"
+                       bg-white/70 text-gray-400 hover:bg-pink-50 hover:text-pink-500 border border-gray-200
+                       flex items-center justify-center gap-1.5"
           >
-            🌸 I own this
+            <span
+              className={`theme-ball ${document.body.dataset.theme === 'dark' ? 'luxury-ball' : 'love-ball'}`}
+              style={{ width: '0.9em', height: '0.9em', flexShrink: 0, display: 'inline-block' }}
+            >
+              <span className="theme-ball__top" />
+              <span className="theme-ball__band" />
+              <span className="theme-ball__button" />
+              <span className="theme-ball__mark">{document.body.dataset.theme === 'dark' ? 'L' : '♥'}</span>
+            </span>
+            I own this
           </motion.button>
         )}
 
@@ -2821,7 +2879,8 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
                   {salesHistory.map(s => (
                     <div key={s.id} className="flex items-center gap-3 p-2.5 bg-amber-50 rounded-xl border border-amber-100">
                       {s.card_image && (
-                        <img src={s.card_image} alt={s.card_name} className="w-10 rounded-lg flex-shrink-0 shadow-sm" />
+                        <img src={s.card_image} alt={s.card_name} className="w-10 rounded-lg flex-shrink-0 shadow-sm"
+                             onError={e => { e.currentTarget.src = 'https://images.pokemontcg.io/cardback.jpg' }} />
                       )}
                       <div className="flex-1 min-w-0">
                         <p className="text-xs font-bold text-gray-700 truncate">{s.card_name}</p>
@@ -2867,7 +2926,8 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
                   {tradesHistory.map(t => (
                     <div key={t.id} className="flex items-center gap-3 p-2.5 bg-sky-50 rounded-xl border border-sky-100">
                       {t.card_image && (
-                        <img src={t.card_image} alt={t.card_name} className="w-10 rounded-lg flex-shrink-0 shadow-sm" />
+                        <img src={t.card_image} alt={t.card_name} className="w-10 rounded-lg flex-shrink-0 shadow-sm"
+                             onError={e => { e.currentTarget.src = 'https://images.pokemontcg.io/cardback.jpg' }} />
                       )}
                       <div className="flex-1 min-w-0">
                         <p className="text-xs font-bold text-gray-700 truncate">{t.card_name}</p>
