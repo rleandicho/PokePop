@@ -306,3 +306,29 @@ body {
   background: rgba(20, 16, 35, 0.88) !important;
   border: 1px solid rgba(192,132,252,0.2) !important;
 }
+
+/* ── Sold / Traded buttons — readable in dark mode ──────────────────────── */
+.dark-theme .bg-amber-100 {
+  background-color: #451a03 !important;
+}
+.dark-theme .hover\:bg-amber-200:hover {
+  background-color: #78350f !important;
+}
+.dark-theme .border-amber-200 {
+  border-color: #92400e !important;
+}
+.dark-theme .bg-sky-100 {
+  background-color: #082f49 !important;
+}
+.dark-theme .hover\:bg-sky-200:hover {
+  background-color: #0c4a6e !important;
+}
+.dark-theme .border-sky-200 {
+  border-color: #075985 !important;
+}
+.dark-theme .text-amber-600 {
+  color: #fcd34d !important;
+}
+.dark-theme .text-sky-600 {
+  color: #7dd3fc !important;
+}

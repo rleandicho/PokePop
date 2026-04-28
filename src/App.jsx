@@ -261,6 +261,7 @@ export default function App() {
             collectionLanguages={collectionLanguages}
             onCardAdded={handleCardAdded}
             onCardRemoved={handleCardRemoved}
+            onOwnedChanged={handleOwnedChanged}
           />
         )}
       </main>

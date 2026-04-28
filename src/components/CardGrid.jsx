@@ -327,6 +327,15 @@ function SortToolbar({ sortBy, onSortChange, langFilter, onLangChange, hasActive
   )
 }
 
+const CONDITION_OPTIONS = [
+  { value: '',                  label: 'Condition…' },
+  { value: 'near_mint',         label: 'Near Mint' },
+  { value: 'lightly_played',    label: 'Lightly Played' },
+  { value: 'moderately_played', label: 'Moderately Played' },
+  { value: 'heavily_played',    label: 'Heavily Played' },
+  { value: 'damaged',           label: 'Damaged' },
+]
+
 const LANG_OPTIONS = [
   { value: 'english',    label: 'English',               flag: '🇺🇸' },
   { value: 'japanese',   label: 'Japanese',              flag: '🇯🇵' },
@@ -343,14 +352,21 @@ const LANG_OPTIONS = [
   { value: 'russian',    label: 'Russian',               flag: '🇷🇺' },
 ]
 
-function CardModal({ card, user, onToast, onClose, saveCard, collectionIds, ownedIds, collectionLanguages, onCardAdded, onCardRemoved }) {
-  const [saving,      setSaving]      = useState(false)
-  const [removing,    setRemoving]    = useState(false)
-  const [quantity,    setQuantity]    = useState(1)
-  const [imgSrc,      setImgSrc]      = useState(card.images?.small || CARD_BACK)
-  const [addLangMode,  setAddLangMode]  = useState(false)
-  const [newLang,      setNewLang]      = useState('')
-  const [newLangImage, setNewLangImage] = useState('')
+function CardModal({ card, user, onToast, onClose, saveCard, collectionIds, ownedIds, collectionLanguages, onCardAdded, onCardRemoved, onOwnedChanged }) {
+  const [saving,           setSaving]           = useState(false)
+  const [removing,         setRemoving]         = useState(false)
+  const [quantity,         setQuantity]         = useState(1)
+  const [imgSrc,           setImgSrc]           = useState(card.images?.small || CARD_BACK)
+  const [addLangMode,      setAddLangMode]      = useState(false)
+  const [newLang,          setNewLang]          = useState('')
+  const [newLangImage,     setNewLangImage]     = useState('')
+  const [sellMode,         setSellMode]         = useState(false)
+  const [sellPrice,        setSellPrice]        = useState('')
+  const [sellSaving,       setSellSaving]       = useState(false)
+  const [tradeConfirm,     setTradeConfirm]     = useState(false)
+  const [tradeSaving,      setTradeSaving]      = useState(false)
+  const [movingToWishlist, setMovingToWishlist] = useState(false)
+  const [condition,        setCondition]        = useState('')
 
   useEffect(() => {
     if (!card.images?.large || card.images.large === card.images.small) return
@@ -425,6 +441,48 @@ function CardModal({ card, user, onToast, onClose, saveCard, collectionIds, owne
       .eq('card_id', card.id)
     setRemoving(false)
     if (!error) { onCardRemoved?.(card.id, null); onToast(isOwned ? 'Removed from Collection 🗑️' : 'Removed from Wishlist 🗑️') }
+  }
+
+  async function handleSell() {
+    const price = parseFloat(sellPrice)
+    if (isNaN(price) || price < 0) { onToast('Enter a valid sale price'); return }
+    setSellSaving(true)
+    await supabase.from('card_sales').insert({
+      user_id:    user.id,
+      card_id:    card.id,
+      card_name:  card.name,
+      card_image: card.images?.small,
+      sale_price: price,
+    })
+    await supabase.from('wishlists').delete().eq('user_id', user.id).eq('card_id', card.id)
+    setSellSaving(false)
+    onCardRemoved?.(card.id, null)
+    onToast('Card sold! 💰')
+    onClose()
+  }
+
+  async function handleTrade() {
+    setTradeSaving(true)
+    await supabase.from('card_trades').insert({
+      user_id:    user.id,
+      card_id:    card.id,
+      card_name:  card.name,
+      card_image: card.images?.small,
+    })
+    await supabase.from('wishlists').delete().eq('user_id', user.id).eq('card_id', card.id)
+    setTradeSaving(false)
+    onCardRemoved?.(card.id, null)
+    onToast('Card traded! 🤝')
+    onClose()
+  }
+
+  async function moveToWishlist() {
+    setMovingToWishlist(true)
+    await supabase.from('wishlists').update({ owned: false }).eq('user_id', user.id).eq('card_id', card.id)
+    setMovingToWishlist(false)
+    onOwnedChanged?.(card.id, false)
+    onToast('Moved back to Wishlist 💖')
+    onClose()
   }
 
   return (
@@ -611,7 +669,27 @@ function CardModal({ card, user, onToast, onClose, saveCard, collectionIds, owne
                       {saving ? 'Saving…' : inList && isOwned ? `+ Add ${quantity} Cop${quantity === 1 ? 'y' : 'ies'}` : inList ? `Move to Collection ×${quantity}` : '✨ Collection'}
                     </button>
                   </div>
-                  {inList && (
+                  {inList && isOwned && (
+                    <select
+                      value={condition}
+                      onChange={async e => {
+                        const val = e.target.value
+                        setCondition(val)
+                        if (!user) return
+                        await supabase.from('wishlists')
+                          .update({ condition: val || null })
+                          .eq('user_id', user.id)
+                          .eq('card_id', card.id)
+                      }}
+                      className="w-full text-sm border border-gray-200 rounded-2xl px-3 py-2
+                                 bg-white/80 text-gray-600 focus:outline-none focus:ring-1 focus:ring-pink-300"
+                    >
+                      {CONDITION_OPTIONS.map(c => (
+                        <option key={c.value} value={c.value}>{c.label}</option>
+                      ))}
+                    </select>
+                  )}
+                  {inList && !isOwned && (
                     <button
                       onClick={() => setAddLangMode(true)}
                       className="border border-violet-200 text-violet-500 hover:bg-violet-50
@@ -632,6 +710,85 @@ function CardModal({ card, user, onToast, onClose, saveCard, collectionIds, owne
                 >
                   {removing ? 'Removing…' : '🗑️ Remove all saved copies'}
                 </button>
+              )}
+
+              {/* ── Sell / Trade / Move to Wishlist — owned cards only ── */}
+              {isOwned && !sellMode && !tradeConfirm && (
+                <>
+                  <button
+                    onClick={moveToWishlist}
+                    disabled={movingToWishlist}
+                    className="border border-violet-200 text-violet-500 hover:bg-violet-50
+                               font-semibold py-2 rounded-2xl transition-colors text-sm disabled:opacity-60"
+                  >
+                    {movingToWishlist ? '…' : '↩ Move back to Wishlist'}
+                  </button>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setSellMode(true)}
+                      className="flex-1 border border-amber-200 text-amber-600 hover:bg-amber-50
+                                 font-semibold py-2 rounded-2xl transition-colors text-sm"
+                    >
+                      💰 Sell
+                    </button>
+                    <button
+                      onClick={() => setTradeConfirm(true)}
+                      className="flex-1 border border-sky-200 text-sky-600 hover:bg-sky-50
+                                 font-semibold py-2 rounded-2xl transition-colors text-sm"
+                    >
+                      🤝 Trade
+                    </button>
+                  </div>
+                </>
+              )}
+
+              {isOwned && sellMode && (
+                <div className="flex flex-col gap-2 p-3 bg-amber-50 rounded-2xl border border-amber-200">
+                  <p className="text-xs font-semibold text-amber-700">Sale price (USD)</p>
+                  <input
+                    type="number" min="0" step="0.01"
+                    value={sellPrice}
+                    onChange={e => setSellPrice(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') handleSell() }}
+                    placeholder="e.g. 24.99"
+                    autoFocus
+                    className="text-sm border border-amber-200 rounded-xl px-3 py-1.5
+                               focus:outline-none focus:border-amber-400 bg-white"
+                  />
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => { setSellMode(false); setSellPrice('') }}
+                      className="flex-1 border border-gray-200 text-gray-400 hover:bg-gray-50
+                                 font-semibold py-1.5 rounded-xl text-sm transition-colors"
+                    >Cancel</button>
+                    <button
+                      onClick={handleSell}
+                      disabled={sellSaving}
+                      className="flex-1 bg-amber-400 hover:bg-amber-500 text-white
+                                 font-semibold py-1.5 rounded-xl text-sm transition-colors disabled:opacity-60"
+                    >{sellSaving ? '…' : 'Confirm Sale'}</button>
+                  </div>
+                </div>
+              )}
+
+              {isOwned && tradeConfirm && (
+                <div className="flex flex-col gap-2 p-3 bg-sky-50 rounded-2xl border border-sky-200">
+                  <p className="text-xs font-semibold text-sky-700">Mark as traded?</p>
+                  <p className="text-[11px] text-gray-400">This will remove the card from your collection.</p>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setTradeConfirm(false)}
+                      className="flex-1 border border-gray-200 text-gray-400 hover:bg-gray-50
+                                 font-semibold py-1.5 rounded-xl text-sm transition-colors"
+                    >Cancel</button>
+                    <button
+                      onClick={handleTrade}
+                      disabled={tradeSaving}
+                      className="flex-1 bg-sky-400 hover:bg-sky-500 text-white
+                                 font-semibold py-1.5 rounded-xl text-sm transition-colors disabled:opacity-60"
+                    >{tradeSaving ? '…' : 'Yes, Traded!'}</button>
+                  </div>
+                </div>
               )}
             </>
           ) : (
@@ -769,7 +926,7 @@ const CardTile = memo(function CardTile({ card, inList, isOwned, myLangs, quickA
 })
 
 // ─── Main grid ────────────────────────────────────────────────────────────────
-function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, onClearFilters, user, onToast, activeBinderId, collectionIds, ownedIds, collectionLanguages, onCardAdded, onCardRemoved }) {
+function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, onClearFilters, user, onToast, activeBinderId, collectionIds, ownedIds, collectionLanguages, onCardAdded, onCardRemoved, onOwnedChanged }) {
   const gridTopRef   = useRef(null)
   const [cards,      setCards]      = useState([])
   const [page,       setPage]       = useState(1)
@@ -1110,7 +1267,7 @@ function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, onClearF
 
       <AnimatePresence>
         {selected && (
-          <CardModal card={selected} user={user} onToast={onToast} onClose={() => setSelected(null)} saveCard={saveCard} collectionIds={collectionIds} ownedIds={ownedIds} collectionLanguages={collectionLanguages} onCardAdded={onCardAdded} onCardRemoved={onCardRemoved} />
+          <CardModal card={selected} user={user} onToast={onToast} onClose={() => setSelected(null)} saveCard={saveCard} collectionIds={collectionIds} ownedIds={ownedIds} collectionLanguages={collectionLanguages} onCardAdded={onCardAdded} onCardRemoved={onCardRemoved} onOwnedChanged={onOwnedChanged} />
         )}
       </AnimatePresence>
     </>

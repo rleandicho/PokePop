@@ -851,10 +851,21 @@ const CONDITION_OPTIONS = [
 ]
 
 // ─── Wishlist card detail modal ───────────────────────────────────────────────
-function WishlistCardModal({ item, onClose, onSaveTags }) {
+function WishlistCardModal({
+  item, onClose, onSaveTags,
+  user, onToast,
+  onEditionChange, onConditionChange,
+  onMoveToWishlist, onSold, onTraded,
+}) {
   const versionLabel = editionLabel(item.edition)
   const [tagInput,  setTagInput]  = useState('')
   const [localTags, setLocalTags] = useState(item.tags ?? [])
+  const [sellMode,      setSellMode]      = useState(false)
+  const [sellPrice,     setSellPrice]     = useState('')
+  const [sellSaving,    setSellSaving]    = useState(false)
+  const [tradeConfirm,  setTradeConfirm]  = useState(false)
+  const [tradeSaving,   setTradeSaving]   = useState(false)
+  const [movingBack,    setMovingBack]    = useState(false)
 
   function addTag() {
     const t = tagInput.trim()
@@ -869,6 +880,48 @@ function WishlistCardModal({ item, onClose, onSaveTags }) {
     const next = localTags.filter(t => t !== tag)
     setLocalTags(next)
     onSaveTags?.(item.id, next)
+  }
+
+  async function handleSell() {
+    const price = parseFloat(sellPrice)
+    if (isNaN(price) || price < 0) { onToast?.('Enter a valid sale price'); return }
+    setSellSaving(true)
+    await supabase.from('card_sales').insert({
+      user_id:    user.id,
+      card_id:    item.card_id,
+      card_name:  item.name,
+      card_image: item.image,
+      sale_price: price,
+    })
+    await supabase.from('wishlists').delete().eq('id', item.id)
+    setSellSaving(false)
+    onSold?.(item, price)
+    onToast?.('Card sold! 💰')
+    onClose()
+  }
+
+  async function handleTrade() {
+    setTradeSaving(true)
+    await supabase.from('card_trades').insert({
+      user_id:    user.id,
+      card_id:    item.card_id,
+      card_name:  item.name,
+      card_image: item.image,
+    })
+    await supabase.from('wishlists').delete().eq('id', item.id)
+    setTradeSaving(false)
+    onTraded?.(item)
+    onToast?.('Card traded! 🤝')
+    onClose()
+  }
+
+  async function handleMoveToWishlist() {
+    setMovingBack(true)
+    await supabase.from('wishlists').update({ owned: false }).eq('id', item.id)
+    setMovingBack(false)
+    onMoveToWishlist?.(item.id)
+    onToast?.('Moved back to Wishlist 💖')
+    onClose()
   }
 
   // Stored prices with version context in the header
@@ -929,6 +982,42 @@ function WishlistCardModal({ item, onClose, onSaveTags }) {
           </div>
         )}
 
+        {/* ── Rarity / Edition ─────────────────────────────────────────── */}
+        <div className="mb-3">
+          <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1.5">
+            Rarity / Edition
+          </p>
+          <select
+            value={item.edition ?? 'unspecified'}
+            onChange={e => onEditionChange?.(item.id, e.target.value)}
+            className="w-full text-sm border border-gray-200 rounded-xl px-3 py-2
+                       bg-white/80 text-gray-600 focus:outline-none focus:ring-1 focus:ring-pink-300"
+          >
+            {EDITION_OPTIONS.map(e => (
+              <option key={e.value} value={e.value}>{e.label}</option>
+            ))}
+          </select>
+        </div>
+
+        {/* ── Condition — owned cards only ─────────────────────────────── */}
+        {item.owned && (
+          <div className="mb-4">
+            <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1.5">
+              Condition
+            </p>
+            <select
+              value={item.condition ?? ''}
+              onChange={e => onConditionChange?.(item.id, e.target.value)}
+              className="w-full text-sm border border-gray-200 rounded-xl px-3 py-2
+                         bg-white/80 text-gray-600 focus:outline-none focus:ring-1 focus:ring-pink-300"
+            >
+              {CONDITION_OPTIONS.map(c => (
+                <option key={c.value} value={c.value}>{c.label}</option>
+              ))}
+            </select>
+          </div>
+        )}
+
         {/* ── Tags ─────────────────────────────────────────────────────── */}
         <div className="mb-4">
           <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1.5">
@@ -971,6 +1060,89 @@ function WishlistCardModal({ item, onClose, onSaveTags }) {
             </button>
           </div>
         </div>
+
+        {/* ── Owned-card actions ────────────────────────────────────────── */}
+        {item.owned && (
+          <div className="flex flex-col gap-2 mb-4">
+            {!sellMode && !tradeConfirm && (
+              <>
+                <button
+                  onClick={handleMoveToWishlist}
+                  disabled={movingBack}
+                  className="border border-violet-200 text-violet-500 hover:bg-violet-50
+                             font-semibold py-2 rounded-2xl transition-colors text-sm disabled:opacity-60"
+                >
+                  {movingBack ? '…' : '↩ Move back to Wishlist'}
+                </button>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setSellMode(true)}
+                    className="flex-1 border border-amber-200 text-amber-600 hover:bg-amber-50
+                               font-semibold py-2 rounded-2xl transition-colors text-sm"
+                  >
+                    💰 Sell
+                  </button>
+                  <button
+                    onClick={() => setTradeConfirm(true)}
+                    className="flex-1 border border-sky-200 text-sky-600 hover:bg-sky-50
+                               font-semibold py-2 rounded-2xl transition-colors text-sm"
+                  >
+                    🤝 Trade
+                  </button>
+                </div>
+              </>
+            )}
+
+            {sellMode && (
+              <div className="flex flex-col gap-2 p-3 bg-amber-50 rounded-2xl border border-amber-200">
+                <p className="text-xs font-semibold text-amber-700">Sale price (USD)</p>
+                <input
+                  type="number" min="0" step="0.01"
+                  value={sellPrice}
+                  onChange={e => setSellPrice(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') handleSell() }}
+                  placeholder="e.g. 24.99"
+                  autoFocus
+                  className="text-sm border border-amber-200 rounded-xl px-3 py-1.5
+                             focus:outline-none focus:border-amber-400 bg-white"
+                />
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => { setSellMode(false); setSellPrice('') }}
+                    className="flex-1 border border-gray-200 text-gray-400 hover:bg-gray-50
+                               font-semibold py-1.5 rounded-xl text-sm transition-colors"
+                  >Cancel</button>
+                  <button
+                    onClick={handleSell}
+                    disabled={sellSaving}
+                    className="flex-1 bg-amber-400 hover:bg-amber-500 text-white
+                               font-semibold py-1.5 rounded-xl text-sm transition-colors disabled:opacity-60"
+                  >{sellSaving ? '…' : 'Confirm Sale'}</button>
+                </div>
+              </div>
+            )}
+
+            {tradeConfirm && (
+              <div className="flex flex-col gap-2 p-3 bg-sky-50 rounded-2xl border border-sky-200">
+                <p className="text-xs font-semibold text-sky-700">Mark as traded?</p>
+                <p className="text-[11px] text-gray-400">This will remove the card from your collection.</p>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setTradeConfirm(false)}
+                    className="flex-1 border border-gray-200 text-gray-400 hover:bg-gray-50
+                               font-semibold py-1.5 rounded-xl text-sm transition-colors"
+                  >Cancel</button>
+                  <button
+                    onClick={handleTrade}
+                    disabled={tradeSaving}
+                    className="flex-1 bg-sky-400 hover:bg-sky-500 text-white
+                               font-semibold py-1.5 rounded-xl text-sm transition-colors disabled:opacity-60"
+                  >{tradeSaving ? '…' : 'Yes, Traded!'}</button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         <a
           href={`https://www.tcgplayer.com/search/pokemon/product?q=${encodeURIComponent(item.name)}`}
@@ -1911,6 +2083,29 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
       exit={{ opacity: 0, scale: 0.85 }}
       className={`rounded-2xl overflow-hidden shadow-md relative ${item.owned ? 'tile-owned' : 'tile-wishlist'}`}
     >
+      {/* Star / favourite — top-left (opposite the ✕) */}
+      {item.owned && (() => {
+        const favCount = items.filter(i => i.is_favorite).length
+        const favAtMax = !item.is_favorite && favCount >= 3
+        return (
+          <button
+            onClick={() => !favAtMax && toggleFavorite(item.id, item.is_favorite)}
+            disabled={favAtMax}
+            className={`absolute top-1.5 left-1.5 z-10 w-6 h-6 rounded-full flex items-center
+                       justify-center text-xs shadow-sm transition-all leading-none
+                       ${item.is_favorite
+                         ? 'bg-indigo-400 text-white'
+                         : favAtMax
+                           ? 'bg-white/70 text-gray-200 cursor-not-allowed'
+                           : 'bg-white/70 text-gray-300 hover:bg-indigo-100 hover:text-indigo-400'
+                       }`}
+            title={item.is_favorite ? 'Remove from favourites' : favAtMax ? 'Max 3 favourites' : 'Add to favourites'}
+          >
+            {item.is_favorite ? '★' : '☆'}
+          </button>
+        )
+      })()}
+
       <button
         onClick={() => removeCard(item)}
         className="absolute top-1.5 right-1.5 z-10 w-6 h-6 rounded-full bg-white/70
@@ -2044,26 +2239,7 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
           </div>
         )}
 
-        {item.owned ? (
-          <div className="flex gap-1.5 mt-1">
-            <motion.button
-              whileTap={{ scale: 0.92 }}
-              onClick={() => { setSoldModal(item); setSoldPrice('') }}
-              className="flex-1 text-xs font-semibold py-1.5 rounded-xl transition-all
-                         bg-amber-100 text-amber-600 hover:bg-amber-200 border border-amber-200"
-            >
-              💰 Sold
-            </motion.button>
-            <motion.button
-              whileTap={{ scale: 0.92 }}
-              onClick={() => setTradeModal(item)}
-              className="flex-1 text-xs font-semibold py-1.5 rounded-xl transition-all
-                         bg-sky-100 text-sky-600 hover:bg-sky-200 border border-sky-200"
-            >
-              🤝 Traded
-            </motion.button>
-          </div>
-        ) : (
+        {!item.owned && (
           <motion.button
             whileTap={{ scale: 0.92 }}
             onClick={() => toggleOwned(item.id, item.card_id, item.owned)}
@@ -2126,77 +2302,29 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
           )
         })()}
 
-        {/* Favourite — owned collection cards only */}
-        {item.owned && (() => {
-          const favCount   = items.filter(i => i.is_favorite).length
-          const favAtMax   = !item.is_favorite && favCount >= 3
-          return (
-            <motion.button
-              whileTap={favAtMax ? {} : { scale: 0.92 }}
-              onClick={() => toggleFavorite(item.id, item.is_favorite)}
-              disabled={favAtMax}
-              className={`w-full text-xs font-semibold py-1 rounded-xl transition-all mt-1
-                ${item.is_favorite
-                  ? 'bg-indigo-100 text-indigo-500 hover:bg-indigo-200 border border-indigo-300'
-                  : favAtMax
-                    ? 'bg-gray-50 text-gray-300 border border-gray-200 cursor-not-allowed opacity-50'
-                    : 'bg-white/70 text-gray-300 hover:bg-indigo-50 hover:text-indigo-400 border border-gray-200'
-                }`}
-              title={item.is_favorite ? 'Remove from favourites' : favAtMax ? 'Max 3 favourites reached' : 'Add to favourites (max 3)'}
-            >
-              {item.is_favorite ? '⭐ Favourite!' : favAtMax ? '⭐ Full (3/3)' : '⭐ Favourite'}
-            </motion.button>
-          )
-        })()}
 
-        {/* Edition + Language details ─────────────────────────────────── */}
+        {/* Language + Edition info — shown as compact read-only badges */}
         {(() => {
-          // Language flag badge (shown above edition if not english)
           const lang    = item.language ?? 'english'
           const flag    = lang !== 'english' ? (LANGUAGE_FLAG[lang] ?? '🌐') : null
-          // Which language variants of this card already exist (to avoid duplicates)
-          const takenLangs = new Set(
-            items.filter(i => i.card_id === item.card_id && i.edition === item.edition).map(i => i.language ?? 'english')
-          )
-          const availableLangs = LANGUAGE_OPTIONS.filter(l => !takenLangs.has(l.value))
-          const isAddingHere   = addingDetailFor === item.id
-
-          return (
-            <div className="mt-2">
-              {/* Language flag pill */}
+          const edition = editionLabel(item.edition)
+          return (flag || edition) ? (
+            <div className="flex flex-wrap gap-1 justify-center mt-1.5">
               {flag && (
-                <span className="inline-flex items-center gap-1 text-[10px] font-semibold
+                <span className="inline-flex items-center gap-0.5 text-[9px] font-semibold
                                  bg-blue-50 text-blue-500 border border-blue-200
-                                 px-2 py-0.5 rounded-full mb-1">
+                                 px-1.5 py-0.5 rounded-full">
                   {flag} {LANGUAGE_OPTIONS.find(l => l.value === lang)?.label}
                 </span>
               )}
-
-              {/* Edition dropdown */}
-              <select
-                value={item.edition ?? 'unspecified'}
-                onChange={e => updateEdition(item.id, e.target.value)}
-                className="w-full text-xs border border-gray-200 rounded-xl px-2 py-1.5
-                           bg-white/80 text-gray-500 focus:outline-none focus:ring-1 focus:ring-pink-300"
-              >
-                {EDITION_OPTIONS.map(e => (
-                  <option key={e.value} value={e.value}>{e.label}</option>
-                ))}
-              </select>
-
-              {/* Card condition selector */}
-              <select
-                value={item.condition ?? ''}
-                onChange={e => saveCondition(item.id, e.target.value)}
-                className="mt-1.5 w-full text-xs border border-gray-200 rounded-xl px-2 py-1.5
-                           bg-white/80 text-gray-500 focus:outline-none focus:ring-1 focus:ring-pink-300"
-              >
-                {CONDITION_OPTIONS.map(c => (
-                  <option key={c.value} value={c.value}>{c.label}</option>
-                ))}
-              </select>
+              {edition && (
+                <span className="text-[9px] font-semibold text-pink-500 bg-pink-50 border border-pink-200
+                                 px-1.5 py-0.5 rounded-full">
+                  {edition}
+                </span>
+              )}
             </div>
-          )
+          ) : null
         })()}
 
         {item.owned && binders.length > 0 ? (
@@ -2854,6 +2982,27 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
             item={selectedItem}
             onClose={() => setSelectedItem(null)}
             onSaveTags={saveTags}
+            user={user}
+            onToast={onToast}
+            onEditionChange={(id, val) => updateEdition(id, val)}
+            onConditionChange={(id, val) => saveCondition(id, val)}
+            onMoveToWishlist={(rowId) => {
+              const target = items.find(i => i.id === rowId)
+              if (target) {
+                setItems(prev => prev.map(i => i.id === rowId ? { ...i, owned: false } : i))
+                onOwnedChanged?.(target.card_id, false)
+              }
+            }}
+            onSold={(item, price) => {
+              setItems(prev => prev.filter(i => i.id !== item.id))
+              setSalesTotal(prev => prev + price)
+              onCardRemoved?.(item.card_id)
+            }}
+            onTraded={(item) => {
+              setItems(prev => prev.filter(i => i.id !== item.id))
+              setTradeCount(prev => prev + 1)
+              onCardRemoved?.(item.card_id)
+            }}
           />
         )}
       </AnimatePresence>
