@@ -367,6 +367,13 @@ function CardModal({ card, user, onToast, onClose, saveCard, collectionIds, owne
   const [tradeSaving,      setTradeSaving]      = useState(false)
   const [movingToWishlist, setMovingToWishlist] = useState(false)
   const [condition,        setCondition]        = useState('')
+  const [suggestedPrice,   setSuggestedPrice]   = useState(null)
+
+  useEffect(() => {
+    supabase.rpc('get_suggested_price', { p_card_id: card.id }).then(({ data }) => {
+      if (data?.[0]) setSuggestedPrice(data[0])
+    })
+  }, [card.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!card.images?.large || card.images.large === card.images.small) return
@@ -511,7 +518,48 @@ function CardModal({ card, user, onToast, onClose, saveCard, collectionIds, owne
              className="w-full rounded-2xl mb-4 shadow-md"
              onError={e => { e.currentTarget.src = CARD_BACK }} />
         <h2 className="text-xl font-bold text-pink-500 mb-0.5">{card.name}</h2>
-        <p className="text-sm text-gray-400 mb-3">{card.set?.name} · {card.rarity}</p>
+        <p className="text-sm text-gray-400 mb-2">{card.set?.name} · {card.rarity}</p>
+
+        {/* ── Condition — shown early for owned cards ── */}
+        {inList && isOwned && (
+          <select
+            value={condition}
+            onChange={async e => {
+              const val = e.target.value
+              setCondition(val)
+              if (!user) return
+              await supabase.from('wishlists')
+                .update({ condition: val || null })
+                .eq('user_id', user.id)
+                .eq('card_id', card.id)
+            }}
+            className="w-full text-sm border border-gray-200 rounded-2xl px-3 py-2 mb-3
+                       bg-white/80 text-gray-600 focus:outline-none focus:ring-1 focus:ring-pink-300"
+          >
+            {CONDITION_OPTIONS.map(c => (
+              <option key={c.value} value={c.value}>{c.label}</option>
+            ))}
+          </select>
+        )}
+
+        {/* ── PriceCharting market price ── */}
+        {card.price_source === 'pricecharting' && card.pricecharting_market != null && (
+          <div className="mb-3 rounded-2xl overflow-hidden border border-violet-100 bg-violet-50">
+            <div className="flex items-center justify-between px-3 pt-2.5 pb-2.5">
+              <div>
+                <p className="text-[10px] font-semibold text-violet-600 uppercase tracking-wide">
+                  Market Price
+                </p>
+                <p className="text-[10px] text-violet-500 normal-case">
+                  via PriceCharting
+                </p>
+              </div>
+              <span className="text-xl font-bold text-violet-700">
+                ${Number(card.pricecharting_market).toFixed(2)}
+              </span>
+            </div>
+          </div>
+        )}
 
         {/* ── eBay average price (cards not on TCGPlayer) ── */}
         {card.price_source === 'ebay' && card.ebay_market != null && (
@@ -575,6 +623,25 @@ function CardModal({ card, user, onToast, onClose, saveCard, collectionIds, owne
                 Unspecified {!version && <span className="text-pink-400 text-xs ml-1">✓</span>}
               </button>
             )}
+          </div>
+        )}
+
+        {/* ── Community Suggested Price ── */}
+        {suggestedPrice && (
+          <div className="mb-3 rounded-2xl overflow-hidden border border-emerald-100 bg-emerald-50">
+            <div className="flex items-center justify-between px-3 pt-2.5 pb-2.5">
+              <div>
+                <p className="text-[10px] font-semibold text-emerald-600 uppercase tracking-wide">
+                  Community Price
+                </p>
+                <p className="text-[10px] text-emerald-500 normal-case">
+                  median of {suggestedPrice.contributor_count} trainer{suggestedPrice.contributor_count !== 1 ? 's' : ''}
+                </p>
+              </div>
+              <span className="text-xl font-bold text-emerald-700">
+                ${Number(suggestedPrice.median_price).toFixed(2)}
+              </span>
+            </div>
           </div>
         )}
 
@@ -669,26 +736,6 @@ function CardModal({ card, user, onToast, onClose, saveCard, collectionIds, owne
                       {saving ? 'Saving…' : inList && isOwned ? `+ Add ${quantity} Cop${quantity === 1 ? 'y' : 'ies'}` : inList ? `Move to Collection ×${quantity}` : '✨ Collection'}
                     </button>
                   </div>
-                  {inList && isOwned && (
-                    <select
-                      value={condition}
-                      onChange={async e => {
-                        const val = e.target.value
-                        setCondition(val)
-                        if (!user) return
-                        await supabase.from('wishlists')
-                          .update({ condition: val || null })
-                          .eq('user_id', user.id)
-                          .eq('card_id', card.id)
-                      }}
-                      className="w-full text-sm border border-gray-200 rounded-2xl px-3 py-2
-                                 bg-white/80 text-gray-600 focus:outline-none focus:ring-1 focus:ring-pink-300"
-                    >
-                      {CONDITION_OPTIONS.map(c => (
-                        <option key={c.value} value={c.value}>{c.label}</option>
-                      ))}
-                    </select>
-                  )}
                   {inList && !isOwned && (
                     <button
                       onClick={() => setAddLangMode(true)}

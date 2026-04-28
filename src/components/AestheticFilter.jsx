@@ -20,12 +20,32 @@ const VIBES = [
 const WISHLIST_VIBE = { id: 'wishlist', label: 'Wishlist & Collection ✨📦', color: 'bg-rose-200 text-rose-700' }
 
 // ─── Sets cache — memory + localStorage with 24-hour TTL ─────────────────────
-// v5: now fetches from Supabase tcg_sets instead of pokemontcg.io API
-const LS_KEY  = 'pokepop_sets_v6'
-const TTL_MS  = 24 * 60 * 60 * 1000
-const PROMO_KEY   = 'Promos'
-// Matches AestheticFilter promo detection AND cardDb.js PROMO_NAME_FRAGMENTS filter.
+// v7: grouped by language tab, then series within each language
+const LS_KEY    = 'pokepop_sets_v7'
+const TTL_MS    = 24 * 60 * 60 * 1000
+const PROMO_KEY = 'Promos'
 const PROMO_QUERY = '(set.name:"*Promo*" OR subtypes:PROMO OR set.name:"*POP Series*" OR set.name:"*McDonald*")'
+
+// Human-readable labels for each language code
+const LANG_LABELS = {
+  'en':    '🇺🇸 English',
+  'ja':    '🇯🇵 Japanese',
+  'fr':    '🇫🇷 French',
+  'de':    '🇩🇪 German',
+  'zh-tw': '🇹🇼 Chinese (TW)',
+  'zh-cn': '🇨🇳 Chinese (CN)',
+  'zh':    '🇨🇳 Chinese',
+}
+
+// Ordered list of known language prefixes (longest first to avoid zh matching zh-tw)
+const LANG_PREFIXES = ['zh-tw', 'zh-cn', 'zh', 'ja', 'fr', 'de', 'it', 'pt', 'ko', 'es']
+
+function getLangFromSetId(setId) {
+  for (const prefix of LANG_PREFIXES) {
+    if (setId.startsWith(prefix + '-')) return prefix
+  }
+  return 'en'
+}
 
 let setsCache = null   // in-memory reference to avoid re-parsing localStorage
 
@@ -53,37 +73,49 @@ async function fetchSets() {
 
   if (error) throw error
 
-  // Normalise snake_case → camelCase so grouping logic below is unchanged
   const sets = (rows ?? []).map(s => ({
     id:          s.id,
     name:        s.name,
     series:      s.series,
     releaseDate: s.release_date,
+    lang:        getLangFromSetId(s.id),
   }))
 
-  // Group ALL sets by series — promo/special sets go into a dedicated Promos group
-  const grouped = {}
+  // Group by language → series → sets
+  const byLang = {}
   for (const s of sets) {
+    if (!byLang[s.lang]) byLang[s.lang] = { grouped: {} }
     const n = s.name?.toLowerCase() ?? ''
     const isPromo = n.includes('promo') || n.includes('pop series') || n.includes('mcdonald')
     const key = isPromo ? PROMO_KEY : (s.series?.trim() || 'Other')
-    if (!grouped[key]) grouped[key] = []
-    grouped[key].push(s)
+    if (!byLang[s.lang].grouped[key]) byLang[s.lang].grouped[key] = []
+    byLang[s.lang].grouped[key].push(s)
   }
 
-  // Sort sets within each group newest → oldest
-  for (const key of Object.keys(grouped)) {
-    grouped[key].sort((a, b) => new Date(b.releaseDate) - new Date(a.releaseDate))
+  // Sort sets within each series newest → oldest; build series order per language
+  for (const lang of Object.keys(byLang)) {
+    const { grouped } = byLang[lang]
+    for (const key of Object.keys(grouped)) {
+      grouped[key].sort((a, b) => new Date(b.releaseDate) - new Date(a.releaseDate))
+    }
+    const mainOrder = Object.keys(grouped)
+      .filter(k => k !== PROMO_KEY)
+      .sort((a, b) => new Date(grouped[b][0].releaseDate) - new Date(grouped[a][0].releaseDate))
+    byLang[lang].order = grouped[PROMO_KEY]
+      ? [mainOrder[0], PROMO_KEY, ...mainOrder.slice(1)]
+      : mainOrder
   }
 
-  // Sort series headers by their newest set's releaseDate (newest series first)
-  // Pin Promos right after the most recent main series
-  const mainOrder = Object.keys(grouped)
-    .filter(k => k !== PROMO_KEY)
-    .sort((a, b) => new Date(grouped[b][0].releaseDate) - new Date(grouped[a][0].releaseDate))
-  const order = grouped[PROMO_KEY] ? [mainOrder[0], PROMO_KEY, ...mainOrder.slice(1)] : mainOrder
+  // Language tab order: English first, then by set count descending
+  const langOrder = Object.keys(byLang).sort((a, b) => {
+    if (a === 'en') return -1
+    if (b === 'en') return 1
+    const countA = Object.values(byLang[a].grouped).flat().length
+    const countB = Object.values(byLang[b].grouped).flat().length
+    return countB - countA
+  })
 
-  setsCache = { grouped, order }
+  setsCache = { byLang, langOrder }
 
   // 4. Persist to localStorage for next page load
   try {
@@ -97,7 +129,8 @@ async function fetchSets() {
 function AestheticFilter({ active, onChange, setQuery, onSetQuery, user }) {
   const [setsOpen,       setSetsOpen]       = useState(false)
   const [vibesOpen,      setVibesOpen]      = useState(false)
-  const [setGroups,      setSetGroups]      = useState({ grouped: {}, order: [] })
+  const [setGroups,      setSetGroups]      = useState({ byLang: {}, langOrder: [] })
+  const [activeLang,     setActiveLang]     = useState('en')
   const [expandedSeries, setExpandedSeries] = useState(null)
   const [loadingSets,    setLoadingSets]    = useState(false)
 
@@ -254,8 +287,7 @@ function AestheticFilter({ active, onChange, setQuery, onSetQuery, user }) {
             exit={{ opacity: 0, height: 0 }}
             className="overflow-hidden"
           >
-            <div className="mt-2 pt-2 max-h-64 overflow-y-auto border-t border-white/40
-                            scrollbar-thin space-y-0.5 px-1">
+            <div className="mt-2 pt-2 border-t border-white/40">
 
               {loadingSets && (
                 <div className="flex items-center justify-center gap-2 py-4 text-pink-400 text-xs font-medium">
@@ -268,75 +300,97 @@ function AestheticFilter({ active, onChange, setQuery, onSetQuery, user }) {
                 </div>
               )}
 
-              {setGroups.order.map(series => {
-                const sets        = setGroups.grouped[series] ?? []
-                const isExpanded  = expandedSeries === series
-                const seriesQ     = series === PROMO_KEY ? PROMO_QUERY : `set.series:"${series}"`
-                const isSeriesAct = activeSeriesQuery === seriesQ
+              {/* Language tabs */}
+              {!loadingSets && setGroups.langOrder.length > 0 && (
+                <div className="flex flex-wrap gap-1 pb-2 px-1">
+                  {setGroups.langOrder.map(lang => (
+                    <button
+                      key={lang}
+                      onClick={() => { setActiveLang(lang); setExpandedSeries(null) }}
+                      className={`px-2.5 py-1 rounded-full text-xs font-semibold transition-all
+                        ${activeLang === lang
+                          ? 'bg-blue-500 text-white shadow-sm'
+                          : 'bg-white/60 text-gray-500 hover:bg-blue-50 hover:text-blue-600'
+                        }`}
+                    >
+                      {LANG_LABELS[lang] ?? lang}
+                    </button>
+                  ))}
+                </div>
+              )}
 
-                return (
-                  <div key={series}>
-                    <div className="flex items-center gap-1">
-                      <motion.button
-                        whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
-                        onClick={() => handleSeriesClick(series)}
-                        className={`flex-1 text-left px-3 py-1.5 rounded-xl text-xs font-semibold transition-all
-                          ${isSeriesAct
-                            ? 'bg-sky-200 text-sky-700'
-                            : 'text-gray-600 hover:bg-sky-50 hover:text-sky-600'
-                          }`}
-                      >
-                        {series}
-                        <span className="ml-1 text-gray-400 font-normal">({sets.length})</span>
-                      </motion.button>
-                      <button
-                        onClick={() => setExpandedSeries(isExpanded ? null : series)}
-                        className="p-1 text-gray-400 hover:text-sky-500 transition-colors"
-                      >
-                        <motion.span
-                          animate={{ rotate: isExpanded ? 90 : 0 }}
-                          transition={{ duration: 0.15 }}
-                          className="inline-block text-xs leading-none"
+              {/* Series list for active language */}
+              <div className="max-h-56 overflow-y-auto scrollbar-thin space-y-0.5 px-1">
+                {(setGroups.byLang[activeLang]?.order ?? []).map(series => {
+                  const sets        = setGroups.byLang[activeLang]?.grouped[series] ?? []
+                  const isExpanded  = expandedSeries === series
+                  const seriesQ     = series === PROMO_KEY ? PROMO_QUERY : `set.series:"${series}"`
+                  const isSeriesAct = activeSeriesQuery === seriesQ
+
+                  return (
+                    <div key={series}>
+                      <div className="flex items-center gap-1">
+                        <motion.button
+                          whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
+                          onClick={() => handleSeriesClick(series)}
+                          className={`flex-1 text-left px-3 py-1.5 rounded-xl text-xs font-semibold transition-all
+                            ${isSeriesAct
+                              ? 'bg-sky-200 text-sky-700'
+                              : 'text-gray-600 hover:bg-sky-50 hover:text-sky-600'
+                            }`}
                         >
-                          ▶
-                        </motion.span>
-                      </button>
+                          {series}
+                          <span className="ml-1 text-gray-400 font-normal">({sets.length})</span>
+                        </motion.button>
+                        <button
+                          onClick={() => setExpandedSeries(isExpanded ? null : series)}
+                          className="p-1 text-gray-400 hover:text-sky-500 transition-colors"
+                        >
+                          <motion.span
+                            animate={{ rotate: isExpanded ? 90 : 0 }}
+                            transition={{ duration: 0.15 }}
+                            className="inline-block text-xs leading-none"
+                          >
+                            ▶
+                          </motion.span>
+                        </button>
+                      </div>
+
+                      <AnimatePresence>
+                        {isExpanded && (
+                          <motion.div
+                            initial={{ opacity: 0, height: 0 }}
+                            animate={{ opacity: 1, height: 'auto' }}
+                            exit={{ opacity: 0, height: 0 }}
+                            className="overflow-hidden pl-3"
+                          >
+                            <div className="flex flex-wrap gap-1 py-1.5">
+                              {sets.map(set => {
+                                const setQ     = `set.id:${set.id}`
+                                const isActive = activeSetQuery === setQ
+                                return (
+                                  <motion.button
+                                    key={set.id}
+                                    whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.96 }}
+                                    onClick={() => handleSetClick(set.id)}
+                                    className={`px-2.5 py-1 rounded-full text-xs transition-all shadow-sm
+                                      ${isActive
+                                        ? 'bg-pink-300 text-pink-800 font-semibold ring-1 ring-pink-400'
+                                        : 'bg-white/70 text-gray-500 hover:bg-pink-50 hover:text-pink-600'
+                                      }`}
+                                  >
+                                    {set.name}
+                                  </motion.button>
+                                )
+                              })}
+                            </div>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
                     </div>
-
-                    <AnimatePresence>
-                      {isExpanded && (
-                        <motion.div
-                          initial={{ opacity: 0, height: 0 }}
-                          animate={{ opacity: 1, height: 'auto' }}
-                          exit={{ opacity: 0, height: 0 }}
-                          className="overflow-hidden pl-3"
-                        >
-                          <div className="flex flex-wrap gap-1 py-1.5">
-                            {sets.map(set => {
-                              const setQ     = `set.id:${set.id}`
-                              const isActive = activeSetQuery === setQ
-                              return (
-                                <motion.button
-                                  key={set.id}
-                                  whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.96 }}
-                                  onClick={() => handleSetClick(set.id)}
-                                  className={`px-2.5 py-1 rounded-full text-xs transition-all shadow-sm
-                                    ${isActive
-                                      ? 'bg-pink-300 text-pink-800 font-semibold ring-1 ring-pink-400'
-                                      : 'bg-white/70 text-gray-500 hover:bg-pink-50 hover:text-pink-600'
-                                    }`}
-                                >
-                                  {set.name}
-                                </motion.button>
-                              )
-                            })}
-                          </div>
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
-                  </div>
-                )
-              })}
+                  )
+                })}
+              </div>
             </div>
           </motion.div>
         )}

@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
+import CardLists from './CardLists'
 import { motion, AnimatePresence } from 'framer-motion'
 import { supabase } from '../lib/supabase'
 import { fetchAllRows } from '../lib/fetchAllRows'
@@ -856,6 +857,7 @@ function WishlistCardModal({
   user, onToast,
   onEditionChange, onConditionChange,
   onMoveToWishlist, onSold, onTraded,
+  onToggleFavorite, favAtMax,
 }) {
   const versionLabel = editionLabel(item.edition)
   const [tagInput,  setTagInput]  = useState('')
@@ -866,6 +868,13 @@ function WishlistCardModal({
   const [tradeConfirm,  setTradeConfirm]  = useState(false)
   const [tradeSaving,   setTradeSaving]   = useState(false)
   const [movingBack,    setMovingBack]    = useState(false)
+  const [suggestedPrice, setSuggestedPrice] = useState(null)
+
+  useEffect(() => {
+    supabase.rpc('get_suggested_price', { p_card_id: item.card_id }).then(({ data }) => {
+      if (data?.[0]) setSuggestedPrice(data[0])
+    })
+  }, [item.card_id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   function addTag() {
     const t = tagInput.trim()
@@ -945,6 +954,25 @@ function WishlistCardModal({
         initial={{ scale: 0.85, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.85, opacity: 0 }}
         onClick={e => e.stopPropagation()}
       >
+        {/* ── Favourite star — top-left, opposite the ✕ ── */}
+        {item.owned && (
+          <button
+            onClick={() => !favAtMax && onToggleFavorite?.(item.id, item.is_favorite)}
+            disabled={favAtMax && !item.is_favorite}
+            className={`absolute top-4 left-4 z-10 w-8 h-8 rounded-full flex items-center
+                       justify-center text-sm shadow-sm transition-all leading-none
+                       ${item.is_favorite
+                         ? 'bg-indigo-400 text-white'
+                         : favAtMax
+                           ? 'bg-white/70 text-gray-200 cursor-not-allowed'
+                           : 'bg-white/70 text-gray-300 hover:bg-indigo-100 hover:text-indigo-400'
+                       }`}
+            title={item.is_favorite ? 'Remove from favourites' : favAtMax ? 'Max 3 favourites' : 'Add to favourites'}
+          >
+            {item.is_favorite ? '★' : '☆'}
+          </button>
+        )}
+
         <button
           onClick={onClose}
           className="absolute top-4 right-4 z-10 w-8 h-8 rounded-full bg-white/70 hover:bg-white
@@ -979,6 +1007,25 @@ function WishlistCardModal({
                 </span>
               </div>
             ))}
+          </div>
+        )}
+
+        {/* ── Community Suggested Price ── */}
+        {suggestedPrice && (
+          <div className="mb-4 rounded-2xl overflow-hidden border border-emerald-100 bg-emerald-50">
+            <div className="flex items-center justify-between px-3 pt-2.5 pb-2.5">
+              <div>
+                <p className="text-[10px] font-semibold text-emerald-600 uppercase tracking-wide">
+                  Community Price
+                </p>
+                <p className="text-[10px] text-emerald-500 normal-case">
+                  median of {suggestedPrice.contributor_count} trainer{suggestedPrice.contributor_count !== 1 ? 's' : ''}
+                </p>
+              </div>
+              <span className="text-xl font-bold text-emerald-700">
+                ${Number(suggestedPrice.median_price).toFixed(2)}
+              </span>
+            </div>
           </div>
         )}
 
@@ -1166,7 +1213,7 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
   const [isPublic,  setIsPublic]  = useState(false)
   const [toggling,  setToggling]  = useState(false)
   const [copied,    setCopied]    = useState(false)
-  const [activeTab,        setActiveTab]        = useState(initialTab)  // 'collection' | 'wishlist' | 'binder' | 'trainers' | 'followers'
+  const [activeTab,        setActiveTab]        = useState(initialTab)  // 'collection' | 'wishlist' | 'binder' | 'lists' | 'trainers' | 'followers'
   const [followedTrainers, setFollowedTrainers] = useState([])
   const [followers,        setFollowers]        = useState([])  // users who follow me
   // 1st Edition is determined by card_id suffix ("-1st") — no toggle, no runtime Sets needed
@@ -1195,6 +1242,8 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
   const [wishlistPage,   setWishlistPage]   = useState(1)
   const [cardSearch,     setCardSearch]     = useState('')
   const [cardSort,       setCardSort]       = useState('newest')  // 'newest' | 'oldest'
+  const [showDupes,      setShowDupes]      = useState(true)   // true = one tile per copy; false = one tile per card
+  const [virtualSlots,   setVirtualSlots]   = useState({})     // virtualCopyId → slot_index (persists across re-renders)
   const [tagFilter,     setTagFilter]     = useState(null)  // null = all, string = specific tag
   const [tileTagInputs, setTileTagInputs] = useState({})    // rowId → current inline tag input value
   const [soldModal,     setSoldModal]     = useState(null)  // item object when active
@@ -1210,6 +1259,9 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
 
   // Notify App whenever the active binder changes (so CardGrid can route new cards here)
   useEffect(() => { onBinderChange?.(selectedBinder?.id ?? null) }, [selectedBinder])
+
+  // Reset virtual slot positions whenever the binder or dupes mode changes
+  useEffect(() => { setVirtualSlots({}) }, [selectedBinder?.id, showDupes])
 
   const shareUrl = `${window.location.origin}/share/${user?.id}`
 
@@ -1389,6 +1441,60 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
     if (tagFilter) filtered = filtered.filter(i => (i.tags ?? []).includes(tagFilter))
     return cardSort === 'oldest' ? [...filtered].reverse() : filtered
   }, [ownedItemsList, cardSearch, cardSort, tagFilter])
+
+  // Expand each owned item by its quantity so that quantity=3 shows as 3 tiles.
+  // _isExpanded: true → this tile is one physical copy of a multi-copy row.
+  const expandedOwnedItems = useMemo(() =>
+    filteredOwnedItems.flatMap(item => {
+      const qty = item.quantity || 1
+      if (qty <= 1) return [{ ...item, _key: item.id, _copyIndex: 1, _totalCopies: 1, _isExpanded: false }]
+      return Array.from({ length: qty }, (_, i) => ({
+        ...item,
+        _key:         `${item.id}-copy-${i}`,
+        _copyIndex:   i + 1,
+        _totalCopies: qty,
+        _isExpanded:  true,
+      }))
+    }),
+  [filteredOwnedItems])
+
+  // Total physical copies across all owned rows (used in the Collection tab badge)
+  const totalCopies = useMemo(
+    () => ownedItemsList.reduce((acc, i) => acc + (i.quantity || 1), 0),
+    [ownedItemsList]
+  )
+
+  // collectionDisplayItems: expanded when showDupes ON, one tile per row when OFF
+  const collectionDisplayItems = useMemo(() =>
+    showDupes
+      ? expandedOwnedItems
+      : filteredOwnedItems.map(item => ({ ...item, _key: item.id, _copyIndex: 1, _totalCopies: 1, _isExpanded: false })),
+  [showDupes, expandedOwnedItems, filteredOwnedItems])
+
+  // binderDisplayItems: raw binder items expanded by quantity when showDupes ON
+  const binderRawItems = useMemo(() =>
+    items.filter(i => i.owned && i.binder_id === selectedBinder?.id),
+  [items, selectedBinder?.id])
+
+  const binderDisplayItems = useMemo(() => {
+    if (!showDupes) return binderRawItems
+    return binderRawItems.flatMap(item => {
+      const qty = item.quantity || 1
+      if (qty <= 1) return [{ ...item, _sourceId: item.id, _copyIndex: 0, _totalCopies: 1, _isExpanded: false }]
+      return Array.from({ length: qty }, (_, i) => {
+        const copyId = i === 0 ? item.id : `${item.id}-copy-${i}`
+        return {
+          ...item,
+          id:           copyId,
+          slot_index:   i === 0 ? item.slot_index : (virtualSlots[copyId] ?? null),
+          _sourceId:    item.id,
+          _copyIndex:   i,
+          _totalCopies: qty,
+          _isExpanded:  true,
+        }
+      })
+    })
+  }, [binderRawItems, showDupes, virtualSlots])
 
   const filteredWishlistItems = useMemo(() => {
     const q = cardSearch.trim().toLowerCase()
@@ -1819,6 +1925,20 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
     onToast('Removed ✕')
   }
 
+  // Remove one physical copy from a multi-copy row.
+  // Decrements quantity by 1; removes the row when it reaches 0.
+  async function removeOneCopy(item) {
+    const qty = item.quantity || 1
+    if (qty <= 1) {
+      await removeCard(item)
+    } else {
+      const next = qty - 1
+      setItems(prev => prev.map(i => i.id === item.id ? { ...i, quantity: next } : i))
+      await supabase.from('wishlists').update({ quantity: next }).eq('id', item.id)
+      onToast(`Removed 1 copy · ${next} remaining`)
+    }
+  }
+
   async function createBinder(name, color) {
     const payload = {
       user_id:    user.id,   // required by RLS policy: auth.uid() = user_id
@@ -1890,10 +2010,64 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
   // Called by BinderView whenever cards are swapped so items state stays current.
   // Without this, moveCardToBinder would read stale slot_indices and mis-place cards.
   function handleSlotsSwapped(swaps) {
-    setItems(prev => prev.map(item => {
-      const swap = swaps.find(s => s.id === item.id)
-      return swap ? { ...item, slot_index: swap.slot_index } : item
+    const realItemIds = new Set(items.map(i => i.id))
+    const realSwaps    = swaps.filter(s => realItemIds.has(s.id))
+    const virtualSwaps = swaps.filter(s => !realItemIds.has(s.id))
+
+    // Only call setItems when real rows actually changed — avoids a spurious
+    // recompute of binderDisplayItems that would reset virtual copy positions.
+    if (realSwaps.length) {
+      setItems(prev => prev.map(item => {
+        const swap = realSwaps.find(s => s.id === item.id)
+        return swap ? { ...item, slot_index: swap.slot_index } : item
+      }))
+    }
+
+    // Track virtual copy positions in a separate state map so they survive
+    // re-renders triggered by other state changes.
+    if (virtualSwaps.length) {
+      setVirtualSlots(prev => {
+        const next = { ...prev }
+        for (const s of virtualSwaps) next[s.id] = s.slot_index
+        return next
+      })
+    }
+  }
+
+  // Called by BinderView when the user clicks the ✕ on an empty page.
+  // Shifts slot_index of all cards on pages after the deleted page down by -slotsPerPage.
+  async function handleDeletePage(pageNumber) {
+    const SLOTS_PER_PAGE = binderSlotsPerPage.current
+    const threshold      = pageNumber * SLOTS_PER_PAGE   // first slot of the page AFTER deleted one
+    const binderId       = selectedBinder?.id
+    if (!binderId) return
+
+    const affected = items.filter(
+      i => i.binder_id === binderId && i.owned && (i.slot_index ?? 0) >= threshold
+    )
+
+    // Optimistic update for real rows
+    setItems(prev => prev.map(i => {
+      const hit = affected.find(a => a.id === i.id)
+      return hit ? { ...i, slot_index: (hit.slot_index ?? 0) - SLOTS_PER_PAGE } : i
     }))
+
+    // Shift any virtual copy positions that fall at or past the threshold
+    setVirtualSlots(prev => {
+      const next = { ...prev }
+      for (const [id, slot] of Object.entries(next)) {
+        if (slot >= threshold) next[id] = slot - SLOTS_PER_PAGE
+      }
+      return next
+    })
+
+    // Persist
+    await Promise.all(affected.map(i =>
+      supabase.from('wishlists')
+        .update({ slot_index: (i.slot_index ?? 0) - SLOTS_PER_PAGE })
+        .eq('id', i.id)
+    ))
+    onToast(`Empty page ${pageNumber} removed 🗑`)
   }
 
   // Called by BinderView when the user clicks "Insert page above/below page N".
@@ -1912,13 +2086,25 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
     const affected = items.filter(
       i => i.binder_id === binderId && i.owned && (i.slot_index ?? 0) >= threshold
     )
-    if (!affected.length) return
+    if (!affected.length) {
+      onToast('No cards to shift — all cards are before this point')
+      return
+    }
 
-    // Optimistic update
+    // Optimistic update for real rows
     setItems(prev => prev.map(i => {
       const hit = affected.find(a => a.id === i.id)
       return hit ? { ...i, slot_index: (hit.slot_index ?? 0) + SLOTS_PER_PAGE } : i
     }))
+
+    // Shift any virtual copy positions at or past the threshold
+    setVirtualSlots(prev => {
+      const next = { ...prev }
+      for (const [id, slot] of Object.entries(next)) {
+        if (slot >= threshold) next[id] = slot + SLOTS_PER_PAGE
+      }
+      return next
+    })
 
     // Persist all shifts
     await Promise.all(affected.map(i =>
@@ -1962,11 +2148,24 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
       ...onPageB.map(i => ({ id: i.id, slot_index: (i.slot_index ?? 0) - delta })),
     ]
 
-    // Optimistic update
+    // Optimistic update for real rows
     setItems(prev => prev.map(i => {
       const u = updates.find(u => u.id === i.id)
       return u ? { ...i, slot_index: u.slot_index } : i
     }))
+
+    // Swap virtual copy positions between the two pages
+    setVirtualSlots(prev => {
+      const next = { ...prev }
+      for (const [id, slot] of Object.entries(next)) {
+        if (slot >= slotA_start && slot <= slotA_end) {
+          next[id] = slot + delta   // page A → page B position
+        } else if (slot >= slotB_start && slot <= slotB_end) {
+          next[id] = slot - delta   // page B → page A position
+        }
+      }
+      return next
+    })
 
     await Promise.all(updates.map(u =>
       supabase.from('wishlists').update({ slot_index: u.slot_index }).eq('id', u.id)
@@ -2009,6 +2208,26 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
     const firstEmpty = occupied.indexOf(false)
     // All slots full → extend into the first slot of the next page
     return firstEmpty === -1 ? totalSlots : firstEmpty
+  }
+
+  // Handles onTransfer from BinderView — routes virtual copies to removeOneCopy
+  function handleBinderTransfer(itemId, targetBinderId) {
+    const item = binderDisplayItems.find(i => i.id === itemId)
+    if (item?._isExpanded) {
+      // Virtual copy — decrement quantity (effectively removes one copy from the binder)
+      removeOneCopy({ ...item, id: item._sourceId })
+    } else {
+      moveCardToBinder(itemId, targetBinderId)
+    }
+  }
+
+  // Handles onRemoveFromCollection from BinderView for virtual copies
+  function handleBinderRemoveFromCollection(item) {
+    if (item._isExpanded) {
+      removeOneCopy({ ...item, id: item._sourceId })
+    } else {
+      removeCard(item)
+    }
   }
 
   async function moveCardToBinder(rowId, binderId) {
@@ -2077,7 +2296,7 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
   // ── Shared card tile — used by both Collection and Wishlist grids ────────────
   const renderTile = (item) => (
     <motion.div
-      key={item.id}
+      key={item._key ?? item.id}
       layout
       variants={{ hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0 } }}
       exit={{ opacity: 0, scale: 0.85 }}
@@ -2107,11 +2326,11 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
       })()}
 
       <button
-        onClick={() => removeCard(item)}
+        onClick={() => item._isExpanded ? removeOneCopy(item) : removeCard(item)}
         className="absolute top-1.5 right-1.5 z-10 w-6 h-6 rounded-full bg-white/70
                    text-gray-400 hover:text-red-400 hover:bg-white text-xs leading-none
                    flex items-center justify-center shadow-sm transition-colors"
-        title="Remove this edition"
+        title={item._isExpanded ? `Remove copy ${item._copyIndex} of ${item._totalCopies}` : 'Remove this edition'}
       >✕</button>
 
       <div className="relative">
@@ -2123,11 +2342,18 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
           onClick={() => setSelectedItem(item)}
           onError={e => { e.currentTarget.src = 'https://images.pokemontcg.io/cardback.jpg' }}
         />
-        {item.owned && (item.quantity || 1) > 1 && (
-          <span className="absolute bottom-1.5 right-1.5 text-[11px] font-bold bg-emerald-500 text-white
-                           px-1.5 py-0.5 rounded-full shadow leading-none">
-            ×{item.quantity}
-          </span>
+        {item.owned && (
+          item._isExpanded
+            ? <span className="absolute bottom-1.5 right-1.5 text-[11px] font-bold bg-emerald-500 text-white
+                               px-1.5 py-0.5 rounded-full shadow leading-none">
+                {item._copyIndex}/{item._totalCopies}
+              </span>
+            : (item.quantity || 1) > 1
+              ? <span className="absolute bottom-1.5 right-1.5 text-[11px] font-bold bg-emerald-500 text-white
+                                 px-1.5 py-0.5 rounded-full shadow leading-none">
+                  ×{item.quantity}
+                </span>
+              : null
         )}
       </div>
 
@@ -2260,7 +2486,7 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
           </motion.button>
         )}
 
-        {item.owned && (
+        {item.owned && !item._isExpanded && (
           <div className="flex items-center justify-center gap-2 mt-1.5">
             <button
               onClick={() => updateQuantity(item.id, item.card_id, -1)}
@@ -2419,6 +2645,12 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
             action:   () => { setActiveTab('binder'); setCollectionPage(1); setWishlistPage(1) },
           },
           {
+            id:       'lists',
+            label:    'Lists 📋',
+            isActive: activeTab === 'lists',
+            action:   () => { setActiveTab('lists'); setCollectionPage(1); setWishlistPage(1) },
+          },
+          {
             id:       'trainers',
             label:    `Following 👥${followedTrainers.length ? ` · ${followedTrainers.length}` : ''}`,
             isActive: activeTab === 'trainers',
@@ -2501,7 +2733,7 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
               📦 Collection
               <span className={`text-[11px] font-bold px-1.5 py-0.5 rounded-full leading-none
                 ${activeTab === 'collection' ? 'bg-white/30 text-white' : 'bg-emerald-100 text-emerald-600'}`}>
-                {ownedCount}
+                {totalCopies !== ownedCount ? totalCopies : ownedCount}
               </span>
             </motion.button>
             <motion.button
@@ -2541,26 +2773,51 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
             )}
           </div>
 
-          {/* Sort toggle */}
-          <div className="flex items-center gap-1.5">
-            <span className="text-xs font-medium" style={{ color: 'var(--app-text)', opacity: 0.6 }}>Sort:</span>
-            {[
-              { id: 'newest', label: 'Newest first' },
-              { id: 'oldest', label: 'Oldest first' },
-            ].map(opt => (
-              <motion.button
-                key={opt.id}
-                whileTap={{ scale: 0.95 }}
-                onClick={() => { setCardSort(opt.id); setCollectionPage(1); setWishlistPage(1) }}
-                className={`text-xs font-semibold px-3 py-1 rounded-full border transition-all
-                  ${cardSort === opt.id
-                    ? 'bg-pink-400 text-white border-pink-400'
-                    : 'bg-white/60 text-gray-500 border-gray-200 hover:bg-white/80'
-                  }`}
+          {/* Sort toggle + Dupes toggle */}
+          <div className="flex items-center justify-between gap-2">
+            {/* Left — sort pills */}
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs font-medium" style={{ color: 'var(--app-text)', opacity: 0.6 }}>Sort:</span>
+              {[
+                { id: 'newest', label: 'Newest first' },
+                { id: 'oldest', label: 'Oldest first' },
+              ].map(opt => (
+                <motion.button
+                  key={opt.id}
+                  whileTap={{ scale: 0.95 }}
+                  onClick={() => { setCardSort(opt.id); setCollectionPage(1); setWishlistPage(1) }}
+                  className={`text-xs font-semibold px-3 py-1 rounded-full border transition-all
+                    ${cardSort === opt.id
+                      ? 'bg-pink-400 text-white border-pink-400'
+                      : 'bg-white/60 text-gray-500 border-gray-200 hover:bg-white/80'
+                    }`}
+                >
+                  {opt.label}
+                </motion.button>
+              ))}
+            </div>
+
+            {/* Right — dupes toggle (collection tab only) */}
+            {activeTab === 'collection' && (
+              <button
+                onClick={() => { setShowDupes(v => !v); setCollectionPage(1) }}
+                className="flex items-center gap-2 text-xs font-semibold text-gray-500 hover:text-gray-700 transition-colors select-none"
+                title={showDupes ? 'Collapse duplicates into one tile' : 'Expand duplicates into separate tiles'}
               >
-                {opt.label}
-              </motion.button>
-            ))}
+                <span>Dupes</span>
+                <span
+                  className={`relative inline-flex h-5 w-9 flex-shrink-0 items-center rounded-full
+                               transition-colors duration-200
+                               ${showDupes ? 'bg-emerald-400' : 'bg-gray-200'}`}
+                >
+                  <span
+                    className={`inline-block h-4 w-4 rounded-full bg-white shadow-sm
+                                 transform transition-transform duration-200
+                                 ${showDupes ? 'translate-x-4' : 'translate-x-0.5'}`}
+                  />
+                </span>
+              </button>
+            )}
           </div>
 
           {/* Tag filter pills — only show when any tags exist */}
@@ -2701,7 +2958,7 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
           {selectedBinder ? (
             <BinderView
               key={selectedBinder.id}
-              items={items.filter(i => i.owned && i.binder_id === selectedBinder.id)}
+              items={binderDisplayItems}
               user={user}
               initialTheme={{
                 coverColor: selectedBinder.cover_color ?? selectedBinder.color ?? '#a78bfa',
@@ -2709,13 +2966,14 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
               }}
               onThemeChange={theme => updateBinderTheme(selectedBinder.id, theme)}
               binders={binders}
-              onTransfer={moveCardToBinder}
+              onTransfer={handleBinderTransfer}
               currentBinderId={selectedBinder.id}
               onCardClick={setSelectedItem}
               onSlotsSwapped={handleSlotsSwapped}
-              onRemoveFromCollection={removeCard}
+              onRemoveFromCollection={handleBinderRemoveFromCollection}
               onInsertPage={handleInsertPage}
               onMovePage={handleMovePage}
+              onDeletePage={handleDeletePage}
               onSlotsPerPageChange={spp => { binderSlotsPerPage.current = spp }}
             />
           ) : (
@@ -2724,6 +2982,13 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
             </p>
           )}
         </>
+      )}
+
+      {/* ── Lists tab ─────────────────────────────────────────────── */}
+      {activeTab === 'lists' && (
+        <div className="max-w-2xl mx-auto">
+          <CardLists user={user} onToast={onToast} />
+        </div>
       )}
 
       {/* ── Followed trainers ──────────────────────────────────────── */}
@@ -2869,13 +3134,13 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
 
       {/* ── 📦 My Collection ────────────────────────────────────────── */}
       {ownedItemsList.length > 0 && (() => {
-        if (filteredOwnedItems.length === 0) return (
+        if (collectionDisplayItems.length === 0) return (
           <p className="text-center text-gray-300 font-semibold mt-8 mb-4">
             No cards match "{cardSearch}" ✨
           </p>
         )
-        const totalColPages   = Math.ceil(filteredOwnedItems.length / ITEMS_PER_PAGE)
-        const collectionSlice = filteredOwnedItems.slice(
+        const totalColPages   = Math.ceil(collectionDisplayItems.length / ITEMS_PER_PAGE)
+        const collectionSlice = collectionDisplayItems.slice(
           (collectionPage - 1) * ITEMS_PER_PAGE,
           collectionPage * ITEMS_PER_PAGE
         )
@@ -2986,6 +3251,11 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
             onToast={onToast}
             onEditionChange={(id, val) => updateEdition(id, val)}
             onConditionChange={(id, val) => saveCondition(id, val)}
+            onToggleFavorite={(id, current) => {
+              toggleFavorite(id, current)
+              setSelectedItem(prev => prev ? { ...prev, is_favorite: !current } : prev)
+            }}
+            favAtMax={!selectedItem?.is_favorite && items.filter(i => i.is_favorite).length >= 3}
             onMoveToWishlist={(rowId) => {
               const target = items.find(i => i.id === rowId)
               if (target) {

@@ -44,10 +44,12 @@ if (fs.existsSync(envPath)) {
   }
 }
 
-const SUPABASE_URL    = process.env.SUPABASE_URL      || process.env.VITE_SUPABASE_URL
-const SUPABASE_SVCKEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY
-const TCG_API_KEY     = process.env.VITE_TCG_API_KEY  || ''
-const EBAY_APP_ID     = process.env.EBAY_APP_ID       || ''
+const SUPABASE_URL      = process.env.SUPABASE_URL      || process.env.VITE_SUPABASE_URL
+const SUPABASE_SVCKEY   = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY
+const TCG_API_KEY       = process.env.VITE_TCG_API_KEY  || ''
+const EBAY_APP_ID       = process.env.EBAY_APP_ID       || ''  // legacy Finding API (unused)
+const EBAY_CLIENT_ID    = process.env.EBAY_CLIENT_ID    || ''
+const EBAY_CLIENT_SECRET= process.env.EBAY_CLIENT_SECRET|| ''
 
 if (!SUPABASE_URL || !SUPABASE_SVCKEY) {
   console.error('\nERROR: Missing Supabase credentials.')
@@ -119,48 +121,72 @@ function hasPriceData(row) {
   ].some(v => v != null)
 }
 
-// ── eBay fallback ─────────────────────────────────────────────────────────────
-// Uses the eBay Finding API (no OAuth required — just an App ID).
-// Averages the 10 most recent sold listings in category 183454 (Pokémon cards).
-// Sign up free at: https://developer.ebay.com/
-async function fetchEbayAvgPrice(cardName, setName) {
-  if (!EBAY_APP_ID) return null
+// ── eBay Browse API fallback ──────────────────────────────────────────────────
+// Uses the eBay Browse API (active listings) — the modern replacement for the
+// deprecated Finding API. Returns median asking price of ungraded listings.
+// Active listings ≠ sold prices, but for most cards they track closely.
+//
+// Prerequisites (.env):
+//   EBAY_CLIENT_ID     — eBay developer App Client ID
+//   EBAY_CLIENT_SECRET — eBay developer App Client Secret
+//   (Free account at https://developer.ebay.com/ → My Account → Application Keys)
 
-  const keywords = encodeURIComponent(`${cardName} ${setName} pokemon card`)
-  const url = [
-    'https://svcs.ebay.com/services/search/FindingService/v1',
-    '?OPERATION-NAME=findCompletedItems',
-    '&SERVICE-VERSION=1.0.0',
-    `&SECURITY-APPNAME=${EBAY_APP_ID}`,
-    '&RESPONSE-DATA-FORMAT=JSON',
-    `&keywords=${keywords}`,
-    '&categoryId=183454',
-    '&itemFilter(0).name=SoldItemsOnly',
-    '&itemFilter(0).value=true',
-    '&sortOrder=EndTimeSoonest',
-    '&paginationInput.entriesPerPage=10',
-  ].join('')
+let _ebayToken     = null
+let _ebayTokenExp  = 0
+
+async function getEbayToken() {
+  if (_ebayToken && Date.now() < _ebayTokenExp - 60_000) return _ebayToken
+  const creds = Buffer.from(`${EBAY_CLIENT_ID}:${EBAY_CLIENT_SECRET}`).toString('base64')
+  const res   = await fetch('https://api.ebay.com/identity/v1/oauth2/token', {
+    method:  'POST',
+    headers: { Authorization: `Basic ${creds}`, 'Content-Type': 'application/x-www-form-urlencoded' },
+    body:    'grant_type=client_credentials&scope=https%3A%2F%2Fapi.ebay.com%2Foauth%2Fapi_scope',
+  })
+  if (!res.ok) { console.error('\neBay token error:', res.status); return null }
+  const json     = await res.json()
+  _ebayToken    = json.access_token
+  _ebayTokenExp = Date.now() + (json.expires_in ?? 7200) * 1000
+  return _ebayToken
+}
+
+async function fetchEbayAvgPrice(cardName, setName) {
+  if (!EBAY_CLIENT_ID || !EBAY_CLIENT_SECRET) return null
+
+  const token = await getEbayToken()
+  if (!token) return null
+
+  // Include set name for uniquely-named sets (custom/JP sets), card name only for standard sets
+  const query = encodeURIComponent(`${cardName} ${setName} pokemon card`)
+  const url   = `https://api.ebay.com/buy/browse/v1/item_summary/search` +
+    `?q=${query}&category_ids=183454&limit=20` +
+    `&filter=buyingOptions%3A%7BFIXED_PRICE%7CAUCTION%7D`
 
   try {
-    const res  = await fetch(url)
-    if (!res.ok) { if (process.env.EBAY_DEBUG) console.error('\neBay HTTP', res.status, await res.text()); return null }
-    const json = await res.json()
-    // Debug: print the raw response for the first call to verify API shape
-    if (process.env.EBAY_DEBUG) console.log('\neBay sample response:', JSON.stringify(json).slice(0, 500))
-    const items = json
-      ?.findCompletedItemsResponse?.[0]
-      ?.searchResult?.[0]
-      ?.item ?? []
-
+    const res = await fetch(url, {
+      headers: { Authorization: `Bearer ${token}`, 'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US' },
+    })
+    if (res.status === 429) { await sleep(5000); return null }
+    if (!res.ok) {
+      if (process.env.EBAY_DEBUG) console.error('\neBay Browse API', res.status, await res.text())
+      return null
+    }
+    const json  = await res.json()
+    const items = json.itemSummaries ?? []
     if (!items.length) return null
 
-    // Average the current prices of sold listings (in USD)
-    const prices = items
-      .map(i => parseFloat(i.sellingStatus?.[0]?.currentPrice?.[0]?.__value__ ?? '0'))
+    const GRADE_RE = /\b(PSA|BGS|CGC|SGC)\b/i
+    const rawPrices = items
+      .filter(i => !GRADE_RE.test(i.title ?? ''))
+      .map(i => parseFloat(i.price?.value ?? '0'))
       .filter(p => p > 0)
-    if (!prices.length) return null
 
-    return prices.reduce((a, b) => a + b, 0) / prices.length
+    if (rawPrices.length < 3) return null
+
+    const sorted = [...rawPrices].sort((a, b) => a - b)
+    const mid    = Math.floor(sorted.length / 2)
+    return sorted.length % 2 === 0
+      ? (sorted[mid - 1] + sorted[mid]) / 2
+      : sorted[mid]
   } catch {
     return null
   }
@@ -264,7 +290,7 @@ async function poolMap(items, limit, fn) {
 
 // ── Step 3: eBay fallback for cards still missing prices ─────────────────────
 async function addEbayFallbacks(cards, tcgPriceMap) {
-  if (noEbay || !EBAY_APP_ID) return
+  if (noEbay || !EBAY_CLIENT_ID || !EBAY_CLIENT_SECRET) return
 
   const missing = cards.filter(c => !tcgPriceMap[c.id])
   if (!missing.length) { console.log('\nNo cards need eBay fallback.'); return }
@@ -308,7 +334,7 @@ async function upsertPrices(priceRows) {
 console.log('PokePop – Bulk Price Refresh')
 console.log(`Supabase URL:  ${SUPABASE_URL}`)
 console.log(`TCG API key:   ${TCG_API_KEY ? '✓ set' : '✗ not set (rate-limited to 1 req/s)'}`)
-console.log(`eBay App ID:   ${EBAY_APP_ID ? '✓ set' : '✗ not set (eBay fallback disabled)'}`)
+console.log(`eBay Browse:   ${(EBAY_CLIENT_ID && EBAY_CLIENT_SECRET) ? '✓ Client ID + Secret set' : '✗ not set (add EBAY_CLIENT_ID + EBAY_CLIENT_SECRET)'}`)
 if (setFilter)  console.log(`Set filter:    ${setFilter}`)
 if (staleOnly)  console.log(`Mode:          stale-only (> 7 days old or no price)`)
 if (noEbay)     console.log(`Mode:          no-ebay`)

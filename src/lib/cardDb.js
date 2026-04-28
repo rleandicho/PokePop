@@ -141,8 +141,9 @@ function normaliseCard(row) {
     mid_price:      row.holofoil_mid ?? row.normal_mid ?? row.other_mid ?? null,
     low_price:      row.holofoil_low ?? row.normal_low ?? row.other_low ?? null,
     price_updated_at: row.price_updated_at ?? null,
-    price_source:   row.price_source ?? null,   // 'tcgplayer' | 'ebay' | null
-    ebay_market:    row.ebay_market ?? null,
+    price_source:          row.price_source ?? null,   // 'tcgplayer' | 'pricecharting' | 'ebay' | null
+    ebay_market:           row.ebay_market ?? null,
+    pricecharting_market:  row.pricecharting_market ?? null,
     _is_wotc:       row.is_wotc ?? false,
     jp_image_small: row.jp_image_small ?? null,
     jp_image_large: row.jp_image_large ?? null,
@@ -197,13 +198,24 @@ export async function fetchCardsFromDb({ vibe, search, setQuery, sort, page = 1,
     q = q.eq('card_language', langFilter)
   }
 
-  // ── Apply name search ────────────────────────────────────────
-  // Search both the card's native name AND its normalized English name so that
-  // typing "Gengar" surfaces Chinese/Japanese exclusive variants whose english_name
-  // is "Gengar" even though their displayed name is in another script.
+  // ── Apply name/set search ────────────────────────────────────
+  // Supports three modes:
+  //   "Haunter 56"   → name contains "Haunter" AND number = "56"
+  //   "perfect order"→ name, english_name, OR set_name contains the phrase
+  //   "Gengar"       → name or english_name (surfaces JP/CN variants by english_name)
   if (search && search.trim()) {
     const s = search.trim()
-    q = q.or(`name.ilike.%${s}%,english_name.ilike.%${s}%`)
+    // Detect "name number" pattern — e.g. "Haunter 56", "Pikachu 25"
+    const nameNumMatch = s.match(/^(.+?)\s+(\d+)$/)
+    if (nameNumMatch) {
+      const namePart   = nameNumMatch[1].trim()
+      const numberPart = nameNumMatch[2]
+      q = q.or(`name.ilike.%${namePart}%,english_name.ilike.%${namePart}%`)
+      q = q.eq('number', numberPart)
+    } else {
+      // Regular search: name, english_name, or set_name
+      q = q.or(`name.ilike.%${s}%,english_name.ilike.%${s}%,set_name.ilike.%${s}%`)
+    }
   }
 
   // ── Apply sort + pagination ──────────────────────────────────

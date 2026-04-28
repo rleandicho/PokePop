@@ -19,6 +19,11 @@ Create a `.env` file at the project root with:
 ```
 VITE_SUPABASE_URL=...
 VITE_SUPABASE_ANON_KEY=...
+SUPABASE_SERVICE_ROLE_KEY=...   # for seeder scripts
+VITE_TCG_API_KEY=...            # pokemontcg.io key (optional, increases rate limit)
+EBAY_CLIENT_ID=...              # eBay developer Client ID (Browse API, free at developer.ebay.com)
+EBAY_CLIENT_SECRET=...          # eBay developer Client Secret
+PRICECHARTING_API_KEY=...       # free key from pricecharting.com/api
 ```
 
 ## Architecture

@@ -344,7 +344,7 @@ function CardSlot({ item, isSelected, pageStyle, onClick, binders, onTransfer, c
 }
 
 // ─── Single binder page ────────────────────────────────────────────────────────
-function BinderPage({ slots, cols, pageNumber, theme, selectedIdx, pageOffset, onSlotClick, binders, onTransfer, currentBinderId, readOnly, onCardClick, onRemoveFromCollection, onInsertPage, onMovePage, isLast }) {
+function BinderPage({ slots, cols, pageNumber, theme, selectedIdx, pageOffset, onSlotClick, binders, onTransfer, currentBinderId, readOnly, onCardClick, onRemoveFromCollection, onInsertPage, onMovePage, onDeletePage, isLast }) {
   const { coverColor, pageStyle } = theme
   const dark = pageStyle === 'black'
 
@@ -355,18 +355,24 @@ function BinderPage({ slots, cols, pageNumber, theme, selectedIdx, pageOffset, o
   const dividerColor    = dark ? 'rgba(255,255,255,0.06)' : hexAlpha(coverColor, 0.15)
   const pageNumColor    = dark ? 'rgba(255,255,255,0.2)' : 'rgba(156,163,175,0.8)'
 
-  const insertBtn = (dir) => !readOnly && onInsertPage && (
-    <button
-      onClick={() => onInsertPage(pageNumber, dir)}
-      className="flex items-center gap-1 mx-auto px-3 py-1 rounded-full
-                 text-[10px] font-semibold text-gray-400 hover:text-violet-500
-                 bg-white/50 hover:bg-violet-50 border border-dashed border-gray-200
-                 hover:border-violet-300 transition-all opacity-0 group-hover:opacity-100"
-      title={dir === 'before' ? `Insert blank page before page ${pageNumber}` : `Insert blank page after page ${pageNumber}`}
-    >
-      {dir === 'before' ? '↑ Insert page above' : '↓ Insert page below'}
-    </button>
-  )
+  const insertBtn = (dir) => {
+    // "Insert below" on the last page has no cards to shift — hide it
+    if (!readOnly && onInsertPage && !(dir === 'after' && isLast)) {
+      return (
+        <button
+          onClick={() => onInsertPage(pageNumber, dir)}
+          className="flex items-center gap-1 mx-auto px-3 py-1 rounded-full
+                     text-[10px] font-semibold text-gray-400 hover:text-violet-500
+                     bg-white/50 hover:bg-violet-50 border border-dashed border-gray-200
+                     hover:border-violet-300 transition-all opacity-0 group-hover:opacity-100"
+          title={dir === 'before' ? `Insert blank page before page ${pageNumber}` : `Insert blank page after page ${pageNumber}`}
+        >
+          {dir === 'before' ? '↑ Insert page above' : '↓ Insert page below'}
+        </button>
+      )
+    }
+    return null
+  }
 
   return (
     <motion.div
@@ -433,6 +439,16 @@ function BinderPage({ slots, cols, pageNumber, theme, selectedIdx, pageOffset, o
                 style={{ color: pageNumColor }}
                 title="Move page down"
               >↓</button>
+              {/* Delete page — only shown when every slot is empty */}
+              {onDeletePage && slots.every(s => s === null) && (
+                <button
+                  onClick={() => onDeletePage(pageNumber)}
+                  className="w-5 h-5 rounded-full flex items-center justify-center text-[10px]
+                             transition-all hover:bg-red-50 hover:text-red-400"
+                  style={{ color: pageNumColor }}
+                  title="Delete this empty page"
+                >✕</button>
+              )}
             </div>
           ) : <div />}
           <p
@@ -580,7 +596,7 @@ function ThemeControls({ theme, onThemeChange, binderSize, onSizeChange }) {
 }
 
 // ─── Main BinderView ──────────────────────────────────────────────────────────
-export default function BinderView({ items, user, readOnly = false, initialTheme, onThemeChange, binders, onTransfer, currentBinderId, onCardClick, onSlotsSwapped, onRemoveFromCollection, onInsertPage, onMovePage, onSlotsPerPageChange }) {
+export default function BinderView({ items, user, readOnly = false, initialTheme, onThemeChange, binders, onTransfer, currentBinderId, onCardClick, onSlotsSwapped, onRemoveFromCollection, onInsertPage, onMovePage, onDeletePage, onSlotsPerPageChange }) {
   const [binderSize,   setBinderSize]   = useState('3x3')
   const [theme,        setTheme]        = useState(initialTheme ?? DEFAULT_THEME)
   const [slotArray,    setSlotArray]    = useState([])
@@ -717,6 +733,7 @@ export default function BinderView({ items, user, readOnly = false, initialTheme
               onRemoveFromCollection={onRemoveFromCollection}
               onInsertPage={onInsertPage}
               onMovePage={onMovePage}
+              onDeletePage={onDeletePage}
               isLast={pageIdx === pages.length - 1}
             />
           ))}
