@@ -44,7 +44,7 @@ function useCountUp(target, duration = 1200) {
 }
 
 // ─── Stat card ────────────────────────────────────────────────────────────────
-function StatCard({ label, value, prefix = '', suffix = '', decimals = 0, color = 'pink', icon }) {
+function StatCard({ label, value, prefix = '', suffix = '', decimals = 0, color = 'pink', icon, onClick }) {
   const animated = useCountUp(value)
   const display  = decimals > 0 ? animated.toFixed(decimals) : Math.round(animated).toLocaleString()
 
@@ -55,17 +55,24 @@ function StatCard({ label, value, prefix = '', suffix = '', decimals = 0, color 
     lilac: 'from-violet-100/80 to-purple-100/60 border-purple-200',
   }
 
+  const Tag = onClick ? motion.button : motion.div
+
   return (
-    <motion.div
+    <Tag
       initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}
-      className={`stat-card h-full rounded-2xl border bg-gradient-to-br p-4 shadow-sm ${palette[color]}`}
+      onClick={onClick}
+      whileHover={onClick ? { scale: 1.03 } : undefined}
+      whileTap={onClick ? { scale: 0.97 } : undefined}
+      className={`stat-card h-full rounded-2xl border bg-gradient-to-br p-4 shadow-sm ${palette[color]}
+                  ${onClick ? 'cursor-pointer w-full text-left' : ''}`}
     >
       <p className="text-2xl mb-1">{icon}</p>
       <p className="text-xs text-gray-400 font-medium uppercase tracking-wide mb-0.5">{label}</p>
       <p className="text-2xl font-bold text-gray-700">
         {prefix}{display}{suffix}
       </p>
-    </motion.div>
+      {onClick && <p className="text-[10px] text-gray-300 mt-1">tap to view history</p>}
+    </Tag>
   )
 }
 
@@ -263,15 +270,19 @@ function PaginationBar({ currentPage, totalPages, onPageChange }) {
 }
 
 // ─── Trainer card (followed user preview) ────────────────────────────────────
-function MiniCardRow({ cards, emptyColor = 'pink', badge }) {
+function MiniCardRow({ cards, emptyColor = 'pink', badge, onCardClick }) {
   return (
     <div className="flex gap-1.5">
       {cards.map(card => (
-        <div key={card.card_id} className="flex-1 relative">
+        <div
+          key={card.card_id}
+          className={`flex-1 relative ${onCardClick ? 'cursor-pointer' : ''}`}
+          onClick={() => onCardClick?.(card)}
+        >
           <img
             src={card.image}
             alt={card.name}
-            className="w-full rounded-lg shadow-sm"
+            className="w-full rounded-lg shadow-sm hover:opacity-90 transition-opacity"
             loading="lazy"
           />
           {badge && getDisplayPrice(card) > 0 && (
@@ -300,7 +311,7 @@ function MiniCardRow({ cards, emptyColor = 'pink', badge }) {
   )
 }
 
-function TrainerCard({ trainer }) {
+function TrainerCard({ trainer, onCardClick }) {
   const shareUrl   = `${window.location.origin}/share/${trainer.id}`
   const initial    = trainer.username?.[0]?.toUpperCase() ?? '?'
   const topOwned   = trainer.topOwned   ?? []
@@ -327,7 +338,7 @@ function TrainerCard({ trainer }) {
           </p>
           <p className="text-xs text-gray-400">
             {topOwned.length > 0
-              ? `Top card: $${getDisplayPrice(topOwned[0]).toFixed(2)}`
+              ? `Highest-Value Card: $${getDisplayPrice(topOwned[0]).toFixed(2)}`
               : 'No owned cards yet'}
           </p>
         </div>
@@ -342,17 +353,17 @@ function TrainerCard({ trainer }) {
         </a>
       </div>
 
-      {/* Top Collection */}
+      {/* Highest Value */}
       <p className="text-[10px] font-semibold text-emerald-500 uppercase tracking-wide mb-1.5">
-        🏆 Top Collection
+        🏆 Highest Value
       </p>
-      <MiniCardRow cards={topOwned} emptyColor="emerald" badge />
+      <MiniCardRow cards={topOwned} emptyColor="emerald" badge onCardClick={onCardClick} />
 
-      {/* Most Wanted */}
+      {/* Recently Wishlisted */}
       <p className="text-[10px] font-semibold text-pink-400 uppercase tracking-wide mt-3 mb-1.5">
-        💖 Most Wanted
+        💜 Recently Wishlisted
       </p>
-      <MiniCardRow cards={topWishlist} emptyColor="pink" />
+      <MiniCardRow cards={topWishlist} emptyColor="pink" onCardClick={onCardClick} />
     </motion.div>
   )
 }
@@ -368,7 +379,7 @@ function SupportCard() {
       animate={{ opacity: 1, y: 0 }}
       whileHover={{ scale: 1.02 }}
       whileTap={{ scale: 0.98 }}
-      className="block rounded-2xl p-4 shadow-sm border border-amber-200 no-underline"
+      className="block support-card rounded-2xl p-4 shadow-sm border border-amber-200 no-underline"
       style={{
         background: 'linear-gradient(135deg, rgba(254,243,199,1) 0%, rgba(253,230,138,0.9) 50%, rgba(252,211,77,0.7) 100%)',
       }}
@@ -1016,6 +1027,11 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
   const [soldPrice,     setSoldPrice]     = useState('')
   const [salesTotal,    setSalesTotal]    = useState(0)
   const [tradeCount,    setTradeCount]    = useState(0)
+  const [salesHistory,       setSalesHistory]       = useState([])
+  const [tradesHistory,      setTradesHistory]      = useState([])
+  const [salesHistoryOpen,   setSalesHistoryOpen]   = useState(false)
+  const [tradesHistoryOpen,  setTradesHistoryOpen]  = useState(false)
+  const [selectedFollowedCard, setSelectedFollowedCard] = useState(null)
 
   // Notify App whenever the active binder changes (so CardGrid can route new cards here)
   useEffect(() => { onBinderChange?.(selectedBinder?.id ?? null) }, [selectedBinder])
@@ -1214,6 +1230,38 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
   async function saveCondition(rowId, condition) {
     setItems(prev => prev.map(i => i.id === rowId ? { ...i, condition } : i))
     await supabase.from('wishlists').update({ condition: condition || null }).eq('id', rowId)
+  }
+
+  async function openSalesHistory() {
+    const { data } = await supabase
+      .from('card_sales')
+      .select('id, card_name, card_image, sale_price, sold_at')
+      .eq('user_id', user.id)
+      .order('sold_at', { ascending: false })
+    setSalesHistory(data ?? [])
+    setSalesHistoryOpen(true)
+  }
+
+  async function openTradesHistory() {
+    const { data } = await supabase
+      .from('card_trades')
+      .select('id, card_name, card_image, traded_at')
+      .eq('user_id', user.id)
+      .order('traded_at', { ascending: false })
+    setTradesHistory(data ?? [])
+    setTradesHistoryOpen(true)
+  }
+
+  async function deleteSaleRecord(id, price) {
+    await supabase.from('card_sales').delete().eq('id', id)
+    setSalesHistory(prev => prev.filter(r => r.id !== id))
+    setSalesTotal(prev => Math.max(0, prev - price))
+  }
+
+  async function deleteTradeRecord(id) {
+    await supabase.from('card_trades').delete().eq('id', id)
+    setTradesHistory(prev => prev.filter(r => r.id !== id))
+    setTradeCount(prev => Math.max(0, prev - 1))
   }
 
   async function togglePublic() {
@@ -2240,8 +2288,8 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
           <StatCard icon="✨" label="Wishlist Value"    value={wishlistValue}   color="lilac" prefix="$" decimals={2} />
           <StatCard icon="💖" label="Total Cards"       value={totalCount}      color="pink"  />
           <StatCard icon="✅" label="Collection Progress" value={totalCount > 0 ? Math.round((ownedCount / totalCount) * 100) : 0} color="lilac" suffix="%" />
-          <StatCard icon="💰" label="Total Sales"       value={salesTotal}      color="mint"  prefix="$" decimals={2} />
-          <StatCard icon="🤝" label="Cards Traded"      value={tradeCount}      color="pink"  />
+          <StatCard icon="💰" label="Total Sales"  value={salesTotal} color="mint"  prefix="$" decimals={2} onClick={openSalesHistory} />
+          <StatCard icon="🤝" label="Cards Traded" value={tradeCount} color="pink"  onClick={openTradesHistory} />
         </div>
         <ShowcasePanels ownedItems={ownedItemsList} allItems={items} onCardClick={setSelectedItem} />
       </>}
@@ -2522,7 +2570,7 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
           ) : (
             <div className="grid gap-4 pt-2">
               {followedTrainers.map(trainer => (
-                <TrainerCard key={trainer.id} trainer={trainer} />
+                <TrainerCard key={trainer.id} trainer={trainer} onCardClick={setSelectedFollowedCard} />
               ))}
               {/* Support card anchored at the bottom of the list */}
               <SupportCard />
@@ -2745,6 +2793,127 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
             onClose={() => setSelectedItem(null)}
             onSaveTags={saveTags}
           />
+        )}
+      </AnimatePresence>
+
+      {/* ── Sales History Modal ────────────────────────────────────── */}
+      <AnimatePresence>
+        {salesHistoryOpen && (
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm px-4"
+            onClick={() => setSalesHistoryOpen(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-white rounded-2xl shadow-2xl p-5 w-full max-w-sm max-h-[80vh] flex flex-col"
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="text-base font-bold text-gray-700">💰 Sales History</h2>
+                <button onClick={() => setSalesHistoryOpen(false)}
+                  className="w-7 h-7 flex items-center justify-center rounded-full bg-gray-100 text-gray-400 hover:bg-gray-200 text-sm">✕</button>
+              </div>
+              {salesHistory.length === 0 ? (
+                <p className="text-sm text-gray-400 text-center py-8">No sales recorded yet.</p>
+              ) : (
+                <div className="overflow-y-auto space-y-2 pr-1">
+                  {salesHistory.map(s => (
+                    <div key={s.id} className="flex items-center gap-3 p-2.5 bg-amber-50 rounded-xl border border-amber-100">
+                      {s.card_image && (
+                        <img src={s.card_image} alt={s.card_name} className="w-10 rounded-lg flex-shrink-0 shadow-sm" />
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-bold text-gray-700 truncate">{s.card_name}</p>
+                        <p className="text-xs text-amber-600 font-semibold">${Number(s.sale_price).toFixed(2)}</p>
+                        <p className="text-[10px] text-gray-400">{new Date(s.sold_at).toLocaleDateString()}</p>
+                      </div>
+                      <button
+                        onClick={() => deleteSaleRecord(s.id, Number(s.sale_price))}
+                        className="w-6 h-6 flex-shrink-0 flex items-center justify-center rounded-full bg-red-100 text-red-400 hover:bg-red-200 text-xs"
+                        title="Remove record"
+                      >✕</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── Trades History Modal ────────────────────────────────────── */}
+      <AnimatePresence>
+        {tradesHistoryOpen && (
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm px-4"
+            onClick={() => setTradesHistoryOpen(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-white rounded-2xl shadow-2xl p-5 w-full max-w-sm max-h-[80vh] flex flex-col"
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="text-base font-bold text-gray-700">🤝 Trades History</h2>
+                <button onClick={() => setTradesHistoryOpen(false)}
+                  className="w-7 h-7 flex items-center justify-center rounded-full bg-gray-100 text-gray-400 hover:bg-gray-200 text-sm">✕</button>
+              </div>
+              {tradesHistory.length === 0 ? (
+                <p className="text-sm text-gray-400 text-center py-8">No trades recorded yet.</p>
+              ) : (
+                <div className="overflow-y-auto space-y-2 pr-1">
+                  {tradesHistory.map(t => (
+                    <div key={t.id} className="flex items-center gap-3 p-2.5 bg-sky-50 rounded-xl border border-sky-100">
+                      {t.card_image && (
+                        <img src={t.card_image} alt={t.card_name} className="w-10 rounded-lg flex-shrink-0 shadow-sm" />
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-bold text-gray-700 truncate">{t.card_name}</p>
+                        <p className="text-[10px] text-gray-400">{new Date(t.traded_at).toLocaleDateString()}</p>
+                      </div>
+                      <button
+                        onClick={() => deleteTradeRecord(t.id)}
+                        className="w-6 h-6 flex-shrink-0 flex items-center justify-center rounded-full bg-red-100 text-red-400 hover:bg-red-200 text-xs"
+                        title="Remove record"
+                      >✕</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── Followed-card preview modal ─────────────────────────────── */}
+      <AnimatePresence>
+        {selectedFollowedCard && (
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm px-4"
+            onClick={() => setSelectedFollowedCard(null)}
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-white rounded-2xl shadow-2xl p-5 w-full max-w-xs"
+              onClick={e => e.stopPropagation()}
+            >
+              <button
+                onClick={() => setSelectedFollowedCard(null)}
+                className="absolute top-4 right-4 w-7 h-7 flex items-center justify-center rounded-full bg-gray-100 text-gray-400 hover:bg-gray-200 text-sm"
+              >✕</button>
+              <img src={selectedFollowedCard.image} alt={selectedFollowedCard.name} className="w-full rounded-xl mb-3 shadow-md" />
+              <h3 className="text-base font-bold text-gray-700 mb-1">{selectedFollowedCard.name}</h3>
+              {getDisplayPrice(selectedFollowedCard) > 0 && (
+                <p className="text-sm font-semibold text-pink-500 mb-2">
+                  ${getDisplayPrice(selectedFollowedCard).toFixed(2)}
+                </p>
+              )}
+              <p className="text-xs text-gray-400">{selectedFollowedCard.owned ? '📦 In their collection' : '💖 On their wishlist'}</p>
+            </motion.div>
+          </motion.div>
         )}
       </AnimatePresence>
 

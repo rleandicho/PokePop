@@ -784,7 +784,8 @@ function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, onClearF
   // Silently fetches a fresh price from pokemontcg.io if the stored price is > 24h old,
   // then upserts to tcg_prices. Does not block or affect the modal's current display.
   useEffect(() => {
-    if (!selected) return
+    // pokemontcg.io only has English cards; skip refresh for foreign-language cards
+    if (!selected || selected.card_language !== 'en') return
     refreshPriceIfStale(selected.id, import.meta.env.VITE_TCG_API_KEY)
   }, [selected?.id])  // eslint-disable-line react-hooks/exhaustive-deps
 

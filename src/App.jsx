@@ -31,6 +31,16 @@ export default function App() {
 
   useEffect(() => { applyTheme(themeMode) }, [themeMode])
 
+  // ── URL param: ?view=collection (from "Return to Poképop" on public profiles) ─
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    if (params.get('view') === 'collection') {
+      setActiveVibe('wishlist')
+      // Clean the URL without a full reload
+      window.history.replaceState({}, '', window.location.pathname)
+    }
+  }, [])
+
   // ── Auth + profile ──────────────────────────────────────────────────────────
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {

@@ -339,7 +339,7 @@ export default function PublicWishlist() {
                        text-pink-500 font-semibold text-sm px-4 py-2 rounded-full
                        border border-pink-200 shadow-sm transition-all"
           >
-            ← Return to Poképop 🌸
+            ← Return to Poképop
           </Link>
         </div>
       </Shell>
@@ -386,7 +386,8 @@ export default function PublicWishlist() {
       <motion.div
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
-        className={`rounded-2xl overflow-hidden shadow-md flex flex-col border ${tileBg}`}
+        className={`rounded-2xl overflow-hidden shadow-md flex flex-col border ${tileBg} cursor-pointer`}
+        onClick={() => setSelectedShowcaseItem(item)}
       >
         <div className="relative">
           <img src={item.image} alt={item.name} className="w-full" loading="lazy" />
@@ -432,7 +433,7 @@ export default function PublicWishlist() {
           )}
           {/* Add to my collection/wishlist buttons */}
           {canAdd && (
-            <div className="mt-auto pt-2 flex gap-1">
+            <div className="mt-auto pt-2 flex gap-1" onClick={e => e.stopPropagation()}>
               <button
                 onClick={() => addToMyWishlist(item, false)}
                 disabled={isSaving}
@@ -480,12 +481,21 @@ export default function PublicWishlist() {
           />
         </div>
         <Link
-          to="/"
+          to={viewer ? '/?view=collection' : '/'}
           className="inline-flex items-center gap-1.5 bg-white/60 hover:bg-pink-100
                      text-pink-500 font-semibold text-sm px-4 py-2 rounded-full
                      border border-pink-200 shadow-sm transition-all"
         >
-          ← Return to Poképop 🌸
+          ← Return to Poképop
+          <span
+            className={`theme-ball ${themeMode === 'dark' ? 'luxury-ball' : 'love-ball'}`}
+            style={{ width: '1em', height: '1em', flexShrink: 0, display: 'inline-block' }}
+          >
+            <span className="theme-ball__top" />
+            <span className="theme-ball__band" />
+            <span className="theme-ball__button" />
+            <span className="theme-ball__mark">{themeMode === 'dark' ? 'L' : '♥'}</span>
+          </span>
         </Link>
 
         <h1 className="text-3xl sm:text-4xl font-bold text-pink-500 drop-shadow-sm">

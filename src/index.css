@@ -261,6 +261,17 @@ body {
   filter: none !important;
 }
 
+/* ── Support (Ko-fi) card ───────────────────────────────────────────────── */
+.dark-theme .support-card {
+  background: linear-gradient(135deg, #78350f, #92400e) !important;
+  border-color: #b45309 !important;
+  filter: none !important;
+}
+.dark-theme .support-card p,
+.dark-theme .support-card span {
+  color: #fde68a !important;
+}
+
 /* ── Card tile backgrounds ──────────────────────────────────────────────── */
 .tile-owned {
   background: rgba(236,253,245,0.95);
