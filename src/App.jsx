@@ -7,6 +7,7 @@ import AestheticFilter     from './components/AestheticFilter'
 import CardGrid            from './components/CardGrid'
 import WishlistDashboard   from './components/WishlistDashboard'
 import HomePage            from './components/HomePage'
+import HomePageEditorial   from './components/HomePageEditorial'
 import Auth                from './components/Auth'
 import Toast               from './components/Toast'
 import ThemeToggle         from './components/ThemeToggle'
@@ -174,6 +175,35 @@ export default function App() {
   // Show modal when: logged in, profile fetch done, no username set, user hasn't skipped
   const needsUsername = user && profileReady && !profile?.username && !skippedSetup
 
+  // ── Navigation callback shared by both home layouts ──────────────────────
+  function handleNavigate(vibe, tab = 'collection') {
+    setActiveVibe(vibe)
+    setSetQuery(null)
+    setWishlistTab(tab)
+  }
+
+  // ── Editorial home — full-screen, bypasses the standard shell ────────────
+  if (isHome) {
+    return (
+      <>
+        {needsUsername && <UsernameSetup user={user} onSaved={handleUsernameSaved} />}
+        <HomePageEditorial
+          user={user}
+          profile={profile}
+          collectionIds={collectionIds}
+          ownedIds={ownedIds}
+          onNavigate={handleNavigate}
+        />
+        <Toast message={toast} onDone={() => setToast('')} />
+        <ThemeToggle
+          mode={themeMode}
+          onToggle={() => setThemeMode(prev => prev === 'dark' ? 'light' : 'dark')}
+          className="fixed bottom-5 left-5 z-40 shadow-lg backdrop-blur-md"
+        />
+      </>
+    )
+  }
+
   return (
     <div className={`theme-shell ${isDark ? 'dark-theme' : ''}`}>
 
@@ -210,31 +240,18 @@ export default function App() {
         <Auth user={user} username={profile?.username} isDark={isDark} />
       </header>
 
-      {/* ── Filters — hidden on the home page ──────────────────────────── */}
-      {!isHome && (
-        <AestheticFilter
-          active={activeVibe}
-          onChange={handleVibeChange}
-          setQuery={setQuery}
-          onSetQuery={handleSetQuery}
-          user={user}
-        />
-      )}
+      {/* ── Filters ────────────────────────────────────────────────────── */}
+      <AestheticFilter
+        active={activeVibe}
+        onChange={handleVibeChange}
+        setQuery={setQuery}
+        onSetQuery={handleSetQuery}
+        user={user}
+      />
 
       {/* ── Main content ────────────────────────────────────────────────── */}
       <main className="max-w-6xl mx-auto pb-16">
-        {isHome ? (
-          <HomePage
-            user={user}
-            collectionIds={collectionIds}
-            ownedIds={ownedIds}
-            onNavigate={(vibe, tab = 'collection') => {
-              setActiveVibe(vibe)
-              setSetQuery(null)
-              setWishlistTab(tab)
-            }}
-          />
-        ) : isWishlist ? (
+        {isWishlist ? (
           <WishlistDashboard
             key={wishlistTab}
             user={user}
