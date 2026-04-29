@@ -973,7 +973,7 @@ const CardTile = memo(function CardTile({ card, inList, isOwned, myLangs, quickA
 })
 
 // ─── Main grid ────────────────────────────────────────────────────────────────
-function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, onClearFilters, user, onToast, activeBinderId, collectionIds, ownedIds, collectionLanguages, onCardAdded, onCardRemoved, onOwnedChanged }) {
+function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, onClearFilters, user, onToast, activeBinderId, collectionIds, ownedIds, collectionLanguages, onCardAdded, onCardRemoved, onOwnedChanged, autoFocusSearch = false }) {
   const gridTopRef   = useRef(null)
   const [cards,      setCards]      = useState([])
   const [page,       setPage]       = useState(1)
@@ -1254,6 +1254,7 @@ function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, onClearF
         value={inlineSearch}
         onChange={setInlineSearch}
         onClear={handleInlineClear}
+        autoFocus={autoFocusSearch}
       />
       <SortToolbar
         sortBy={sortBy}

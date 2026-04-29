@@ -1,12 +1,11 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
-import { motion } from 'framer-motion'
+import { useState, useEffect, useCallback } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
 import { supabase }        from './lib/supabase'
 import { fetchAllRows }    from './lib/fetchAllRows'
 import { getStoredTheme, applyTheme } from './lib/theme'
 import AestheticFilter     from './components/AestheticFilter'
 import CardGrid            from './components/CardGrid'
 import WishlistDashboard   from './components/WishlistDashboard'
-import HomePage            from './components/HomePage'
 import HomePageEditorial   from './components/HomePageEditorial'
 import Auth                from './components/Auth'
 import Toast               from './components/Toast'
@@ -176,173 +175,197 @@ export default function App() {
   const needsUsername = user && profileReady && !profile?.username && !skippedSetup
 
   // ── Navigation callback shared by both home layouts ──────────────────────
+  const [focusSearch, setFocusSearch] = useState(false)
+
   function handleNavigate(vibe, tab = 'collection') {
     setActiveVibe(vibe)
     setSetQuery(null)
     setWishlistTab(tab)
+    setFocusSearch(false)
   }
 
-  // ── Editorial home — full-screen, bypasses the standard shell ────────────
-  if (isHome) {
-    return (
-      <>
-        {needsUsername && <UsernameSetup user={user} onSaved={handleUsernameSaved} />}
-        <HomePageEditorial
-          user={user}
-          profile={profile}
-          collectionIds={collectionIds}
-          ownedIds={ownedIds}
-          onNavigate={handleNavigate}
-        />
-        <Toast message={toast} onDone={() => setToast('')} />
-        <ThemeToggle
-          mode={themeMode}
-          onToggle={() => setThemeMode(prev => prev === 'dark' ? 'light' : 'dark')}
-          className="fixed bottom-5 left-5 z-40 shadow-lg backdrop-blur-md"
-        />
-      </>
-    )
+  // Called when user clicks the home page search bar — navigates to browse AND focuses search input
+  function handleNavigateToSearch() {
+    setActiveVibe('all')
+    setSetQuery(null)
+    setFocusSearch(true)
   }
+
+  const fadeTransition = { duration: 0.22, ease: 'easeInOut' }
 
   return (
-    <div className={`theme-shell ${isDark ? 'dark-theme' : ''}`}>
-
-      {/* ── Username setup modal ────────────────────────────────────────── */}
-      {needsUsername && (
-        <UsernameSetup user={user} onSaved={handleUsernameSaved} />
-      )}
-
-      {/* ── Header ─────────────────────────────────────────────────────── */}
-      <header className="text-center pt-8 pb-2 px-4 space-y-3">
-        <motion.button
-          onClick={goHome}
-          whileHover={{ scale: 1.06 }}
-          whileTap={{ scale: 0.97 }}
-          className="text-5xl sm:text-6xl font-bold theme-heading drop-shadow-md tracking-tight
-                     cursor-pointer bg-transparent border-none p-0 transition-opacity
-                     inline-flex items-center gap-3"
-          title="Back to home"
-        >
-          Poképop
-          <span
-            className={`theme-ball ${isDark ? 'luxury-ball' : 'love-ball'}`}
-            style={{ width: '0.8em', height: '0.8em', flexShrink: 0 }}
-          >
-            <span className="theme-ball__top" />
-            <span className="theme-ball__band" />
-            <span className="theme-ball__button" />
-            <span className="theme-ball__mark">{isDark ? 'L' : '♥'}</span>
-          </span>
-        </motion.button>
-        <p className="theme-subtle font-medium text-sm">
-          Discover Pokémon cards by vibe ✨
-        </p>
-        <Auth user={user} username={profile?.username} isDark={isDark} />
-      </header>
-
-      {/* ── Filters ────────────────────────────────────────────────────── */}
-      <AestheticFilter
-        active={activeVibe}
-        onChange={handleVibeChange}
-        setQuery={setQuery}
-        onSetQuery={handleSetQuery}
-        user={user}
-      />
-
-      {/* ── Main content ────────────────────────────────────────────────── */}
-      <main className="max-w-6xl mx-auto pb-16">
-        {isWishlist ? (
-          <WishlistDashboard
-            key={wishlistTab}
-            user={user}
-            onToast={showToast}
-            onGoExplore={() => { setActiveVibe('girlypop'); setSetQuery(null) }}
-            onBinderChange={setActiveBinderId}
-            initialTab={wishlistTab}
-            onCardRemoved={handleCardRemoved}
-            onOwnedChanged={handleOwnedChanged}
-          />
-        ) : (
-          <CardGrid
-            key={`${activeVibe ?? ''}|${setQuery ?? ''}`}
-            activeVibe={activeVibe}
-            setQuery={setQuery}
-            sortBy={sortBy}
-            onSortChange={setSortBy}
-            onClearFilters={handleClearFilters}
-            user={user}
-            onToast={showToast}
-            activeBinderId={activeBinderId}
-            collectionIds={collectionIds}
-            ownedIds={ownedIds}
-            collectionLanguages={collectionLanguages}
-            onCardAdded={handleCardAdded}
-            onCardRemoved={handleCardRemoved}
-            onOwnedChanged={handleOwnedChanged}
-          />
-        )}
-      </main>
-
+    <>
+      {needsUsername && <UsernameSetup user={user} onSaved={handleUsernameSaved} />}
       <Toast message={toast} onDone={() => setToast('')} />
 
-      {/* ── Back to top ────────────────────────────────────────────────── */}
-      {showBackTop && (
-        <button
-          onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-          className="fixed bottom-6 right-4 z-50 sm:bottom-16 sm:right-5
-                     w-9 h-9 flex items-center justify-center
-                     bg-white/80 hover:bg-white text-pink-400 hover:text-pink-500
-                     rounded-full border border-pink-200 shadow-md
-                     transition-all hover:scale-110 active:scale-95 text-sm"
-          title="Back to top"
-          aria-label="Back to top"
-        >
-          ↑
-        </button>
-      )}
+      <AnimatePresence mode="wait">
+        {isHome ? (
+          <motion.div
+            key="editorial-home"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={fadeTransition}
+          >
+            <HomePageEditorial
+              user={user}
+              profile={profile}
+              collectionIds={collectionIds}
+              ownedIds={ownedIds}
+              onNavigate={handleNavigate}
+              onNavigateToSearch={handleNavigateToSearch}
+              isDark={isDark}
+            />
+            <ThemeToggle
+              mode={themeMode}
+              onToggle={() => setThemeMode(prev => prev === 'dark' ? 'light' : 'dark')}
+              className="fixed bottom-5 left-5 z-40 shadow-lg backdrop-blur-md"
+            />
+          </motion.div>
+        ) : (
+          <motion.div
+            key="main-shell"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={fadeTransition}
+          >
+            <div className={`theme-shell ${isDark ? 'dark-theme' : ''}`}>
 
-      {/* ── Ko-fi FAB — fixed bottom-right on desktop, footer link on mobile ── */}
-      <a
-        href="https://ko-fi.com/qakirap"
-        target="_blank"
-        rel="noopener noreferrer"
-        className="fixed bottom-5 right-5 z-40
-                   hidden sm:flex items-center gap-2
-                   bg-white/80 hover:bg-white
-                   text-pink-500 font-semibold text-sm
-                   px-4 py-2.5 rounded-full
-                   shadow-lg hover:shadow-xl
-                   border border-pink-200
-                   backdrop-blur-md
-                   transition-all duration-200
-                   hover:scale-105 active:scale-95"
-      >
-        ☕ Support on Ko-fi
-      </a>
+              {/* ── Header ─────────────────────────────────────────────────────── */}
+              <header className="text-center pt-8 pb-2 px-4 space-y-3">
+                <motion.button
+                  onClick={goHome}
+                  whileHover={{ scale: 1.06 }}
+                  whileTap={{ scale: 0.97 }}
+                  className="text-5xl sm:text-6xl font-bold theme-heading drop-shadow-md tracking-tight
+                             cursor-pointer bg-transparent border-none p-0 transition-opacity
+                             inline-flex items-center gap-3"
+                  title="Back to home"
+                >
+                  Poképop
+                  <span
+                    className={`theme-ball ${isDark ? 'luxury-ball' : 'love-ball'}`}
+                    style={{ width: '0.8em', height: '0.8em', flexShrink: 0 }}
+                  >
+                    <span className="theme-ball__top" />
+                    <span className="theme-ball__band" />
+                    <span className="theme-ball__button" />
+                    <span className="theme-ball__mark">{isDark ? 'L' : '♥'}</span>
+                  </span>
+                </motion.button>
+                <p className="theme-subtle font-medium text-sm">
+                  Discover Pokémon cards by vibe ✨
+                </p>
+                <Auth user={user} username={profile?.username} isDark={isDark} />
+              </header>
 
-      {/* ── Theme toggle FAB — fixed bottom-left on all screens ── */}
-      <ThemeToggle
-        mode={themeMode}
-        onToggle={() => setThemeMode(prev => prev === 'dark' ? 'light' : 'dark')}
-        className="fixed bottom-5 left-5 z-40 shadow-lg backdrop-blur-md"
-      />
+              {/* ── Filters ────────────────────────────────────────────────────── */}
+              <AestheticFilter
+                active={activeVibe}
+                onChange={handleVibeChange}
+                setQuery={setQuery}
+                onSetQuery={handleSetQuery}
+                user={user}
+              />
 
-      {/* Mobile: centered footer link so it never blocks "Load More" */}
-      <footer className="sm:hidden text-center py-4 pb-6">
-        <a
-          href="https://ko-fi.com/qakirap"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex items-center gap-1.5
-                     text-xs text-pink-400 font-semibold
-                     bg-white/60 hover:bg-white/90
-                     px-4 py-2 rounded-full
-                     border border-pink-200
-                     shadow-sm transition-all"
-        >
-          ☕ Support on Ko-fi
-        </a>
-      </footer>
-    </div>
+              {/* ── Main content ────────────────────────────────────────────────── */}
+              <main className="max-w-6xl mx-auto pb-16">
+                {isWishlist ? (
+                  <WishlistDashboard
+                    key={wishlistTab}
+                    user={user}
+                    onToast={showToast}
+                    onGoExplore={() => { setActiveVibe('girlypop'); setSetQuery(null) }}
+                    onBinderChange={setActiveBinderId}
+                    initialTab={wishlistTab}
+                    onCardRemoved={handleCardRemoved}
+                    onOwnedChanged={handleOwnedChanged}
+                  />
+                ) : (
+                  <CardGrid
+                    key={`${activeVibe ?? ''}|${setQuery ?? ''}`}
+                    activeVibe={activeVibe}
+                    setQuery={setQuery}
+                    sortBy={sortBy}
+                    onSortChange={setSortBy}
+                    onClearFilters={handleClearFilters}
+                    user={user}
+                    onToast={showToast}
+                    activeBinderId={activeBinderId}
+                    collectionIds={collectionIds}
+                    ownedIds={ownedIds}
+                    collectionLanguages={collectionLanguages}
+                    onCardAdded={handleCardAdded}
+                    onCardRemoved={handleCardRemoved}
+                    onOwnedChanged={handleOwnedChanged}
+                    autoFocusSearch={focusSearch}
+                  />
+                )}
+              </main>
+
+              {/* ── Back to top ────────────────────────────────────────────────── */}
+              {showBackTop && (
+                <button
+                  onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+                  className="fixed bottom-6 right-4 z-50 sm:bottom-16 sm:right-5
+                             w-9 h-9 flex items-center justify-center
+                             bg-white/80 hover:bg-white text-pink-400 hover:text-pink-500
+                             rounded-full border border-pink-200 shadow-md
+                             transition-all hover:scale-110 active:scale-95 text-sm"
+                  title="Back to top"
+                  aria-label="Back to top"
+                >
+                  ↑
+                </button>
+              )}
+
+              {/* ── Ko-fi FAB ── */}
+              <a
+                href="https://ko-fi.com/qakirap"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="fixed bottom-5 right-5 z-40
+                           hidden sm:flex items-center gap-2
+                           bg-white/80 hover:bg-white
+                           text-pink-500 font-semibold text-sm
+                           px-4 py-2.5 rounded-full
+                           shadow-lg hover:shadow-xl
+                           border border-pink-200
+                           backdrop-blur-md
+                           transition-all duration-200
+                           hover:scale-105 active:scale-95"
+              >
+                ☕ Support on Ko-fi
+              </a>
+
+              {/* ── Theme toggle FAB ── */}
+              <ThemeToggle
+                mode={themeMode}
+                onToggle={() => setThemeMode(prev => prev === 'dark' ? 'light' : 'dark')}
+                className="fixed bottom-5 left-5 z-40 shadow-lg backdrop-blur-md"
+              />
+
+              {/* Mobile footer Ko-fi link */}
+              <footer className="sm:hidden text-center py-4 pb-6">
+                <a
+                  href="https://ko-fi.com/qakirap"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5
+                             text-xs text-pink-400 font-semibold
+                             bg-white/60 hover:bg-white/90
+                             px-4 py-2 rounded-full
+                             border border-pink-200
+                             shadow-sm transition-all"
+                >
+                  ☕ Support on Ko-fi
+                </a>
+              </footer>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </>
   )
 }

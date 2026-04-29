@@ -1,3 +1,5 @@
+import { useEffect, useRef } from 'react'
+
 // ─── SearchBar ─────────────────────────────────────────────────────────────────
 // Pure display component — debounce logic lives in the parent (CardGrid).
 // Props:
@@ -5,7 +7,18 @@
 //   onChange    — called on every keystroke (parent handles debounce timing)
 //   onClear     — fired when the ✕ button is clicked (immediate, no debounce)
 //   placeholder — optional placeholder string
-export default function SearchBar({ value, onChange, onClear, placeholder = 'Search Pokémon…' }) {
+//   autoFocus   — when true, focuses the input on mount (e.g. after navigating from home search)
+export default function SearchBar({ value, onChange, onClear, placeholder = 'Search Pokémon…', autoFocus = false }) {
+  const inputRef = useRef(null)
+
+  useEffect(() => {
+    if (autoFocus && inputRef.current) {
+      // Small delay lets the AnimatePresence fade-in complete before focusing
+      const t = setTimeout(() => inputRef.current?.focus(), 150)
+      return () => clearTimeout(t)
+    }
+  }, [autoFocus])
+
   return (
     <div className="relative flex items-center mx-4 mb-2">
       {/* Magnifying-glass icon */}
@@ -17,6 +30,7 @@ export default function SearchBar({ value, onChange, onClear, placeholder = 'Sea
       </span>
 
       <input
+        ref={inputRef}
         type="text"
         value={value}
         onChange={e => onChange(e.target.value)}
