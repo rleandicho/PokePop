@@ -98,23 +98,24 @@ function getDailyPokemon() {
 }
 
 // ── Vibes — matches existing vibe IDs
+// cardImg: national-dex numbers in sv3pt5 (Pokémon 151 set, cards 1-151 = national dex, 207 total)
 const VIBES = [
-  { id: 'girlypop',    label: 'Girlypop',    ball: 'love-ball',    desc: 'Cute & soft',       bg: 'oklch(82% 0.10 0)',   ink: 'oklch(35% 0.10 0)',
-    cardImg: 'https://images.pokemontcg.io/sv3pt5/91_hires.png' },
+  { id: 'girlypop',    label: 'Girlypop',    ball: 'love-ball',    desc: 'Cute & soft',        bg: 'oklch(82% 0.10 0)',   ink: 'oklch(35% 0.10 0)',
+    cardImg: 'https://images.pokemontcg.io/sv3pt5/35_hires.png' },   // Clefairy #35
   { id: 'space',       label: 'Space',       ball: 'moon-ball',    desc: 'Cosmic & celestial', bg: 'oklch(78% 0.09 240)', ink: 'oklch(30% 0.09 240)',
-    cardImg: 'https://images.pokemontcg.io/neo1/9_hires.png' },
+    cardImg: 'https://images.pokemontcg.io/neo1/9_hires.png' },       // Lugia (Neo Genesis)
   { id: 'darkfairy',   label: 'Dark Fairy',  ball: 'dream-ball',   desc: 'Mysterious vibes',   bg: 'oklch(72% 0.10 290)', ink: 'oklch(98% 0.02 290)',
-    cardImg: 'https://images.pokemontcg.io/fossil/5_hires.png' },
+    cardImg: 'https://images.pokemontcg.io/sv3pt5/94_hires.png' },    // Gengar #94
   { id: 'cottagecore', label: 'Cottagecore', ball: 'nest-ball',    desc: 'Cozy & botanical',   bg: 'oklch(85% 0.10 145)', ink: 'oklch(32% 0.10 145)',
-    cardImg: 'https://images.pokemontcg.io/dp5/11_hires.png' },
+    cardImg: 'https://images.pokemontcg.io/sv3pt5/133_hires.png' },   // Eevee #133
   { id: 'nature',      label: 'Nature',      ball: 'safari-ball',  desc: 'Grass-type gallery', bg: 'oklch(80% 0.13 130)', ink: 'oklch(28% 0.10 130)',
-    cardImg: 'https://images.pokemontcg.io/base1/15_hires.png' },
+    cardImg: 'https://images.pokemontcg.io/sv3pt5/3_hires.png' },     // Venusaur #3
   { id: 'pastel',      label: 'Pastel',      ball: 'heal-ball',    desc: 'Fairy-type softies', bg: 'oklch(90% 0.08 90)',  ink: 'oklch(38% 0.08 90)',
-    cardImg: 'https://images.pokemontcg.io/jungle/19_hires.png' },
+    cardImg: 'https://images.pokemontcg.io/sv3pt5/39_hires.png' },    // Jigglypuff #39
   { id: 'trainers',    label: 'Trainers',    icon: 'pokedex',      desc: 'Supporters & items', bg: 'oklch(88% 0.07 60)',  ink: 'oklch(35% 0.08 60)',
-    cardImg: 'https://images.pokemontcg.io/swsh9/172_hires.png' },
+    cardImg: 'https://images.pokemontcg.io/sv3pt5/163_hires.png' },   // Giovanni's Charisma (trainer in 151)
   { id: 'fullart',     label: 'Full Art',    icon: 'candy',        desc: 'Rare art showcase',  bg: 'oklch(85% 0.09 320)', ink: 'oklch(32% 0.10 320)',
-    cardImg: 'https://images.pokemontcg.io/sv3pt5/215_hires.png' },
+    cardImg: 'https://images.pokemontcg.io/sv3pt5/182_hires.png' },   // Illustration rare (within 207 total)
 ]
 
 // ── Inline SVG icons for Trainers + Full Art ────────────────────────────────
@@ -131,11 +132,19 @@ function PokedexIcon({ color }) {
 }
 
 function RareCandyIcon({ color }) {
+  // Wrapped candy: round body with diagonal stripes + twisted wrapper ends on left/right
   return (
     <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
-      <ellipse cx="11" cy="11" rx="8" ry="6" fill={color} fillOpacity="0.25" stroke={color} strokeWidth="1.5"/>
-      <ellipse cx="11" cy="9" rx="8" ry="6" fill={color} fillOpacity="0.55" stroke={color} strokeWidth="1.5"/>
-      <line x1="7" y1="9" x2="15" y2="9" stroke="white" strokeWidth="1" strokeOpacity="0.5"/>
+      <circle cx="11" cy="11" r="7" fill={color} fillOpacity="0.35" stroke={color} strokeWidth="1.5"/>
+      {/* Diagonal stripe highlights inside candy */}
+      <line x1="6" y1="15" x2="15" y2="6" stroke="white" strokeWidth="2" strokeOpacity="0.35" strokeLinecap="round"/>
+      <line x1="8" y1="17" x2="17" y2="8" stroke="white" strokeWidth="1.2" strokeOpacity="0.2" strokeLinecap="round"/>
+      {/* Wrapper twist — left */}
+      <path d="M4 11 Q 2 9 1.5 6.5" stroke={color} strokeWidth="1.8" strokeLinecap="round" fill="none"/>
+      <path d="M4 11 Q 2 13 1.5 15.5" stroke={color} strokeWidth="1.8" strokeLinecap="round" fill="none"/>
+      {/* Wrapper twist — right */}
+      <path d="M18 11 Q 20 9 20.5 6.5" stroke={color} strokeWidth="1.8" strokeLinecap="round" fill="none"/>
+      <path d="M18 11 Q 20 13 20.5 15.5" stroke={color} strokeWidth="1.8" strokeLinecap="round" fill="none"/>
     </svg>
   )
 }
@@ -304,26 +313,34 @@ function VibeTile({ vibe, compact = false, onClick }) {
       }}
     >
       <VibeBall vibe={vibe} size={compact ? 18 : 22} />
-      <div style={{ position: 'relative', zIndex: 1 }}>
+      {/* Text block — sits above gradient shield */}
+      <div style={{ position: 'relative', zIndex: 2 }}>
         <div style={{ fontWeight: 600, fontSize: compact ? 14 : 16, marginBottom: 2 }}>{vibe.label}</div>
         <div style={{ fontSize: 11, opacity: 0.7 }}>{vibe.desc}</div>
       </div>
       {/* Card peek — decorative, clipped to tile */}
       {!compact && vibe.cardImg && (
-        <img
-          src={vibe.cardImg}
-          alt=""
-          aria-hidden="true"
-          style={{
-            position: 'absolute', right: -12, bottom: -8,
-            height: 90, width: 'auto', borderRadius: 6,
-            transform: hov ? 'rotate(4deg) translateY(-4px)' : 'rotate(8deg)',
-            boxShadow: '0 6px 20px rgba(0,0,0,0.35)',
-            transition: 'transform 0.2s',
-            pointerEvents: 'none',
-          }}
-          onError={e => { e.currentTarget.style.display = 'none' }}
-        />
+        <>
+          {/* Gradient shield: fades from tile bg on the left so text stays legible */}
+          <div style={{
+            position: 'absolute', inset: 0, zIndex: 1, borderRadius: 'inherit', pointerEvents: 'none',
+            background: `linear-gradient(to right, ${vibe.bg} 35%, ${vibe.bg}99 58%, transparent 80%)`,
+          }} />
+          <img
+            src={vibe.cardImg}
+            alt=""
+            aria-hidden="true"
+            style={{
+              position: 'absolute', right: -10, bottom: -8,
+              height: 95, width: 'auto', borderRadius: 6,
+              transform: hov ? 'rotate(4deg) translateY(-4px)' : 'rotate(8deg)',
+              boxShadow: '0 6px 20px rgba(0,0,0,0.35)',
+              transition: 'transform 0.2s',
+              pointerEvents: 'none', zIndex: 0,
+            }}
+            onError={e => { e.currentTarget.style.display = 'none' }}
+          />
+        </>
       )}
     </button>
   )
@@ -950,7 +967,7 @@ export default function HomePageEditorial({ user, profile, collectionIds, ownedI
         .select('card_id, owned, created_at')
         .eq('user_id', user.id)
         .order('created_at', { ascending: false })
-        .limit(3)
+        .limit(8)
 
       if (error || cancelled || !data?.length) return
 
@@ -1256,7 +1273,7 @@ export default function HomePageEditorial({ user, profile, collectionIds, ownedI
             <img
               src={card.image}
               alt={card.name}
-              style={{ height: 44, width: 'auto', borderRadius: 5, flexShrink: 0, boxShadow: '0 2px 8px rgba(0,0,0,0.25)' }}
+              style={{ height: 60, width: 'auto', borderRadius: 6, flexShrink: 0, boxShadow: '0 3px 10px rgba(0,0,0,0.28)' }}
               onError={e => { e.currentTarget.style.display = 'none' }}
             />
             <div style={{ minWidth: 0 }}>
@@ -1284,14 +1301,8 @@ export default function HomePageEditorial({ user, profile, collectionIds, ownedI
           <DailyHero T={T} pokemon={dailyPokemon} isDark={isDark} onSetClick={handleSetClick} onCardClick={setSelectedCard} onBrowsePokemon={handleBrowsePokemon} desktop showcaseCards={showcaseCards} />
         </div>
 
-        {/* Browse by vibe */}
-        <h2 style={{ fontFamily: T.fontDisplay, fontSize: 28, margin: '0 0 14px', color: T.ink0, fontWeight: 400 }}>Browse by vibe</h2>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14, marginBottom: 32 }}>
-          {VIBES.map(v => <VibeTile key={v.id} vibe={v} onClick={onNavigate} />)}
-        </div>
-
-        {/* Surprise me + Log a Pack */}
-        <div style={{ display: 'flex', gap: 14, marginBottom: 32 }}>
+        {/* Surprise me + Log a Pack — above vibe grid */}
+        <div style={{ display: 'flex', gap: 14, marginBottom: 24 }}>
           <button
             onClick={handleSurpriseMe}
             style={{
@@ -1330,6 +1341,12 @@ export default function HomePageEditorial({ user, profile, collectionIds, ownedI
               <span style={{ fontSize: 22 }}>🎴</span>
             </button>
           )}
+        </div>
+
+        {/* Browse by vibe */}
+        <h2 style={{ fontFamily: T.fontDisplay, fontSize: 28, margin: '0 0 14px', color: T.ink0, fontWeight: 400 }}>Browse by vibe</h2>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14, marginBottom: 32 }}>
+          {VIBES.map(v => <VibeTile key={v.id} vibe={v} onClick={onNavigate} />)}
         </div>
       </main>
 

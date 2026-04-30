@@ -10,7 +10,7 @@ import PackLogModal from './PackLogModal'
 const ITEMS_PER_PAGE = 20
 
 // ─── Card back fallback (inline SVG, never 404s) ─────────────────────────────
-const CARD_BACK = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="250" height="350" viewBox="0 0 250 350"><rect width="250" height="350" fill="#1a4fa0" rx="14"/><circle cx="125" cy="175" r="72" fill="none" stroke="rgba(255,255,255,0.22)" stroke-width="5"/><circle cx="125" cy="175" r="44" fill="rgba(255,255,255,0.07)" stroke="rgba(255,255,255,0.12)" stroke-width="3"/><circle cx="125" cy="175" r="12" fill="rgba(255,255,255,0.28)"/><line x1="0" y1="175" x2="53" y2="175" stroke="rgba(255,255,255,0.18)" stroke-width="2.5"/><line x1="197" y1="175" x2="250" y2="175" stroke="rgba(255,255,255,0.18)" stroke-width="2.5"/></svg>')}`
+const CARD_BACK = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="250" height="350" viewBox="0 0 250 350"><rect width="250" height="350" fill="#1a56cc" rx="14"/><rect x="8" y="8" width="234" height="334" fill="none" stroke="rgba(255,255,255,0.28)" stroke-width="2" rx="10"/><circle cx="125" cy="175" r="78" fill="none" stroke="rgba(255,255,255,0.22)" stroke-width="5"/><circle cx="125" cy="175" r="50" fill="rgba(255,255,255,0.06)" stroke="rgba(255,255,255,0.16)" stroke-width="3"/><line x1="47" y1="175" x2="203" y2="175" stroke="rgba(255,255,255,0.22)" stroke-width="4"/><circle cx="125" cy="175" r="15" fill="rgba(255,255,255,0.88)" stroke="rgba(0,0,0,0.18)" stroke-width="2"/><circle cx="125" cy="175" r="9" fill="#1a56cc"/></svg>')}`
 
 // ─── Price resolution: manual → market → mid → low → 0 ──────────────────────
 // manual_price wins when set (user override for cards TCGPlayer hasn't priced yet).
