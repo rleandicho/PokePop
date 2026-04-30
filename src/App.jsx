@@ -260,7 +260,10 @@ export default function App() {
                 <p className="theme-subtle font-medium text-sm">
                   Discover Pokémon cards by vibe ✨
                 </p>
-                <Auth user={user} username={profile?.username} isDark={isDark} />
+                {/* On mobile, hide Auth when in wishlist — WishlistDashboard shows username/sign out there */}
+                <div className={isWishlist ? 'hidden sm:block' : ''}>
+                  <Auth user={user} username={profile?.username} isDark={isDark} />
+                </div>
               </header>
 
               {/* ── Filters — hidden on wishlist/collection view ───────────────── */}
@@ -280,6 +283,7 @@ export default function App() {
                   <WishlistDashboard
                     key={wishlistTab}
                     user={user}
+                    profile={profile}
                     onToast={showToast}
                     onGoExplore={() => { setActiveVibe('all'); setSetQuery(null) }}
                     onBinderChange={setActiveBinderId}

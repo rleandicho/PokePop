@@ -1062,14 +1062,17 @@ export default function HomePageEditorial({ user, profile, collectionIds, ownedI
       {/* Top bar */}
       <div style={{
         gridColumn: '1 / -1',
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        display: 'grid',
+        gridTemplateColumns: 'auto 1fr auto',
+        alignItems: 'center',
+        gap: 16,
         padding: '0 28px',
         borderBottom: `1px solid ${T.border}`,
         background: T.navBg,
         backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 28 }}>
-          {/* Poképop branding — large, themed, with pokeball (matches card index) */}
+        {/* Left — branding + nav */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 24 }}>
           <button
             onClick={() => onNavigate('home')}
             style={{
@@ -1080,7 +1083,15 @@ export default function HomePageEditorial({ user, profile, collectionIds, ownedI
             <span className="theme-heading" style={{ fontSize: 26, fontWeight: 700, letterSpacing: '-0.02em', lineHeight: 1 }}>
               Poképop
             </span>
-            <PokeBall isDark={isDark} size="0.7em" />
+            <span
+              className={`theme-ball ${isDark ? 'luxury-ball' : 'love-ball'}`}
+              style={{ width: 24, height: 24, flexShrink: 0 }}
+            >
+              <span className="theme-ball__top" />
+              <span className="theme-ball__band" />
+              <span className="theme-ball__button" />
+              <span className="theme-ball__mark">{isDark ? 'L' : '♥'}</span>
+            </span>
           </button>
           <nav style={{ display: 'flex', gap: 22, fontSize: 13 }}>
             <span style={{ color: T.brand, fontWeight: 600 }}>Home</span>
@@ -1089,19 +1100,26 @@ export default function HomePageEditorial({ user, profile, collectionIds, ownedI
             <button onClick={() => onNavigate('wishlist', 'wishlist')} style={{ background: 'none', border: 'none', color: T.ink1, cursor: 'pointer', fontSize: 13, fontFamily: T.fontSans }}>Wishlist</button>
           </nav>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+
+        {/* Center — search bar */}
+        <div style={{ display: 'flex', justifyContent: 'center' }}>
           <button
             onClick={() => (onNavigateToSearch ?? onNavigate)('all')}
             style={{
               display: 'flex', alignItems: 'center', gap: 8,
               background: T.bgCard, border: `1px solid ${T.border}`,
-              borderRadius: 999, padding: '6px 14px', width: 280,
+              borderRadius: 999, padding: '7px 16px', width: '100%', maxWidth: 380,
               color: T.ink2, fontSize: 13, cursor: 'pointer', fontFamily: T.fontSans,
+              boxShadow: '0 1px 4px rgba(0,0,0,0.06)',
             }}
           >
             <span>🔍</span>
             <span>Search 18,000+ cards…</span>
           </button>
+        </div>
+
+        {/* Right — avatar */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
           {user && <Avatar T={T} name={username} size={32} ring />}
         </div>
       </div>

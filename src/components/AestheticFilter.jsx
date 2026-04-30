@@ -68,18 +68,21 @@ async function fetchSets() {
   // 3. Fetch from Supabase tcg_sets (no rate limits — our own data)
   const { data: rows, error } = await supabase
     .from('tcg_sets')
-    .select('id, name, series, release_date')
+    .select('id, name, series, release_date, printed_total, total')
     .order('release_date', { ascending: false })
 
   if (error) throw error
 
-  const sets = (rows ?? []).map(s => ({
-    id:          s.id,
-    name:        s.name,
-    series:      s.series,
-    releaseDate: s.release_date,
-    lang:        getLangFromSetId(s.id),
-  }))
+  const sets = (rows ?? [])
+    // Filter out sets with zero printed cards — they appear empty when browsed
+    .filter(s => s.printed_total == null || s.printed_total > 0)
+    .map(s => ({
+      id:          s.id,
+      name:        s.name,
+      series:      s.series,
+      releaseDate: s.release_date,
+      lang:        getLangFromSetId(s.id),
+    }))
 
   // Group by language → series → sets
   const byLang = {}

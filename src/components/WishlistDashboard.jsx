@@ -1206,7 +1206,7 @@ function WishlistCardModal({
 }
 
 // ─── Main dashboard ──────────────────────────────────────────────────────────
-export default function WishlistDashboard({ user, onToast, onGoExplore, onBinderChange, initialTab = 'collection', onCardRemoved, onOwnedChanged }) {
+export default function WishlistDashboard({ user, profile, onToast, onGoExplore, onBinderChange, initialTab = 'collection', onCardRemoved, onOwnedChanged }) {
   const [items,        setItems]        = useState([])
   const [loading,      setLoading]      = useState(true)
   const [selectedItem, setSelectedItem] = useState(null)
@@ -1246,6 +1246,10 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
   const [virtualSlots,   setVirtualSlots]   = useState({})     // virtualCopyId → slot_index (persists across re-renders)
   const [tagFilter,     setTagFilter]     = useState(null)  // null = all, string = specific tag
   const [showTagMenu,   setShowTagMenu]   = useState(false) // tag filter accordion open/closed
+  const [trainerSearch, setTrainerSearch] = useState('')    // filter text in Following tab
+  const [followInput,   setFollowInput]   = useState('')    // username to follow
+  const [followStatus,  setFollowStatus]  = useState(null)  // null | 'searching' | 'found' | 'notfound' | 'already' | 'self'
+  const [followResult,  setFollowResult]  = useState(null)  // { id, username } if found
   const [tileTagInputs, setTileTagInputs] = useState({})    // rowId → current inline tag input value
   const [soldModal,     setSoldModal]     = useState(null)  // item object when active
   const [tradeModal,    setTradeModal]    = useState(null)  // item object when active
@@ -1920,6 +1924,53 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
     ])
     setFollowers(prev => prev.filter(f => f.id !== targetId))
     onToast('User blocked 🚫')
+  }
+
+  // Search for a trainer by exact username, then follow them
+  async function searchTrainerToFollow(username) {
+    const trimmed = username.trim()
+    if (!trimmed) return
+    setFollowStatus('searching')
+    setFollowResult(null)
+
+    // Only fetch id and username — no private fields
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('id, username')
+      .eq('username', trimmed)
+      .maybeSingle()
+
+    if (error || !data) { setFollowStatus('notfound'); return }
+    if (data.id === user.id) { setFollowStatus('self'); return }
+
+    // Check if already following
+    const alreadyFollowing = followedTrainers.some(t => t.id === data.id)
+    if (alreadyFollowing) { setFollowStatus('already'); setFollowResult(data); return }
+
+    setFollowStatus('found')
+    setFollowResult(data)
+  }
+
+  async function confirmFollow() {
+    if (!followResult) return
+    const { error } = await supabase
+      .from('follows')
+      .insert({ follower_id: user.id, following_id: followResult.id })
+    if (error) { onToast('Could not follow — try again 😿'); return }
+
+    // Refresh followed trainers list
+    const { data: profile } = await supabase
+      .from('profiles').select('id, username').eq('id', followResult.id).maybeSingle()
+    if (profile) {
+      setFollowedTrainers(prev => [
+        { id: profile.id, username: profile.username, cards: [], cardCount: 0 },
+        ...prev,
+      ])
+    }
+    onToast(`Now following @${followResult.username} ✨`)
+    setFollowInput('')
+    setFollowStatus(null)
+    setFollowResult(null)
   }
 
   async function removeCard(item) {
@@ -2637,18 +2688,23 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
       {/* ── Tab bar ────────────────────────────────────────────────── */}
       <div className="px-4 pt-2 pb-4 space-y-2">
 
-        {/* Browse all cards + Share + Settings — top row on mobile */}
+        {/* Row 0 (mobile only): username + sign out (left) | share + settings (right) */}
         <div className="flex items-center justify-between sm:hidden">
-          <motion.button
-            whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }}
-            onClick={onGoExplore}
-            className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5
-                       bg-pink-50 hover:bg-pink-100 text-pink-500 rounded-full
-                       border border-pink-200 shadow-sm transition-colors"
-          >
-            ▤ Browse All Cards
-          </motion.button>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 min-w-0">
+            {profile?.username && (
+              <span className="text-xs font-bold text-pink-500 truncate max-w-[120px]">
+                @{profile.username}
+              </span>
+            )}
+            <button
+              onClick={() => supabase.auth.signOut()}
+              className="text-xs font-semibold px-2.5 py-1 rounded-full border border-gray-200
+                         bg-white/60 hover:bg-gray-100 text-gray-500 transition-colors"
+            >
+              Sign out
+            </button>
+          </div>
+          <div className="flex items-center gap-2 flex-shrink-0">
             {isPublic && (
               <motion.button
                 whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }}
@@ -2672,6 +2728,18 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
             </motion.button>
           </div>
         </div>
+
+        {/* Row 0b (mobile only): Browse All Cards — full width */}
+        <motion.button
+          whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.97 }}
+          onClick={onGoExplore}
+          className="w-full sm:hidden flex items-center justify-center gap-1.5
+                     text-sm font-bold px-4 py-2.5
+                     bg-gradient-to-r from-pink-400 to-violet-400 text-white
+                     rounded-full shadow-md transition-all"
+        >
+          ▤ Browse All Cards
+        </motion.button>
 
         {/* Row 1: My Cards + Virtual Binder */}
         <div className="flex gap-2 sm:hidden">
@@ -2732,7 +2800,20 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
           Lists 📋
         </motion.button>
 
-        {/* Desktop: original flex row layout */}
+        {/* Desktop: Browse All Cards — own row above the tab pills */}
+        <div className="hidden sm:flex justify-center">
+          <motion.button
+            whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }}
+            onClick={onGoExplore}
+            className="flex items-center gap-2 text-sm font-bold px-5 py-2
+                       bg-gradient-to-r from-pink-400 to-violet-400 text-white
+                       rounded-full shadow-md transition-all"
+          >
+            ▤ Browse All Cards
+          </motion.button>
+        </div>
+
+        {/* Desktop: tab pills + share/settings */}
         <div className="hidden sm:flex sm:flex-wrap sm:justify-center sm:items-center gap-2">
           {[
             { id: 'cards',     label: 'My Cards 📦',      isActive: activeTab === 'collection' || activeTab === 'wishlist',
@@ -2759,15 +2840,6 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
               {tab.label}
             </motion.button>
           ))}
-          <motion.button
-            whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }}
-            onClick={onGoExplore}
-            className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5
-                       bg-pink-50 hover:bg-pink-100 text-pink-500 rounded-full
-                       border border-pink-200 shadow-sm transition-colors"
-          >
-            ▤ Browse All Cards
-          </motion.button>
           {isPublic && (
             <motion.button
               whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }}
@@ -3105,18 +3177,79 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
       {/* ── Followed trainers ──────────────────────────────────────── */}
       {activeTab === 'trainers' && (
         <div className="max-w-2xl mx-auto px-4 pb-16">
+
+          {/* Follow by username + search — always visible */}
+          <div className="mb-4 space-y-3">
+            {/* Follow by username */}
+            <div className="rounded-2xl border border-pink-100 bg-pink-50/50 p-3 space-y-2">
+              <p className="text-xs font-semibold text-pink-400 uppercase tracking-wide">Follow a trainer</p>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={followInput}
+                  onChange={e => { setFollowInput(e.target.value); setFollowStatus(null); setFollowResult(null) }}
+                  onKeyDown={e => e.key === 'Enter' && searchTrainerToFollow(followInput)}
+                  placeholder="Enter exact username…"
+                  className="flex-1 text-sm border border-pink-200 rounded-full px-4 py-2
+                             bg-white/80 placeholder-pink-300 text-gray-700
+                             focus:outline-none focus:ring-2 focus:ring-pink-300"
+                />
+                <motion.button
+                  whileTap={{ scale: 0.95 }}
+                  onClick={() => searchTrainerToFollow(followInput)}
+                  disabled={followStatus === 'searching'}
+                  className="px-4 py-2 rounded-full bg-pink-400 hover:bg-pink-500 text-white
+                             text-sm font-semibold transition-colors disabled:opacity-60"
+                >
+                  {followStatus === 'searching' ? '…' : 'Search'}
+                </motion.button>
+              </div>
+              {followStatus === 'notfound' && (
+                <p className="text-xs text-gray-400">No trainer found with that username.</p>
+              )}
+              {followStatus === 'self' && (
+                <p className="text-xs text-gray-400">That's you! You can't follow yourself.</p>
+              )}
+              {followStatus === 'already' && followResult && (
+                <p className="text-xs text-pink-400">You already follow @{followResult.username}.</p>
+              )}
+              {followStatus === 'found' && followResult && (
+                <div className="flex items-center justify-between bg-white rounded-xl px-3 py-2 border border-pink-100">
+                  <span className="text-sm font-semibold text-gray-700">@{followResult.username}</span>
+                  <motion.button
+                    whileTap={{ scale: 0.95 }}
+                    onClick={confirmFollow}
+                    className="px-3 py-1 rounded-full bg-pink-400 hover:bg-pink-500 text-white text-xs font-bold transition-colors"
+                  >
+                    Follow ✨
+                  </motion.button>
+                </div>
+              )}
+            </div>
+
+            {/* Search through following list */}
+            {followedTrainers.length > 0 && (
+              <input
+                type="text"
+                value={trainerSearch}
+                onChange={e => setTrainerSearch(e.target.value)}
+                placeholder="Search following…"
+                className="w-full text-sm border border-gray-200 rounded-full px-4 py-2
+                           bg-white/80 placeholder-gray-300 text-gray-700
+                           focus:outline-none focus:ring-2 focus:ring-pink-200"
+              />
+            )}
+          </div>
+
           {followedTrainers.length === 0 ? (
-            <div className="flex flex-col items-center text-center mt-16 px-4 gap-4">
+            <div className="flex flex-col items-center text-center mt-8 px-4 gap-4">
               <p className="text-5xl">🔍</p>
               <div>
                 <p className="text-pink-400 font-bold text-lg mb-1">
                   Find your friends!
                 </p>
                 <p className="text-sm text-gray-400 max-w-xs">
-                  Search for a Pokémon, find a card you love, then visit a
-                  trainer's public page and tap{' '}
-                  <span className="font-semibold text-pink-400">Follow Trainer ✨</span>
-                  {' '}to see their collection here.
+                  Search by username above, or browse cards and visit a trainer's public page to follow them.
                 </p>
               </div>
               <motion.button
@@ -3135,9 +3268,11 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
             </div>
           ) : (
             <div className="grid gap-4 pt-2">
-              {followedTrainers.map(trainer => (
-                <TrainerCard key={trainer.id} trainer={trainer} onCardClick={setSelectedFollowedCard} />
-              ))}
+              {followedTrainers
+                .filter(t => !trainerSearch.trim() || t.username?.toLowerCase().includes(trainerSearch.trim().toLowerCase()))
+                .map(trainer => (
+                  <TrainerCard key={trainer.id} trainer={trainer} onCardClick={setSelectedFollowedCard} />
+                ))}
               {/* Support card anchored at the bottom of the list */}
               <SupportCard />
             </div>

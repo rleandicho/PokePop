@@ -619,13 +619,36 @@ export default function BinderView({ items, user, readOnly = false, initialTheme
   // Rebuild slotArray whenever items or grid size changes.
   // totalSlots is based on the HIGHEST slot_index present (not just item count)
   // so that removing a card preserves its blank space for neighbouring cards.
+  // After building, we lock the positions of any auto-placed cards (slot_index === null
+  // or mismatched) so they don't drift when other cards are moved.
   useEffect(() => {
     const maxSlot    = items.reduce((m, i) => Math.max(m, i.slot_index ?? 0), 0)
     const minNeeded  = Math.max(items.length, items.length > 0 ? maxSlot + 1 : 0)
     const totalPages = Math.max(1, Math.ceil(minNeeded / slotsPerPage))
     const totalSlots = totalPages * slotsPerPage
-    setSlotArray(buildSlotArray(items, totalSlots))
+    const arr = buildSlotArray(items, totalSlots)
+    setSlotArray(arr)
     setSelectedIdx(null)
+
+    // Find any cards that were auto-placed (slot_index doesn't match their position).
+    // Persist their positions so they don't shift when other cards move.
+    const drifted = arr
+      .map((item, idx) => (item && item.slot_index !== idx) ? { item, idx } : null)
+      .filter(Boolean)
+    if (drifted.length) {
+      const swaps = drifted.map(({ item, idx }) => ({ id: item._sourceId ?? item.id, slot_index: idx }))
+      onSlotsSwapped?.(swaps)
+      // Also write to DB for real (non-virtual-copy) rows
+      if (user) {
+        const isRealId = id => !String(id).includes('-copy-')
+        drifted.forEach(({ item, idx }) => {
+          const realId = item._sourceId ?? item.id
+          if (isRealId(realId)) {
+            supabase.from('wishlists').update({ slot_index: idx }).eq('id', realId)
+          }
+        })
+      }
+    }
   }, [items, slotsPerPage])
 
   // ── Click-to-swap handler ─────────────────────────────────────────────────
@@ -658,24 +681,25 @@ export default function BinderView({ items, user, readOnly = false, initialTheme
 
       // Notify parent so its items state stays in sync (used by moveCardToBinder
       // to compute the next available slot index without a DB round-trip)
+      // Use _sourceId for virtual copies so parent updates the real row.
       const swaps = []
-      if (itemA) swaps.push({ id: itemA.id, slot_index: globalIdx })
-      if (itemB) swaps.push({ id: itemB.id, slot_index: prev })
+      if (itemA) swaps.push({ id: itemA._sourceId ?? itemA.id, slot_index: globalIdx })
+      if (itemB) swaps.push({ id: itemB._sourceId ?? itemB.id, slot_index: prev })
       if (swaps.length) onSlotsSwapped?.(swaps)
 
-      // Persist to Supabase using row id (not card_id — multi-edition safe)
+      // Persist to Supabase — use _sourceId so virtual copies write to the real row.
+      // Virtual copy IDs (e.g. "uuid-copy-1") are not valid DB ids; skip them.
+      const isRealId = id => !String(id).includes('-copy-')
       if (user) {
         const ops = []
-        if (itemA) ops.push(
-          supabase.from('wishlists')
-            .update({ slot_index: globalIdx })
-            .eq('id', itemA.id)
-        )
-        if (itemB) ops.push(
-          supabase.from('wishlists')
-            .update({ slot_index: prev })
-            .eq('id', itemB.id)
-        )
+        if (itemA) {
+          const id = itemA._sourceId ?? itemA.id
+          if (isRealId(id)) ops.push(supabase.from('wishlists').update({ slot_index: globalIdx }).eq('id', id))
+        }
+        if (itemB) {
+          const id = itemB._sourceId ?? itemB.id
+          if (isRealId(id)) ops.push(supabase.from('wishlists').update({ slot_index: prev }).eq('id', id))
+        }
         Promise.all(ops)  // errors are silent; local slotArray is source of truth
       }
 
