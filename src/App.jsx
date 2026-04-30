@@ -177,9 +177,12 @@ export default function App() {
   // ── Navigation callback shared by both home layouts ──────────────────────
   const [focusSearch, setFocusSearch] = useState(false)
 
-  function handleNavigate(vibe, tab = 'collection') {
+  function handleNavigate(vibe, tab = 'collection', setId = null, nameQuery = null) {
     setActiveVibe(vibe)
-    setSetQuery(null)
+    const parts = []
+    if (setId)     parts.push(`set.id:${setId}`)
+    if (nameQuery) parts.push(`name:*${nameQuery}*`)
+    setSetQuery(parts.length ? parts.join(' ') : null)
     setWishlistTab(tab)
     setFocusSearch(false)
   }
@@ -260,14 +263,16 @@ export default function App() {
                 <Auth user={user} username={profile?.username} isDark={isDark} />
               </header>
 
-              {/* ── Filters ────────────────────────────────────────────────────── */}
-              <AestheticFilter
-                active={activeVibe}
-                onChange={handleVibeChange}
-                setQuery={setQuery}
-                onSetQuery={handleSetQuery}
-                user={user}
-              />
+              {/* ── Filters — hidden on wishlist/collection view ───────────────── */}
+              {!isWishlist && (
+                <AestheticFilter
+                  active={activeVibe}
+                  onChange={handleVibeChange}
+                  setQuery={setQuery}
+                  onSetQuery={handleSetQuery}
+                  user={user}
+                />
+              )}
 
               {/* ── Main content ────────────────────────────────────────────────── */}
               <main className="max-w-6xl mx-auto pb-16">
@@ -276,7 +281,7 @@ export default function App() {
                     key={wishlistTab}
                     user={user}
                     onToast={showToast}
-                    onGoExplore={() => { setActiveVibe('girlypop'); setSetQuery(null) }}
+                    onGoExplore={() => { setActiveVibe('all'); setSetQuery(null) }}
                     onBinderChange={setActiveBinderId}
                     initialTab={wishlistTab}
                     onCardRemoved={handleCardRemoved}
@@ -300,6 +305,7 @@ export default function App() {
                     onCardRemoved={handleCardRemoved}
                     onOwnedChanged={handleOwnedChanged}
                     autoFocusSearch={focusSearch}
+                    onSetQuery={handleSetQuery}
                   />
                 )}
               </main>

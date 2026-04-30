@@ -1,36 +1,100 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 
-// ── Featured card carousel
-const FEATURED_CARDS = [
+// ── Daily Pokemon — deterministic per calendar day
+const DAILY_POKEMON = [
   {
-    name: 'Charizard',
-    set: 'Base Set',
-    rarity: 'Holo Rare',
-    tagline: 'The original holo. Where the obsession started.',
-    subtitle: 'Featured today',
-    image: 'https://images.pokemontcg.io/base1/4_hires.png',
-    hue: 20,
+    name: 'Charizard', setId: 'base1', setName: 'Base Set', cardId: 'base1-4',
+    image: 'https://images.pokemontcg.io/base1/4_hires.png', rarity: 'Holo Rare', hue: 20,
+    fact: 'The 1st Edition Base Set Charizard sold for $420,000 at auction in 2022 — the highest price ever paid for a Pokémon card.',
+    showcase: ['base1-4', 'base1-2', 'base1-15'],
   },
   {
-    name: 'Lugia',
-    set: 'Neo Genesis',
-    rarity: 'Holo Rare',
-    tagline: 'Sea guardian, mythic.',
-    subtitle: 'Popular in your region',
-    image: 'https://images.pokemontcg.io/neo1/9_hires.png', // neo1 = Neo Genesis
-    hue: 220,
+    name: 'Lugia', setId: 'neo1', setName: 'Neo Genesis', cardId: 'neo1-9',
+    image: 'https://images.pokemontcg.io/neo1/9_hires.png', rarity: 'Holo Rare', hue: 220,
+    fact: 'Lugia was designed for the Pokémon movie before appearing in the games — one of the few Pokémon created for film first.',
+    showcase: ['neo1-9', 'neo1-2', 'neo1-16'],
   },
   {
-    name: 'Mew ex',
-    set: 'Scarlet & Violet 151',
-    rarity: 'Ultra Rare',
-    tagline: 'Whispered into existence.',
-    subtitle: 'Newly indexed',
-    image: 'https://images.pokemontcg.io/sv3pt5/205_hires.png',
-    hue: 305,
+    name: 'Mew ex', setId: 'sv3pt5', setName: 'SV: 151', cardId: 'sv3pt5-205',
+    image: 'https://images.pokemontcg.io/sv3pt5/205_hires.png', rarity: 'Special Illustration Rare', hue: 305,
+    fact: 'Mew is the only Pokémon that can learn every TM and HM — the Pokédex calls it the ancestor of all Pokémon.',
+    showcase: ['sv3pt5-205', 'sv3pt5-232', 'sv3pt5-167'],
+  },
+  {
+    name: 'Mewtwo', setId: 'base1', setName: 'Base Set', cardId: 'base1-10',
+    image: 'https://images.pokemontcg.io/base1/10_hires.png', rarity: 'Holo Rare', hue: 290,
+    fact: 'Mewtwo had the highest HP of any Pokémon in the original Base Set — engineered from Mew\'s DNA and the ultimate collector\'s pursuit.',
+    showcase: ['base1-10', 'base1-4', 'base1-2'],
+  },
+  {
+    name: 'Gengar', setId: 'fossil', setName: 'Fossil', cardId: 'fossil-5',
+    image: 'https://images.pokemontcg.io/fossil/5_hires.png', rarity: 'Holo Rare', hue: 275,
+    fact: 'The Fossil Set Gengar is beloved for its eerie art — depicted emerging from shadows, it perfectly captures Gengar\'s ghostly nature.',
+    showcase: ['fossil-5', 'fossil-2', 'fossil-6'],
+  },
+  {
+    name: 'Pikachu', setId: 'base1', setName: 'Base Set', cardId: 'base1-58',
+    image: 'https://images.pokemontcg.io/base1/58_hires.png', rarity: 'Common', hue: 60,
+    fact: 'Despite being the franchise mascot, the Base Set Pikachu is a Common card. The "yellow cheeks" vs "red cheeks" print variant debate is legendary among collectors.',
+    showcase: ['base1-58', 'base1-4', 'base1-10'],
+  },
+  {
+    name: 'Blastoise', setId: 'base1', setName: 'Base Set', cardId: 'base1-2',
+    image: 'https://images.pokemontcg.io/base1/2_hires.png', rarity: 'Holo Rare', hue: 210,
+    fact: 'Blastoise was chosen for the original Base Set booster box alongside Chansey — its twin water cannons made it an instant collector icon.',
+    showcase: ['base1-2', 'base1-4', 'base1-15'],
+  },
+  {
+    name: 'Venusaur', setId: 'base1', setName: 'Base Set', cardId: 'base1-15',
+    image: 'https://images.pokemontcg.io/base1/15_hires.png', rarity: 'Holo Rare', hue: 130,
+    fact: 'Completing the Base Set holy trio — Charizard, Blastoise, and Venusaur — was every collector\'s first major milestone back in 1999.',
+    showcase: ['base1-15', 'base1-4', 'base1-2'],
+  },
+  {
+    name: 'Umbreon', setId: 'neo2', setName: 'Neo Discovery', cardId: 'neo2-13',
+    image: 'https://images.pokemontcg.io/neo2/13_hires.png', rarity: 'Holo Rare', hue: 250,
+    fact: 'Umbreon evolves from Eevee with high friendship at night — a poetic constraint that made players genuinely bond with their Eevee before evolving it.',
+    showcase: ['neo2-13', 'neo2-5', 'neo2-7'],
+  },
+  {
+    name: 'Ho-Oh', setId: 'neo3', setName: 'Neo Revelation', cardId: 'neo3-7',
+    image: 'https://images.pokemontcg.io/neo3/7_hires.png', rarity: 'Holo Rare', hue: 15,
+    fact: 'Ho-Oh appears in the very first episode of the Pokémon anime — years before the games revealed it was a legendary Pokémon.',
+    showcase: ['neo3-7', 'neo3-6', 'neo3-14'],
+  },
+  {
+    name: 'Articuno', setId: 'fossil', setName: 'Fossil', cardId: 'fossil-17',
+    image: 'https://images.pokemontcg.io/fossil/17_hires.png', rarity: 'Holo Rare', hue: 200,
+    fact: 'Articuno is said to appear before those lost in icy mountains — legend says its wings are made of ice that never melts.',
+    showcase: ['fossil-17', 'fossil-5', 'fossil-2'],
+  },
+  {
+    name: 'Jolteon', setId: 'jungle', setName: 'Jungle', cardId: 'jungle-4',
+    image: 'https://images.pokemontcg.io/jungle/4_hires.png', rarity: 'Holo Rare', hue: 60,
+    fact: 'Jolteon can fire 10,000-volt electric bolts — its cells generate electricity charged to extreme power when it experiences strong emotions.',
+    showcase: ['jungle-4', 'jungle-6', 'jungle-3'],
+  },
+  {
+    name: 'Eevee', setId: 'jungle', setName: 'Jungle', cardId: 'jungle-51',
+    image: 'https://images.pokemontcg.io/jungle/51_hires.png', rarity: 'Common', hue: 35,
+    fact: 'Eevee has the most evolutionary forms of any Pokémon — eight distinct evolutions based on item, environment, time of day, or friendship.',
+    showcase: ['jungle-51', 'jungle-4', 'jungle-6'],
+  },
+  {
+    name: 'Dragonite', setId: 'fossil', setName: 'Fossil', cardId: 'fossil-4',
+    image: 'https://images.pokemontcg.io/fossil/4_hires.png', rarity: 'Holo Rare', hue: 35,
+    fact: 'Dragonite can circle the globe in just 16 hours — it guides lost ships and planes to safety, earning the nickname "Sea Incarnate."',
+    showcase: ['fossil-4', 'fossil-5', 'fossil-2'],
   },
 ]
+
+// Pick today's Pokemon deterministically by day of year
+function getDailyPokemon() {
+  const start = new Date('2025-01-01')
+  const day   = Math.floor((Date.now() - start.getTime()) / 86400000)
+  return DAILY_POKEMON[Math.abs(day) % DAILY_POKEMON.length]
+}
 
 // ── Vibes — matches existing vibe IDs
 const VIBES = [
@@ -132,15 +196,22 @@ function Avatar({ T, name = '', size = 32, ring = false }) {
   )
 }
 
-function Chip({ T, children }) {
+function Chip({ T, children, onClick }) {
   return (
-    <span style={{
-      display: 'inline-flex', alignItems: 'center',
-      padding: '5px 11px', borderRadius: 999, fontSize: 12,
-      border: `1px solid ${T.border}`,
-      background: 'rgba(128,128,128,0.08)',
-      color: T.ink1,
-    }}>{children}</span>
+    <span
+      onClick={onClick}
+      style={{
+        display: 'inline-flex', alignItems: 'center',
+        padding: '5px 11px', borderRadius: 999, fontSize: 12,
+        border: `1px solid ${T.border}`,
+        background: 'rgba(128,128,128,0.08)',
+        color: T.ink1,
+        cursor: onClick ? 'pointer' : 'default',
+        transition: onClick ? 'background 0.15s, color 0.15s' : undefined,
+      }}
+      onMouseEnter={onClick ? e => { e.currentTarget.style.background = T.brand; e.currentTarget.style.color = 'white' } : undefined}
+      onMouseLeave={onClick ? e => { e.currentTarget.style.background = 'rgba(128,128,128,0.08)'; e.currentTarget.style.color = T.ink1 } : undefined}
+    >{children}</span>
   )
 }
 
@@ -248,7 +319,31 @@ function GradientEm({ T, children }) {
   )
 }
 
-function FeaturedSpotlight({ T, card, idx, total, onDotClick, cardHeight = 180, desktop = false }) {
+// ── Pokéball that changes with light/dark mode (mirrors the card index logo)
+function PokeBall({ isDark, size = '0.75em' }) {
+  const ballClass = isDark ? 'luxury-ball' : 'love-ball'
+  const mark      = isDark ? 'L' : '♥'
+  return (
+    <span
+      className={`theme-ball ${ballClass}`}
+      style={{ width: size, height: size, flexShrink: 0, display: 'inline-block', verticalAlign: 'middle' }}
+    >
+      <span className="theme-ball__top" />
+      <span className="theme-ball__band" />
+      <span className="theme-ball__button" />
+      <span className="theme-ball__mark">{mark}</span>
+    </span>
+  )
+}
+
+// ── Daily hero — single Pokemon per day with fun fact + set tag + showcase cards
+function DailyHero({ T, pokemon, isDark, onSetClick, onCardClick, onBrowsePokemon, desktop = false, showcaseCards = [] }) {
+  const mainCardData = {
+    cardId:    pokemon.cardId,
+    cardName:  pokemon.name,
+    cardImage: pokemon.image,
+  }
+
   return (
     <div style={{
       padding: desktop ? 28 : 18,
@@ -258,69 +353,121 @@ function FeaturedSpotlight({ T, card, idx, total, onDotClick, cardHeight = 180, 
       position: 'relative', overflow: 'hidden',
       ...(desktop ? { display: 'grid', gridTemplateColumns: 'auto 1fr', gap: 32, alignItems: 'center' } : {}),
     }}>
+      {/* Ambient glow */}
       <div style={{
         position: 'absolute', inset: desktop ? 0 : -40,
-        background: `radial-gradient(circle at ${desktop ? '30% 50%' : '50% 30%'}, oklch(70% 0.18 ${(card.hue ?? idx * 90) % 360} / 0.25), transparent 60%)`,
-        transition: 'background 1.2s ease', pointerEvents: 'none',
+        background: `radial-gradient(circle at ${desktop ? '30% 50%' : '50% 30%'}, oklch(70% 0.18 ${pokemon.hue} / 0.25), transparent 60%)`,
+        pointerEvents: 'none',
       }} />
 
-      <div style={{ position: 'relative', flexShrink: 0, ...(!desktop ? { display: 'flex', gap: 16, alignItems: 'center' } : {}) }}>
-        <img
-          src={card.image}
-          alt={card.name}
+      {/* Card image — clickable on both mobile and desktop */}
+      <div style={{ position: 'relative', flexShrink: 0, ...(!desktop ? { display: 'flex', gap: 16, alignItems: 'flex-start' } : {}) }}>
+        <button
+          onClick={() => onCardClick(mainCardData)}
           style={{
-            height: cardHeight, width: 'auto', borderRadius: 12,
-            boxShadow: '0 12px 28px rgba(0,0,0,0.3), inset 0 0 0 1px rgba(255,255,255,0.1)',
-            transition: 'transform 0.3s cubic-bezier(0.2,0.8,0.2,1)',
-            display: 'block',
+            border: 'none', background: 'none', padding: 0, cursor: 'pointer',
+            borderRadius: 12, flexShrink: 0,
+            transition: 'transform 0.2s, box-shadow 0.2s',
           }}
-          onError={e => { e.currentTarget.style.opacity = '0' }}
-        />
+          onMouseEnter={e => { e.currentTarget.style.transform = 'scale(1.03)'; e.currentTarget.style.boxShadow = '0 16px 36px rgba(0,0,0,0.45)' }}
+          onMouseLeave={e => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = 'none' }}
+          title={`View ${pokemon.name} details`}
+        >
+          <img
+            src={pokemon.image}
+            alt={pokemon.name}
+            style={{
+              height: desktop ? 280 : 180, width: 'auto', borderRadius: 12,
+              boxShadow: '0 12px 28px rgba(0,0,0,0.3), inset 0 0 0 1px rgba(255,255,255,0.1)',
+              display: 'block',
+            }}
+            onError={e => { e.currentTarget.style.opacity = '0' }}
+          />
+        </button>
 
+        {/* Mobile: text beside image */}
         {!desktop && (
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 10, color: T.brand, textTransform: 'uppercase', letterSpacing: '0.15em', marginBottom: 6 }}>{card.subtitle}</div>
-            <div style={{ fontFamily: T.fontDisplay, fontSize: 22, lineHeight: 1.05, marginBottom: 8, color: T.ink0 }}>{card.name}</div>
-            <div style={{ fontSize: 12, color: T.ink1, lineHeight: 1.4, marginBottom: 12, fontStyle: 'italic', fontFamily: T.fontDisplay }}>"{card.tagline}"</div>
+            <div style={{ fontSize: 10, color: T.brand, textTransform: 'uppercase', letterSpacing: '0.15em', marginBottom: 4 }}>
+              Today's card
+            </div>
+            <div style={{ fontFamily: T.fontDisplay, fontSize: 22, lineHeight: 1.05, marginBottom: 8, color: T.ink0 }}>
+              {pokemon.name}
+            </div>
+            <div style={{ fontSize: 12, color: T.ink1, lineHeight: 1.5, marginBottom: 10, fontFamily: T.fontSans }}>
+              {pokemon.fact}
+            </div>
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-              <Chip T={T}>{card.set}</Chip>
-              <Chip T={T}>{card.rarity}</Chip>
+              <Chip T={T} onClick={() => onSetClick(pokemon.setId)}>{pokemon.setName} →</Chip>
+              <Chip T={T} onClick={() => onBrowsePokemon(pokemon.name)}>Browse {pokemon.name}s →</Chip>
             </div>
           </div>
         )}
       </div>
 
+      {/* Desktop: text + showcase cards (alternate printings) */}
       {desktop && (
         <div style={{ position: 'relative' }}>
-          <div style={{ fontSize: 11, color: T.brand, textTransform: 'uppercase', letterSpacing: '0.18em', marginBottom: 10 }}>{card.subtitle}</div>
-          <div style={{ fontFamily: T.fontDisplay, fontSize: 48, lineHeight: 1, marginBottom: 12, color: T.ink0 }}>{card.name}</div>
-          <div style={{ fontSize: 16, color: T.ink1, maxWidth: 460, lineHeight: 1.5, marginBottom: 20, fontFamily: T.fontDisplay, fontStyle: 'italic' }}>"{card.tagline}"</div>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 22 }}>
-            <Chip T={T}>{card.set}</Chip>
-            <Chip T={T}>{card.rarity}</Chip>
+          <div style={{ fontSize: 11, color: T.brand, textTransform: 'uppercase', letterSpacing: '0.18em', marginBottom: 8 }}>
+            Today's card
           </div>
-        </div>
-      )}
+          <div style={{ fontFamily: T.fontDisplay, fontSize: 48, lineHeight: 1, marginBottom: 10, color: T.ink0 }}>
+            {pokemon.name}
+          </div>
+          <div style={{ fontSize: 15, color: T.ink1, maxWidth: 460, lineHeight: 1.6, marginBottom: 18, fontFamily: T.fontSans }}>
+            {pokemon.fact}
+          </div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 22 }}>
+            <Chip T={T} onClick={() => onSetClick(pokemon.setId)}>{pokemon.setName} →</Chip>
+            <Chip T={T} onClick={() => onBrowsePokemon(pokemon.name)}>Browse {pokemon.name}s →</Chip>
+          </div>
 
-      {!desktop && (
-        <div style={{ display: 'flex', justifyContent: 'center', gap: 4, marginTop: 16 }}>
-          {Array.from({ length: total }).map((_, i) => (
-            <button key={i} onClick={() => onDotClick(i)} style={{
-              width: i === idx ? 18 : 5, height: 5, borderRadius: 999,
-              background: i === idx ? T.brand : 'rgba(128,128,128,0.3)',
-              border: 'none', padding: 0, cursor: 'pointer', transition: 'all 0.3s',
-            }} />
-          ))}
+          {/* Alternate printings — fetched from TCG API, all same Pokemon */}
+          {showcaseCards.length > 0 && (
+            <div>
+              <div style={{ fontSize: 10, color: T.ink3, marginBottom: 8, letterSpacing: '0.1em', textTransform: 'uppercase' }}>
+                Other printings
+              </div>
+              <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end' }}>
+                {showcaseCards.map(card => (
+                  <button
+                    key={card.cardId}
+                    onClick={() => onCardClick(card)}
+                    style={{
+                      border: 'none', background: 'none', padding: 0, cursor: 'pointer',
+                      borderRadius: 8, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
+                      transition: 'transform 0.18s',
+                    }}
+                    onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-4px)' }}
+                    onMouseLeave={e => { e.currentTarget.style.transform = 'none' }}
+                    title={`${card.cardName} — ${card.setName}`}
+                  >
+                    <img
+                      src={card.cardImage}
+                      alt={card.cardName}
+                      style={{ height: 88, width: 'auto', display: 'block', borderRadius: 8, boxShadow: '0 4px 12px rgba(0,0,0,0.35)' }}
+                      onError={e => { e.currentTarget.style.display = 'none' }}
+                    />
+                    {card.setName && (
+                      <span style={{ fontSize: 9, color: T.ink3, textAlign: 'center', maxWidth: 64, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {card.setName}
+                      </span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>
   )
 }
 
-// ── Full card detail modal — opens when user clicks the inline card preview image
+// ── Full card detail modal — opens when user clicks a card
 function FriendCardModal({ T, card, user, collectionIds, onClose, isDark }) {
-  const [saving,    setSaving]    = useState(null) // 'wishlist' | 'collection' | null
-  const [saved,     setSaved]     = useState(null) // 'wishlist' | 'collection' | null
+  const [saving,    setSaving]    = useState(null)
+  const [saved,     setSaved]     = useState(null)
   const alreadyInList = collectionIds?.has(card.cardId)
 
   async function addToOwn(owned) {
@@ -360,7 +507,6 @@ function FriendCardModal({ T, card, user, collectionIds, onClose, isDark }) {
           boxShadow: '0 24px 60px rgba(0,0,0,0.5)',
         }}
       >
-        {/* Close button */}
         <button
           onClick={onClose}
           style={{
@@ -372,7 +518,6 @@ function FriendCardModal({ T, card, user, collectionIds, onClose, isDark }) {
           }}
         >✕</button>
 
-        {/* Card image */}
         <img
           src={card.cardImage || cardIdToImg(card.cardId)}
           alt={card.cardName}
@@ -380,23 +525,25 @@ function FriendCardModal({ T, card, user, collectionIds, onClose, isDark }) {
           onError={e => { e.currentTarget.style.opacity = '0.3' }}
         />
 
-        {/* Name + context */}
         <h2 style={{ fontFamily: T.fontDisplay, fontSize: 22, color: T.ink0, margin: '0 0 4px', fontWeight: 400 }}>
           {card.cardName}
         </h2>
-        <p style={{ fontSize: 12, color: T.ink2, margin: '0 0 16px' }}>
-          {card.action === 'added to collection' ? '📦' : '💖'}{' '}
-          {card.action} by{' '}
-          <a
-            href={`/share/${card.userId}`}
-            style={{ color: T.brand, fontWeight: 600, textDecoration: 'none' }}
-          >
-            {card.username}
-          </a>
-          {' · '}{card.time}
-        </p>
 
-        {/* Want / Have buttons */}
+        {card.action && (
+          <p style={{ fontSize: 12, color: T.ink2, margin: '0 0 16px' }}>
+            {card.action === 'added to collection' ? '📦' : '💖'}{' '}
+            {card.action} by{' '}
+            <a
+              href={`/share/${card.userId}`}
+              style={{ color: T.brand, fontWeight: 600, textDecoration: 'none' }}
+            >
+              {card.username}
+            </a>
+            {' · '}{card.time}
+          </p>
+        )}
+        {!card.action && <p style={{ fontSize: 12, color: T.ink2, margin: '0 0 16px' }}>Featured today</p>}
+
         {user && !alreadyInList && (
           <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
             <button
@@ -435,7 +582,6 @@ function FriendCardModal({ T, card, user, collectionIds, onClose, isDark }) {
           </div>
         )}
 
-        {/* TCGPlayer link */}
         <a
           href={`https://www.tcgplayer.com/search/pokemon/product?q=${encodeURIComponent(card.cardName)}`}
           target="_blank"
@@ -455,7 +601,7 @@ function FriendCardModal({ T, card, user, collectionIds, onClose, isDark }) {
   )
 }
 
-// ── Friend activity row — card name expands inline thumbnail; clicking thumbnail opens full modal
+// ── Friend activity row
 function ActivityItem({ T, item, isOpen, onToggle, onOpenCard }) {
   return (
     <div>
@@ -467,7 +613,6 @@ function ActivityItem({ T, item, isOpen, onToggle, onOpenCard }) {
         <Avatar T={T} name={item.username} size={24} />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 12, lineHeight: 1.4, color: T.ink1 }}>
-            {/* Username → links to their public collection */}
             <a
               href={`/share/${item.userId}`}
               style={{ fontWeight: 600, color: T.ink0, textDecoration: 'none' }}
@@ -481,7 +626,6 @@ function ActivityItem({ T, item, isOpen, onToggle, onOpenCard }) {
               {item.action}
             </span>
             {' '}
-            {/* Card name → toggle inline preview */}
             <button
               onClick={onToggle}
               style={{
@@ -498,17 +642,17 @@ function ActivityItem({ T, item, isOpen, onToggle, onOpenCard }) {
         </div>
       </div>
 
-      {/* Inline thumbnail — clicking it opens the full card modal */}
       {isOpen && (
-        <div style={{
-          display: 'flex', alignItems: 'center', gap: 10,
-          padding: '10px 0 10px 32px',
-          borderBottom: `1px solid ${T.border}`,
-          background: T.bgCard,
-          borderRadius: 10,
-          margin: '2px 0',
-          cursor: 'pointer',
-        }}
+        <div
+          style={{
+            display: 'flex', alignItems: 'center', gap: 10,
+            padding: '10px 0 10px 32px',
+            borderBottom: `1px solid ${T.border}`,
+            background: T.bgCard,
+            borderRadius: 10,
+            margin: '2px 0',
+            cursor: 'pointer',
+          }}
           onClick={onOpenCard}
           title="Click to open card details"
         >
@@ -518,7 +662,6 @@ function ActivityItem({ T, item, isOpen, onToggle, onOpenCard }) {
             style={{
               height: 76, width: 'auto', borderRadius: 6, flexShrink: 0,
               boxShadow: '0 4px 14px rgba(0,0,0,0.3)',
-              transition: 'transform 0.15s',
             }}
             onError={e => { e.currentTarget.style.display = 'none' }}
           />
@@ -556,7 +699,6 @@ function SharedCard({ T, card }) {
         }}
         onError={e => { e.currentTarget.style.opacity = '0.3' }}
       />
-      {/* Friend count badge */}
       <div style={{
         position: 'absolute', top: -6, right: -6,
         background: T.brand, color: 'white',
@@ -567,7 +709,6 @@ function SharedCard({ T, card }) {
       }}>
         {card.friendCount}
       </div>
-      {/* Card name tooltip on hover */}
       {hov && (
         <div style={{
           position: 'absolute', bottom: '100%', left: '50%',
@@ -588,35 +729,66 @@ function SharedCard({ T, card }) {
 // Main component
 // ─────────────────────────────────────────────────────────────────────────────
 export default function HomePageEditorial({ user, profile, collectionIds, ownedIds, onNavigate, onNavigateToSearch, isDark = false }) {
-  const [featuredIdx,   setFeaturedIdx]   = useState(0)
-  const [recentCards,   setRecentCards]   = useState([])   // last 3 wishlisted cards
-  const [friendActivity, setFriendActivity] = useState([]) // recent additions by followed users
-  const [sharedCards,   setSharedCards]   = useState([])   // cards owned by multiple friends
-  const [previewItemId, setPreviewItemId] = useState(null) // which activity row shows inline thumbnail
-  const [selectedCard,  setSelectedCard]  = useState(null) // card open in full modal
+  const [recentCards,    setRecentCards]    = useState([])
+  const [friendActivity, setFriendActivity] = useState([])
+  const [sharedCards,    setSharedCards]    = useState([])
+  const [previewItemId,  setPreviewItemId]  = useState(null)
+  const [selectedCard,   setSelectedCard]   = useState(null)
   const [loadingFriends, setLoadingFriends] = useState(true)
+  const [showcaseCards,  setShowcaseCards]  = useState([]) // alternate printings of the daily Pokemon
   const T = getTokens(isDark)
 
+  const dailyPokemon  = getDailyPokemon()
   const totalCards    = collectionIds?.size ?? 0
   const ownedCards    = ownedIds?.size      ?? 0
-  const wishlistCards = totalCards - ownedCards
   const username      = profile?.username ?? user?.email?.split('@')[0] ?? 'collector'
   const today         = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })
 
-  // Auto-rotate featured carousel
+  // Fetch alternate printings of the daily Pokemon for the hero showcase
   useEffect(() => {
-    const t = setInterval(() => setFeaturedIdx(i => (i + 1) % FEATURED_CARDS.length), 5000)
-    return () => clearInterval(t)
-  }, [])
+    let cancelled = false
+    setShowcaseCards([])
 
-  // Fetch real friend activity from follows + wishlists
+    async function fetchShowcase() {
+      try {
+        const headers = {}
+        if (import.meta.env.VITE_TCG_API_KEY) headers['X-Api-Key'] = import.meta.env.VITE_TCG_API_KEY
+        // Search by exact name to get all printings of this Pokemon
+        const res  = await fetch(
+          `https://api.pokemontcg.io/v2/cards?q=name:"${encodeURIComponent(dailyPokemon.name)}"&pageSize=12&orderBy=-set.releaseDate`,
+          { headers }
+        )
+        const json = await res.json()
+        if (cancelled || !json.data?.length) return
+
+        // Exclude the exact same card ID shown as the main hero; take up to 3 alternates
+        const alternates = json.data
+          .filter(c => c.id !== dailyPokemon.cardId)
+          .slice(0, 3)
+          .map(c => ({
+            cardId:    c.id,
+            cardName:  c.name,
+            cardImage: c.images?.small ?? cardIdToImg(c.id),
+            setName:   c.set?.name ?? '',
+          }))
+
+        if (!cancelled) setShowcaseCards(alternates)
+      } catch {
+        // silently fail — showcase is decorative
+      }
+    }
+
+    fetchShowcase()
+    return () => { cancelled = true }
+  }, [dailyPokemon.cardId])
+
+  // Fetch real friend activity
   useEffect(() => {
     if (!user) { setFriendActivity([]); setSharedCards([]); setLoadingFriends(false); return }
     let cancelled = false
     setLoadingFriends(true)
 
     async function fetchFriendData() {
-      // 1. Who does this user follow?
       const { data: followRows } = await supabase
         .from('follows')
         .select('following_id')
@@ -632,7 +804,6 @@ export default function HomePageEditorial({ user, profile, collectionIds, ownedI
         return
       }
 
-      // 2. Fetch profiles for following list (for usernames)
       const { data: friendProfiles } = await supabase
         .from('profiles')
         .select('id, username')
@@ -640,8 +811,6 @@ export default function HomePageEditorial({ user, profile, collectionIds, ownedI
 
       const profileMap = Object.fromEntries((friendProfiles ?? []).map(p => [p.id, p]))
 
-      // 3. Recent activity — 20 most recently added cards from followed users
-      //    RLS ensures we only see cards from public profiles
       const { data: activityRows } = await supabase
         .from('wishlists')
         .select('card_id, name, image, owned, created_at, user_id')
@@ -663,8 +832,6 @@ export default function HomePageEditorial({ user, profile, collectionIds, ownedI
       }))
       setFriendActivity(formatted)
 
-      // 4. Shared cards — all friend wishlists to find overlaps
-      //    Fetch up to 500 rows so we get a meaningful overlap count
       const { data: allFriendCards } = await supabase
         .from('wishlists')
         .select('card_id, name, image, user_id')
@@ -673,7 +840,6 @@ export default function HomePageEditorial({ user, profile, collectionIds, ownedI
 
       if (cancelled) return
 
-      // Group by card_id and count distinct owners
       const cardMap = {}
       for (const w of allFriendCards ?? []) {
         if (!cardMap[w.card_id]) {
@@ -703,7 +869,7 @@ export default function HomePageEditorial({ user, profile, collectionIds, ownedI
     return () => { cancelled = true }
   }, [user?.id])
 
-  // Fetch the 3 most recently added cards as a proxy for "recently viewed"
+  // Fetch 3 most recently added cards
   useEffect(() => {
     if (!user) { setRecentCards([]); return }
     let cancelled = false
@@ -718,7 +884,6 @@ export default function HomePageEditorial({ user, profile, collectionIds, ownedI
 
       if (error || cancelled || !data?.length) return
 
-      // Fetch card names + images from TCG API
       const cards = await Promise.all(
         data.map(async ({ card_id, owned }) => {
           const fallbackImg = cardIdToImg(card_id)
@@ -748,14 +913,20 @@ export default function HomePageEditorial({ user, profile, collectionIds, ownedI
     return () => { cancelled = true }
   }, [user?.id])
 
-  const F = FEATURED_CARDS[featuredIdx]
-
   function handleSurpriseMe() {
     onNavigate(VIBES[Math.floor(Math.random() * VIBES.length)].id)
   }
 
   function togglePreview(id) {
     setPreviewItemId(prev => prev === id ? null : id)
+  }
+
+  function handleSetClick(setId) {
+    onNavigate('all', 'collection', setId)
+  }
+
+  function handleBrowsePokemon(name) {
+    onNavigate('all', 'collection', null, name)
   }
 
   const pageBase = {
@@ -771,28 +942,40 @@ export default function HomePageEditorial({ user, profile, collectionIds, ownedI
   const mobile = (
     <div style={{ ...pageBase, paddingBottom: 90 }}>
 
-      {/* Top bar */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 20px 12px' }}>
-        {user ? (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <Avatar T={T} name={username} size={32} ring />
-            <div style={{ lineHeight: 1.1 }}>
-              <div style={{ fontSize: 11, color: T.ink2, letterSpacing: '0.05em', textTransform: 'uppercase' }}>collector</div>
-              <div style={{ fontSize: 14, fontWeight: 600, color: T.ink0 }}>@{username}</div>
-            </div>
-          </div>
-        ) : (
-          <div style={{ fontFamily: T.fontDisplay, fontSize: 22, color: T.ink0 }}>Poképop ✦</div>
-        )}
+      {/* Top bar — Pokepop branding + search */}
+      <div style={{ padding: '16px 20px 12px', textAlign: 'center' }}>
+        {/* Logo — always shown, same as card index */}
+        <button
+          onClick={() => onNavigate('home')}
+          style={{
+            background: 'none', border: 'none', padding: 0, cursor: 'pointer',
+            display: 'inline-flex', alignItems: 'center', gap: 10, marginBottom: 4,
+          }}
+        >
+          <span className="theme-heading" style={{ fontSize: 42, fontWeight: 700, letterSpacing: '-0.02em', lineHeight: 1 }}>
+            Poképop
+          </span>
+          <PokeBall isDark={isDark} size="0.75em" />
+        </button>
+        <p style={{ fontSize: 12, color: T.ink2, marginBottom: 14, fontWeight: 500 }}>
+          Discover Pokémon cards by vibe ✨
+        </p>
+
+        {/* Full-width search bar */}
         <button
           onClick={() => (onNavigateToSearch ?? onNavigate)('all')}
           style={{
-            width: 38, height: 38, borderRadius: 999,
-            background: T.bgCard, border: `1px solid ${T.border}`,
-            color: T.ink0, fontSize: 15, cursor: 'pointer',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            width: '100%', display: 'flex', alignItems: 'center', gap: 10,
+            background: T.bgCardStrong, border: `1px solid ${T.border}`,
+            borderRadius: 999, padding: '11px 16px',
+            color: T.ink2, fontSize: 14, cursor: 'pointer',
+            fontFamily: T.fontSans, textAlign: 'left',
+            boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
           }}
-        >🔍</button>
+        >
+          <span style={{ fontSize: 15 }}>🔍</span>
+          <span>Search 18,000+ cards…</span>
+        </button>
       </div>
 
       {/* Editorial headline */}
@@ -802,58 +985,38 @@ export default function HomePageEditorial({ user, profile, collectionIds, ownedI
           {user ? 'Welcome back,' : 'Discover your'}<br />
           <GradientEm T={T}>{user ? `${username}.` : 'vibe.'}</GradientEm>
         </h1>
-        {user && (
-          <div style={{ fontSize: 13, color: T.ink1, marginTop: 12, display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
-            <span><strong style={{ color: T.ink0 }}>{totalCards}</strong> <span style={{ color: T.ink2 }}>saved</span></span>
-            <span style={{ color: T.ink3 }}>·</span>
-            <span><strong style={{ color: T.ink0 }}>{ownedCards}</strong> <span style={{ color: T.ink2 }}>owned</span></span>
-            <span style={{ color: T.ink3 }}>·</span>
-            <span><strong style={{ color: T.ink0 }}>{wishlistCards}</strong> <span style={{ color: T.ink2 }}>on wishlist</span></span>
-          </div>
-        )}
       </div>
 
-      {/* Featured spotlight */}
+      {/* Daily hero */}
       <div style={{ padding: '0 20px 32px' }}>
-        <FeaturedSpotlight T={T} card={F} idx={featuredIdx} total={FEATURED_CARDS.length} onDotClick={setFeaturedIdx} cardHeight={180} />
+        <DailyHero T={T} pokemon={dailyPokemon} isDark={isDark} onSetClick={handleSetClick} onCardClick={setSelectedCard} onBrowsePokemon={handleBrowsePokemon} />
       </div>
 
-      {/* Browse by vibe */}
-      <SectionHeader T={T} kicker="Browse the catalog" title="By vibe" />
-      <div style={{ padding: '0 20px 16px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-        {VIBES.slice(0, 4).map(v => <VibeTile key={v.id} vibe={v} onClick={onNavigate} />)}
-      </div>
-      <div style={{ display: 'flex', gap: 12, overflowX: 'auto', padding: '0 20px 32px', scrollbarWidth: 'none' }}>
-        {VIBES.slice(4).map(v => <VibeTile key={v.id} vibe={v} compact onClick={onNavigate} />)}
-      </div>
-
-      {/* My Collection shortcut */}
-      {user && (
-        <div style={{ padding: '0 20px 16px' }}>
+      {/* My Collection + Surprise Me — above Browse by Vibe */}
+      <div style={{ padding: '0 20px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+        {user && (
           <button
             onClick={() => onNavigate('wishlist')}
             style={{
-              width: '100%', padding: '14px 18px', borderRadius: 18,
+              width: '100%', padding: '16px 20px', borderRadius: 20,
               display: 'flex', alignItems: 'center', justifyContent: 'space-between',
               background: T.bgCardStrong, border: `1px solid ${T.border}`,
               color: T.ink0, cursor: 'pointer', fontFamily: T.fontSans,
+              boxShadow: '0 4px 16px rgba(0,0,0,0.08)',
             }}
           >
             <div style={{ textAlign: 'left' }}>
-              <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 2 }}>My Collection</div>
+              <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 3 }}>My Collection</div>
               <div style={{ fontSize: 12, color: T.ink2 }}>{totalCards} cards · {ownedCards} owned</div>
             </div>
-            <span style={{ fontSize: 20 }}>⊞</span>
+            <span style={{ fontSize: 22 }}>⊞</span>
           </button>
-        </div>
-      )}
+        )}
 
-      {/* Surprise me */}
-      <div style={{ padding: '0 20px 24px' }}>
         <button
           onClick={handleSurpriseMe}
           style={{
-            width: '100%', padding: 18, borderRadius: 18,
+            width: '100%', padding: '16px 20px', borderRadius: 20,
             display: 'flex', alignItems: 'center', justifyContent: 'space-between',
             background: isDark
               ? 'linear-gradient(135deg, oklch(50% 0.15 305), oklch(45% 0.18 340))'
@@ -870,6 +1033,15 @@ export default function HomePageEditorial({ user, profile, collectionIds, ownedI
         </button>
       </div>
 
+      {/* Browse by vibe */}
+      <SectionHeader T={T} kicker="Browse the catalog" title="By vibe" />
+      <div style={{ padding: '0 20px 16px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+        {VIBES.slice(0, 4).map(v => <VibeTile key={v.id} vibe={v} onClick={onNavigate} />)}
+      </div>
+      <div style={{ display: 'flex', gap: 12, overflowX: 'auto', padding: '0 20px 32px', scrollbarWidth: 'none' }}>
+        {VIBES.slice(4).map(v => <VibeTile key={v.id} vibe={v} compact onClick={onNavigate} />)}
+      </div>
+
       <BottomNav T={T} onNavigate={onNavigate} />
     </div>
   )
@@ -881,7 +1053,7 @@ export default function HomePageEditorial({ user, profile, collectionIds, ownedI
     <div style={{
       ...pageBase,
       display: 'grid',
-      gridTemplateColumns: '220px 1fr 300px',
+      gridTemplateColumns: '280px 1fr 380px',
       gridTemplateRows: '60px 1fr',
       height: '100vh',
       overflow: 'hidden',
@@ -897,11 +1069,18 @@ export default function HomePageEditorial({ user, profile, collectionIds, ownedI
         backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 28 }}>
+          {/* Poképop branding — large, themed, with pokeball (matches card index) */}
           <button
             onClick={() => onNavigate('home')}
-            style={{ fontFamily: T.fontDisplay, fontSize: 22, color: T.ink0, background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, padding: 0 }}
+            style={{
+              background: 'none', border: 'none', padding: 0, cursor: 'pointer',
+              display: 'flex', alignItems: 'center', gap: 8,
+            }}
           >
-            Poképop <span style={{ fontSize: 14, opacity: 0.5 }}>✦</span>
+            <span className="theme-heading" style={{ fontSize: 26, fontWeight: 700, letterSpacing: '-0.02em', lineHeight: 1 }}>
+              Poképop
+            </span>
+            <PokeBall isDark={isDark} size="0.7em" />
           </button>
           <nav style={{ display: 'flex', gap: 22, fontSize: 13 }}>
             <span style={{ color: T.brand, fontWeight: 600 }}>Home</span>
@@ -936,15 +1115,13 @@ export default function HomePageEditorial({ user, profile, collectionIds, ownedI
         overflowY: 'auto',
         display: 'flex', flexDirection: 'column',
       }}>
-        {/* Library nav */}
         <div style={{ fontSize: 10, color: T.ink2, letterSpacing: '0.18em', textTransform: 'uppercase', padding: '0 10px 8px' }}>Library</div>
         <SideItem T={T} icon="⊞" label="All cards"  count={totalCards || undefined}   active onClick={() => onNavigate('wishlist', 'collection')} />
         <SideItem T={T} icon="✓" label="Owned"      count={ownedCards || undefined}    onClick={() => onNavigate('wishlist', 'collection')} />
-        <SideItem T={T} icon="♥" label="Wishlist"   count={wishlistCards || undefined}  onClick={() => onNavigate('wishlist', 'wishlist')} />
+        <SideItem T={T} icon="♥" label="Wishlist"   count={(totalCards - ownedCards) || undefined}  onClick={() => onNavigate('wishlist', 'wishlist')} />
 
         <div style={{ height: 1, background: T.border, margin: '16px 10px' }} />
 
-        {/* Recent cards — last 3 added to their collection */}
         <div style={{ fontSize: 10, color: T.ink2, letterSpacing: '0.18em', textTransform: 'uppercase', padding: '0 10px 10px' }}>Recently added</div>
         {!user && (
           <div style={{ padding: '8px 10px', fontSize: 12, color: T.ink2, lineHeight: 1.5 }}>
@@ -996,18 +1173,9 @@ export default function HomePageEditorial({ user, profile, collectionIds, ownedI
           }
         </h1>
 
-        {/* Featured hero */}
+        {/* Daily hero */}
         <div style={{ marginBottom: 32 }}>
-          <FeaturedSpotlight T={T} card={F} idx={featuredIdx} total={FEATURED_CARDS.length} onDotClick={setFeaturedIdx} cardHeight={260} desktop />
-          <div style={{ display: 'flex', justifyContent: 'center', gap: 4, marginTop: 12 }}>
-            {FEATURED_CARDS.map((_, i) => (
-              <button key={i} onClick={() => setFeaturedIdx(i)} style={{
-                width: i === featuredIdx ? 18 : 5, height: 5, borderRadius: 999,
-                background: i === featuredIdx ? T.brand : 'rgba(128,128,128,0.3)',
-                border: 'none', padding: 0, cursor: 'pointer', transition: 'all 0.3s',
-              }} />
-            ))}
-          </div>
+          <DailyHero T={T} pokemon={dailyPokemon} isDark={isDark} onSetClick={handleSetClick} onCardClick={setSelectedCard} onBrowsePokemon={handleBrowsePokemon} desktop showcaseCards={showcaseCards} />
         </div>
 
         {/* Browse by vibe */}
@@ -1037,17 +1205,18 @@ export default function HomePageEditorial({ user, profile, collectionIds, ownedI
         </button>
       </main>
 
-      {/* ── Right rail — Friend activity (top) + Shared cards (bottom) */}
+      {/* ── Right rail — Friend activity (top 50%) + Shared cards (bottom 50%) */}
       <aside style={{
         borderLeft: `1px solid ${T.border}`,
         background: T.sideBg,
         backdropFilter: 'blur(12px)',
         display: 'flex', flexDirection: 'column',
         overflow: 'hidden',
+        height: '100%',
       }}>
 
-        {/* ── TOP HALF: Friend activity feed */}
-        <div style={{ flex: 1, overflowY: 'auto', padding: '20px 18px 12px' }}>
+        {/* TOP HALF: Friend activity feed */}
+        <div style={{ flex: 1, overflowY: 'auto', padding: '20px 18px 12px', minHeight: 0 }}>
           <div style={{
             fontSize: 10, color: T.ink2, letterSpacing: '0.18em', textTransform: 'uppercase',
             marginBottom: 4, display: 'flex', alignItems: 'center', gap: 8,
@@ -1098,27 +1267,34 @@ export default function HomePageEditorial({ user, profile, collectionIds, ownedI
           )}
         </div>
 
-        {/* Divider — only shown when both sections have content */}
-        {sharedCards.length > 0 && (
-          <div style={{ height: 1, background: T.borderStrong, flexShrink: 0 }} />
-        )}
+        {/* Divider */}
+        <div style={{ height: 1, background: T.borderStrong, flexShrink: 0 }} />
 
-        {/* ── BOTTOM HALF: Cards multiple friends collect */}
-        {sharedCards.length > 0 && (
-          <div style={{ padding: '14px 18px 20px', flexShrink: 0 }}>
-            <div style={{ fontSize: 10, color: T.ink2, letterSpacing: '0.18em', textTransform: 'uppercase', marginBottom: 12 }}>
-              Friends are collecting
-            </div>
-            <div style={{ display: 'flex', gap: 14, alignItems: 'flex-end', flexWrap: 'wrap' }}>
-              {sharedCards.map(card => (
-                <SharedCard key={card.cardId} T={T} card={card} />
-              ))}
-            </div>
-            <div style={{ fontSize: 10, color: T.ink3, marginTop: 12, lineHeight: 1.4 }}>
-              Badge = number of friends collecting this card.
-            </div>
+        {/* BOTTOM HALF: Cards multiple friends collect — equal height */}
+        <div style={{ flex: 1, overflowY: 'auto', padding: '14px 18px 20px', minHeight: 0 }}>
+          <div style={{ fontSize: 10, color: T.ink2, letterSpacing: '0.18em', textTransform: 'uppercase', marginBottom: 12 }}>
+            Friends are collecting
           </div>
-        )}
+
+          {!loadingFriends && user && sharedCards.length === 0 && (
+            <div style={{ fontSize: 12, color: T.ink2, lineHeight: 1.6 }}>
+              Cards collected by multiple friends will appear here.
+            </div>
+          )}
+
+          {sharedCards.length > 0 && (
+            <>
+              <div style={{ display: 'flex', gap: 14, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+                {sharedCards.map(card => (
+                  <SharedCard key={card.cardId} T={T} card={card} />
+                ))}
+              </div>
+              <div style={{ fontSize: 10, color: T.ink3, marginTop: 12, lineHeight: 1.4 }}>
+                Badge = number of friends collecting this card.
+              </div>
+            </>
+          )}
+        </div>
       </aside>
     </div>
   )
@@ -1128,7 +1304,6 @@ export default function HomePageEditorial({ user, profile, collectionIds, ownedI
       <div className="pp-editorial-mobile">{mobile}</div>
       <div className="pp-editorial-desktop">{desktop}</div>
 
-      {/* Full card detail modal — opens from friend activity card click */}
       {selectedCard && (
         <FriendCardModal
           T={T}

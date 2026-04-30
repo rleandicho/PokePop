@@ -1245,6 +1245,7 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
   const [showDupes,      setShowDupes]      = useState(true)   // true = one tile per copy; false = one tile per card
   const [virtualSlots,   setVirtualSlots]   = useState({})     // virtualCopyId → slot_index (persists across re-renders)
   const [tagFilter,     setTagFilter]     = useState(null)  // null = all, string = specific tag
+  const [showTagMenu,   setShowTagMenu]   = useState(false) // tag filter accordion open/closed
   const [tileTagInputs, setTileTagInputs] = useState({})    // rowId → current inline tag input value
   const [soldModal,     setSoldModal]     = useState(null)  // item object when active
   const [tradeModal,    setTradeModal]    = useState(null)  // item object when active
@@ -1475,6 +1476,10 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
   const binderRawItems = useMemo(() =>
     items.filter(i => i.owned && i.binder_id === selectedBinder?.id),
   [items, selectedBinder?.id])
+
+  const binderValue = useMemo(() =>
+    binderRawItems.reduce((sum, item) => sum + getDisplayPrice(item) * (item.quantity || 1), 0),
+  [binderRawItems])
 
   const binderDisplayItems = useMemo(() => {
     if (!showDupes) return binderRawItems
@@ -2505,10 +2510,10 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
           </div>
         )}
 
-        {/* Chase — wishlist cards only */}
-        {!item.owned && (() => {
+        {/* Chase — wishlist cards can set/unset; owned cards that are still chased can unset */}
+        {(!item.owned || item.is_chase) && (() => {
           const chaseCount  = items.filter(i => i.is_chase).length
-          const chaseAtMax  = !item.is_chase && chaseCount >= 3
+          const chaseAtMax  = !item.is_chase && !item.owned && chaseCount >= 3
           return (
             <motion.button
               whileTap={chaseAtMax ? {} : { scale: 0.92 }}
@@ -2521,7 +2526,7 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
                     ? 'bg-gray-50 text-gray-300 border border-gray-200 cursor-not-allowed opacity-50'
                     : 'bg-white/70 text-gray-300 hover:bg-pink-50 hover:text-pink-400 border border-gray-200'
                 }`}
-              title={item.is_chase ? 'Remove from chase cards' : chaseAtMax ? 'Max 3 chase cards reached' : 'Mark as a chase card (max 3)'}
+              title={item.is_chase ? 'Remove chase mark' : chaseAtMax ? 'Max 3 chase cards reached' : 'Mark as a chase card (max 3)'}
             >
               {item.is_chase ? '🎯 Chasing!' : chaseAtMax ? '🎯 Full (3/3)' : '🎯 Chase'}
             </motion.button>
@@ -2630,54 +2635,139 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
   return (
     <>
       {/* ── Tab bar ────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-2 sm:flex sm:flex-wrap sm:justify-center sm:items-center gap-2 px-4 pt-2 pb-4">
-        {[
-          {
-            id:       'cards',
-            label:    'My Cards 📦',
-            isActive: activeTab === 'collection' || activeTab === 'wishlist',
-            action:   () => { if (activeTab !== 'collection' && activeTab !== 'wishlist') { setActiveTab('collection') } setCollectionPage(1); setWishlistPage(1) },
-          },
-          {
-            id:       'binder',
-            label:    'Virtual Binder 📒',
-            isActive: activeTab === 'binder',
-            action:   () => { setActiveTab('binder'); setCollectionPage(1); setWishlistPage(1) },
-          },
-          {
-            id:       'lists',
-            label:    'Lists 📋',
-            isActive: activeTab === 'lists',
-            action:   () => { setActiveTab('lists'); setCollectionPage(1); setWishlistPage(1) },
-          },
-          {
-            id:       'trainers',
-            label:    `Following 👥${followedTrainers.length ? ` · ${followedTrainers.length}` : ''}`,
-            isActive: activeTab === 'trainers',
-            action:   () => { setActiveTab('trainers'); setCollectionPage(1); setWishlistPage(1) },
-          },
-          {
-            id:       'followers',
-            label:    `Followers 🫂${followers.length ? ` · ${followers.length}` : ''}`,
-            isActive: activeTab === 'followers',
-            action:   () => { setActiveTab('followers'); setCollectionPage(1); setWishlistPage(1) },
-          },
-        ].map(tab => (
+      <div className="px-4 pt-2 pb-4 space-y-2">
+
+        {/* Browse all cards + Share + Settings — top row on mobile */}
+        <div className="flex items-center justify-between sm:hidden">
           <motion.button
-            key={tab.id}
             whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }}
-            onClick={tab.action}
-            className={`w-full sm:w-auto px-5 py-2 rounded-full text-sm font-semibold transition-all border shadow-sm
-              ${tab.isActive
-                ? 'bg-pink-400 text-white border-pink-400 shadow-pink-200'
-                : 'bg-white/60 text-gray-500 border-gray-200 hover:bg-white/80'
-              }`}
+            onClick={onGoExplore}
+            className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5
+                       bg-pink-50 hover:bg-pink-100 text-pink-500 rounded-full
+                       border border-pink-200 shadow-sm transition-colors"
           >
-            {tab.label}
+            ▤ Browse All Cards
           </motion.button>
-        ))}
-        {/* Share + Settings — span full width on mobile so they sit centred below the 2×2 grid */}
-        <div className="col-span-2 sm:col-span-1 sm:contents flex justify-center items-center gap-2">
+          <div className="flex items-center gap-2">
+            {isPublic && (
+              <motion.button
+                whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }}
+                onClick={handleShare}
+                className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5
+                           bg-violet-400 hover:bg-violet-500 text-white rounded-full
+                           shadow-sm transition-colors"
+              >
+                ↗ Share
+              </motion.button>
+            )}
+            <motion.button
+              whileHover={{ scale: 1.1, rotate: 30 }} whileTap={{ scale: 0.92 }}
+              onClick={() => setShowSettings(true)}
+              className="w-9 h-9 flex items-center justify-center rounded-full
+                         bg-white/60 border border-gray-200 text-gray-400 hover:text-gray-600
+                         hover:bg-white/80 shadow-sm transition-colors text-base"
+              title="Account Settings"
+            >
+              ⚙️
+            </motion.button>
+          </div>
+        </div>
+
+        {/* Row 1: My Cards + Virtual Binder */}
+        <div className="flex gap-2 sm:hidden">
+          {[
+            { id: 'cards',  label: 'My Cards 📦',      isActive: activeTab === 'collection' || activeTab === 'wishlist',
+              action: () => { if (activeTab !== 'collection' && activeTab !== 'wishlist') setActiveTab('collection'); setCollectionPage(1); setWishlistPage(1) } },
+            { id: 'binder', label: 'Virtual Binder 📒', isActive: activeTab === 'binder',
+              action: () => { setActiveTab('binder'); setCollectionPage(1); setWishlistPage(1) } },
+          ].map(tab => (
+            <motion.button
+              key={tab.id}
+              whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }}
+              onClick={tab.action}
+              className={`flex-1 px-3 py-2 rounded-full text-sm font-semibold transition-all border shadow-sm
+                ${tab.isActive
+                  ? 'bg-pink-400 text-white border-pink-400 shadow-pink-200'
+                  : 'bg-white/60 text-gray-500 border-gray-200 hover:bg-white/80'
+                }`}
+            >
+              {tab.label}
+            </motion.button>
+          ))}
+        </div>
+
+        {/* Row 2: Following + Followers (same row) */}
+        <div className="flex gap-2 sm:hidden">
+          {[
+            { id: 'trainers',  label: `Following 👥${followedTrainers.length ? ` · ${followedTrainers.length}` : ''}`,
+              isActive: activeTab === 'trainers', action: () => { setActiveTab('trainers'); setCollectionPage(1); setWishlistPage(1) } },
+            { id: 'followers', label: `Followers 🫂${followers.length ? ` · ${followers.length}` : ''}`,
+              isActive: activeTab === 'followers', action: () => { setActiveTab('followers'); setCollectionPage(1); setWishlistPage(1) } },
+          ].map(tab => (
+            <motion.button
+              key={tab.id}
+              whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }}
+              onClick={tab.action}
+              className={`flex-1 px-3 py-2 rounded-full text-sm font-semibold transition-all border shadow-sm
+                ${tab.isActive
+                  ? 'bg-pink-400 text-white border-pink-400 shadow-pink-200'
+                  : 'bg-white/60 text-gray-500 border-gray-200 hover:bg-white/80'
+                }`}
+            >
+              {tab.label}
+            </motion.button>
+          ))}
+        </div>
+
+        {/* Row 3: Lists — full width */}
+        <motion.button
+          whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.96 }}
+          onClick={() => { setActiveTab('lists'); setCollectionPage(1); setWishlistPage(1) }}
+          className={`w-full sm:hidden px-5 py-2 rounded-full text-sm font-semibold transition-all border shadow-sm
+            ${activeTab === 'lists'
+              ? 'bg-pink-400 text-white border-pink-400 shadow-pink-200'
+              : 'bg-white/60 text-gray-500 border-gray-200 hover:bg-white/80'
+            }`}
+        >
+          Lists 📋
+        </motion.button>
+
+        {/* Desktop: original flex row layout */}
+        <div className="hidden sm:flex sm:flex-wrap sm:justify-center sm:items-center gap-2">
+          {[
+            { id: 'cards',     label: 'My Cards 📦',      isActive: activeTab === 'collection' || activeTab === 'wishlist',
+              action: () => { if (activeTab !== 'collection' && activeTab !== 'wishlist') setActiveTab('collection'); setCollectionPage(1); setWishlistPage(1) } },
+            { id: 'binder',    label: 'Virtual Binder 📒', isActive: activeTab === 'binder',
+              action: () => { setActiveTab('binder'); setCollectionPage(1); setWishlistPage(1) } },
+            { id: 'lists',     label: 'Lists 📋',           isActive: activeTab === 'lists',
+              action: () => { setActiveTab('lists'); setCollectionPage(1); setWishlistPage(1) } },
+            { id: 'trainers',  label: `Following 👥${followedTrainers.length ? ` · ${followedTrainers.length}` : ''}`,
+              isActive: activeTab === 'trainers', action: () => { setActiveTab('trainers'); setCollectionPage(1); setWishlistPage(1) } },
+            { id: 'followers', label: `Followers 🫂${followers.length ? ` · ${followers.length}` : ''}`,
+              isActive: activeTab === 'followers', action: () => { setActiveTab('followers'); setCollectionPage(1); setWishlistPage(1) } },
+          ].map(tab => (
+            <motion.button
+              key={tab.id}
+              whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }}
+              onClick={tab.action}
+              className={`px-5 py-2 rounded-full text-sm font-semibold transition-all border shadow-sm
+                ${tab.isActive
+                  ? 'bg-pink-400 text-white border-pink-400 shadow-pink-200'
+                  : 'bg-white/60 text-gray-500 border-gray-200 hover:bg-white/80'
+                }`}
+            >
+              {tab.label}
+            </motion.button>
+          ))}
+          <motion.button
+            whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }}
+            onClick={onGoExplore}
+            className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5
+                       bg-pink-50 hover:bg-pink-100 text-pink-500 rounded-full
+                       border border-pink-200 shadow-sm transition-colors"
+          >
+            ▤ Browse All Cards
+          </motion.button>
           {isPublic && (
             <motion.button
               whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }}
@@ -2689,7 +2779,6 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
               ↗ Share
             </motion.button>
           )}
-
           <motion.button
             whileHover={{ scale: 1.1, rotate: 30 }} whileTap={{ scale: 0.92 }}
             onClick={() => setShowSettings(true)}
@@ -2820,35 +2909,42 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
             )}
           </div>
 
-          {/* Tag filter pills — only show when any tags exist */}
+          {/* Tag filter — collapsed into a menu button */}
           {allTags.length > 0 && (
-            <div className="flex items-center gap-1.5 flex-wrap">
-              <span className="text-xs font-medium" style={{ color: 'var(--app-text)', opacity: 0.6 }}>🏷️ Tags:</span>
-              <motion.button
-                whileTap={{ scale: 0.95 }}
-                onClick={() => { setTagFilter(null); setCollectionPage(1); setWishlistPage(1) }}
-                className={`text-xs font-semibold px-3 py-1 rounded-full border transition-all
-                  ${!tagFilter
+            <div className="relative">
+              <button
+                onClick={() => setShowTagMenu(v => !v)}
+                className={`flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-full border transition-all
+                  ${tagFilter
                     ? 'bg-rose-400 text-white border-rose-400'
                     : 'bg-white/60 text-gray-500 border-gray-200 hover:bg-white/80'
                   }`}
               >
-                All
-              </motion.button>
-              {allTags.map(tag => (
-                <motion.button
-                  key={tag}
-                  whileTap={{ scale: 0.95 }}
-                  onClick={() => { setTagFilter(tagFilter === tag ? null : tag); setCollectionPage(1); setWishlistPage(1) }}
-                  className={`text-xs font-semibold px-3 py-1 rounded-full border transition-all
-                    ${tagFilter === tag
-                      ? 'bg-rose-400 text-white border-rose-400'
-                      : 'bg-white/60 text-gray-500 border-gray-200 hover:bg-white/80'
-                    }`}
-                >
-                  {tag}
-                </motion.button>
-              ))}
+                🏷️ {tagFilter ? tagFilter : 'Tags'}
+                <span className="opacity-60">{showTagMenu ? '▲' : '▼'}</span>
+              </button>
+              {showTagMenu && (
+                <div className="absolute left-0 top-full mt-1 z-30 bg-white border border-gray-200
+                                rounded-2xl shadow-lg p-2 flex flex-wrap gap-1.5 min-w-[160px] max-w-[280px]">
+                  <button
+                    onClick={() => { setTagFilter(null); setCollectionPage(1); setWishlistPage(1); setShowTagMenu(false) }}
+                    className={`text-xs font-semibold px-3 py-1 rounded-full border transition-all
+                      ${!tagFilter ? 'bg-rose-400 text-white border-rose-400' : 'bg-white text-gray-500 border-gray-200 hover:bg-rose-50 hover:text-rose-500'}`}
+                  >
+                    All
+                  </button>
+                  {allTags.map(tag => (
+                    <button
+                      key={tag}
+                      onClick={() => { setTagFilter(tagFilter === tag ? null : tag); setCollectionPage(1); setWishlistPage(1); setShowTagMenu(false) }}
+                      className={`text-xs font-semibold px-3 py-1 rounded-full border transition-all
+                        ${tagFilter === tag ? 'bg-rose-400 text-white border-rose-400' : 'bg-white text-gray-500 border-gray-200 hover:bg-rose-50 hover:text-rose-500'}`}
+                    >
+                      {tag}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -2858,8 +2954,8 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
       {activeTab === 'binder' && (
         <>
           {/* Bookshelf row */}
-          <div className="px-4 mb-6">
-            <div className="flex items-center justify-center gap-4 overflow-x-auto pb-2 scrollbar-none">
+          <div className="px-4 mb-4">
+            <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none">
               {binders.map(b => {
                 const isActive = selectedBinder?.id === b.id
                 const col      = b.color ?? '#a78bfa'
@@ -2867,8 +2963,8 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
                   <motion.div
                     key={b.id}
                     whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
-                    className={`flex-shrink-0 flex items-center gap-2.5 pl-5 pr-2.5 py-2.5
-                               font-bold text-base rounded-full border-2 transition-all select-none`}
+                    className={`flex-shrink-0 flex items-center gap-1.5 pl-3 pr-2 py-1.5
+                               font-semibold text-sm rounded-full border-2 transition-all select-none`}
                     style={isActive
                       ? {
                           color:           '#fff',
@@ -2883,7 +2979,7 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
                   >
                     {/* Color dot + name / inline rename input */}
                     <span
-                      className="w-4 h-4 rounded-full flex-shrink-0 shadow-sm cursor-pointer"
+                      className="w-3 h-3 rounded-full flex-shrink-0 shadow-sm cursor-pointer"
                       style={{ background: isActive ? 'rgba(255,255,255,0.8)' : col }}
                       onClick={() => setSelectedBinder(b)}
                     />
@@ -2898,13 +2994,13 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
                           if (e.key === 'Escape') setRenamingId(null)
                         }}
                         onBlur={() => renameBinder(b.id, renameInput || b.name)}
-                        className="w-28 bg-white/30 text-white placeholder-white/60 text-sm font-bold
+                        className="w-20 bg-white/30 text-white placeholder-white/60 text-xs font-semibold
                                    rounded-lg px-2 py-0.5 focus:outline-none focus:ring-2 focus:ring-white/60"
                       />
                     ) : (
                       <button
                         onClick={() => setSelectedBinder(b)}
-                        className="focus:outline-none truncate max-w-[120px]"
+                        className="focus:outline-none truncate max-w-[80px] text-sm"
                       >
                         {b.name}
                       </button>
@@ -2953,6 +3049,21 @@ export default function WishlistDashboard({ user, onToast, onGoExplore, onBinder
               </motion.button>
             </div>
           </div>
+
+          {/* Binder value strip */}
+          {selectedBinder && (
+            <div className="flex items-center justify-between px-4 py-2.5 mb-2
+                            bg-pink-50/60 border border-pink-100 rounded-2xl
+                            text-sm font-semibold text-pink-500">
+              <span className="truncate max-w-[60%]">{selectedBinder.name}</span>
+              <span className="text-pink-400 font-bold tabular-nums">
+                {binderValue > 0
+                  ? `$${binderValue.toFixed(2)}`
+                  : <span className="font-normal text-pink-300 text-xs">No prices yet</span>
+                }
+              </span>
+            </div>
+          )}
 
           {/* Binder view for selected binder */}
           {selectedBinder ? (

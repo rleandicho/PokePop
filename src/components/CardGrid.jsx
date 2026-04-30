@@ -352,7 +352,7 @@ const LANG_OPTIONS = [
   { value: 'russian',    label: 'Russian',               flag: '🇷🇺' },
 ]
 
-function CardModal({ card, user, onToast, onClose, saveCard, collectionIds, ownedIds, collectionLanguages, onCardAdded, onCardRemoved, onOwnedChanged }) {
+function CardModal({ card, user, onToast, onClose, saveCard, collectionIds, ownedIds, collectionLanguages, onCardAdded, onCardRemoved, onOwnedChanged, onSetQuery }) {
   const [saving,           setSaving]           = useState(false)
   const [removing,         setRemoving]         = useState(false)
   const [quantity,         setQuantity]         = useState(1)
@@ -518,7 +518,18 @@ function CardModal({ card, user, onToast, onClose, saveCard, collectionIds, owne
              className="w-full rounded-2xl mb-4 shadow-md"
              onError={e => { e.currentTarget.src = CARD_BACK }} />
         <h2 className="text-xl font-bold text-pink-500 mb-0.5">{card.name}</h2>
-        <p className="text-sm text-gray-400 mb-2">{card.set?.name} · {card.rarity}</p>
+        <p className="text-sm text-gray-400 mb-2">
+          {card.set?.name && card.set?.id ? (
+            <button
+              onClick={() => { onSetQuery?.(`set.id:${card.set.id}`); onClose() }}
+              className="hover:text-pink-400 hover:underline transition-colors cursor-pointer"
+              title={`Browse all cards from ${card.set.name}`}
+            >
+              {card.set.name}
+            </button>
+          ) : card.set?.name}
+          {card.rarity && <> · {card.rarity}</>}
+        </p>
 
         {/* ── Condition — shown early for owned cards ── */}
         {inList && isOwned && (
@@ -844,10 +855,19 @@ function CardModal({ card, user, onToast, onClose, saveCard, collectionIds, owne
           {card.tcgplayer?.url && (
             <a href={card.tcgplayer.url} target="_blank" rel="noreferrer"
                className="block text-center bg-pink-400 hover:bg-pink-500 text-white
-                          font-semibold py-2 rounded-2xl transition-colors">
+                          font-semibold py-2 rounded-2xl transition-colors mb-2">
               View on TCGPlayer
             </a>
           )}
+          <a
+            href={`https://www.ebay.com/sch/i.html?_nkw=${encodeURIComponent(card.name + ' pokemon card')}&_sacat=2536`}
+            target="_blank"
+            rel="noreferrer"
+            className="block text-center bg-amber-400 hover:bg-amber-500 text-white
+                       font-semibold py-2 rounded-2xl transition-colors"
+          >
+            Search on eBay
+          </a>
         </div>
       </motion.div>
     </motion.div>
@@ -859,7 +879,7 @@ function CardModal({ card, user, onToast, onClose, saveCard, collectionIds, owne
 // quickAdd/quickRemove are useCallback-stable so memo comparisons hold.
 const LANG_FLAG_MAP = { japanese:'🇯🇵', korean:'🇰🇷', chinese_t:'🇹🇼', chinese_s:'🇨🇳', french:'🇫🇷', german:'🇩🇪', italian:'🇮🇹', spanish:'🇪🇸', portuguese:'🇧🇷', thai:'🇹🇭', indonesian:'🇮🇩', russian:'🇷🇺' }
 
-const CardTile = memo(function CardTile({ card, inList, isOwned, myLangs, quickAdd, quickRemove, setSelected }) {
+const CardTile = memo(function CardTile({ card, inList, isOwned, myLangs, quickAdd, quickRemove, setSelected, onSetQuery }) {
   const [ownedQty, setOwnedQty] = useState(1)
 
   return (
@@ -919,7 +939,17 @@ const CardTile = memo(function CardTile({ card, inList, isOwned, myLangs, quickA
         {card.card_language && card.card_language !== 'en' && card.english_name && (
           <p className="text-[10px] text-sky-500 truncate font-medium">{card.english_name}</p>
         )}
-        <p className="text-xs text-gray-400 truncate">{card.set?.name}</p>
+        {card.set?.name && card.set?.id ? (
+          <button
+            onClick={e => { e.stopPropagation(); onSetQuery?.(`set.id:${card.set.id}`) }}
+            className="text-xs text-gray-400 hover:text-pink-400 hover:underline truncate block w-full transition-colors"
+            title={`Browse ${card.set.name}`}
+          >
+            {card.set.name}
+          </button>
+        ) : (
+          <p className="text-xs text-gray-400 truncate">{card.set?.name}</p>
+        )}
         <VariantBadges card={card} />
         <PriceTag card={card} />
         {(isOwned || !inList) && (
@@ -973,7 +1003,7 @@ const CardTile = memo(function CardTile({ card, inList, isOwned, myLangs, quickA
 })
 
 // ─── Main grid ────────────────────────────────────────────────────────────────
-function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, onClearFilters, user, onToast, activeBinderId, collectionIds, ownedIds, collectionLanguages, onCardAdded, onCardRemoved, onOwnedChanged, autoFocusSearch = false }) {
+function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, onClearFilters, user, onToast, activeBinderId, collectionIds, ownedIds, collectionLanguages, onCardAdded, onCardRemoved, onOwnedChanged, autoFocusSearch = false, onSetQuery }) {
   const gridTopRef   = useRef(null)
   const [cards,      setCards]      = useState([])
   const [page,       setPage]       = useState(1)
@@ -1281,6 +1311,7 @@ function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, onClearF
             quickAdd={quickAdd}
             quickRemove={quickRemove}
             setSelected={setSelected}
+            onSetQuery={onSetQuery}
           />
         ))}
       </motion.div>
@@ -1315,7 +1346,7 @@ function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, onClearF
 
       <AnimatePresence>
         {selected && (
-          <CardModal card={selected} user={user} onToast={onToast} onClose={() => setSelected(null)} saveCard={saveCard} collectionIds={collectionIds} ownedIds={ownedIds} collectionLanguages={collectionLanguages} onCardAdded={onCardAdded} onCardRemoved={onCardRemoved} onOwnedChanged={onOwnedChanged} />
+          <CardModal card={selected} user={user} onToast={onToast} onClose={() => setSelected(null)} saveCard={saveCard} collectionIds={collectionIds} ownedIds={ownedIds} collectionLanguages={collectionLanguages} onCardAdded={onCardAdded} onCardRemoved={onCardRemoved} onOwnedChanged={onOwnedChanged} onSetQuery={onSetQuery} />
         )}
       </AnimatePresence>
     </>

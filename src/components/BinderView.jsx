@@ -362,9 +362,9 @@ function BinderPage({ slots, cols, pageNumber, theme, selectedIdx, pageOffset, o
         <button
           onClick={() => onInsertPage(pageNumber, dir)}
           className="flex items-center gap-1 mx-auto px-3 py-1 rounded-full
-                     text-[10px] font-semibold text-gray-400 hover:text-violet-500
-                     bg-white/50 hover:bg-violet-50 border border-dashed border-gray-200
-                     hover:border-violet-300 transition-all opacity-0 group-hover:opacity-100"
+                     text-[10px] font-semibold text-gray-500 hover:text-violet-500
+                     bg-white/80 hover:bg-violet-50 border border-dashed border-gray-300
+                     hover:border-violet-300 transition-all"
           title={dir === 'before' ? `Insert blank page before page ${pageNumber}` : `Insert blank page after page ${pageNumber}`}
         >
           {dir === 'before' ? '↑ Insert page above' : '↓ Insert page below'}
@@ -420,7 +420,7 @@ function BinderPage({ slots, cols, pageNumber, theme, selectedIdx, pageOffset, o
         <div className="flex items-center justify-between mb-3">
           {/* Page reorder arrows */}
           {!readOnly && onMovePage ? (
-            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+            <div className="flex items-center gap-1 transition-opacity">
               <button
                 onClick={() => onMovePage(pageNumber, 'up')}
                 disabled={pageNumber === 1}
