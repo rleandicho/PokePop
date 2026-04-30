@@ -4,9 +4,13 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { supabase } from '../lib/supabase'
 import { fetchAllRows } from '../lib/fetchAllRows'
 import BinderView from './BinderView'
+import PackLogModal from './PackLogModal'
 
 // ─── Pagination ───────────────────────────────────────────────────────────────
 const ITEMS_PER_PAGE = 20
+
+// ─── Card back fallback (inline SVG, never 404s) ─────────────────────────────
+const CARD_BACK = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="250" height="350" viewBox="0 0 250 350"><rect width="250" height="350" fill="#1a4fa0" rx="14"/><circle cx="125" cy="175" r="72" fill="none" stroke="rgba(255,255,255,0.22)" stroke-width="5"/><circle cx="125" cy="175" r="44" fill="rgba(255,255,255,0.07)" stroke="rgba(255,255,255,0.12)" stroke-width="3"/><circle cx="125" cy="175" r="12" fill="rgba(255,255,255,0.28)"/><line x1="0" y1="175" x2="53" y2="175" stroke="rgba(255,255,255,0.18)" stroke-width="2.5"/><line x1="197" y1="175" x2="250" y2="175" stroke="rgba(255,255,255,0.18)" stroke-width="2.5"/></svg>')}`
 
 // ─── Price resolution: manual → market → mid → low → 0 ──────────────────────
 // manual_price wins when set (user override for cards TCGPlayer hasn't priced yet).
@@ -111,7 +115,7 @@ function ShowcaseCard({ item, badge, borderColor, delay, onCardClick }) {
       <div className="relative">
         {badge}
         <img src={item.image} alt={item.name} className={`w-12 rounded-xl shadow-md border-2 ${borderColor}`}
-             onError={e => { e.currentTarget.src = 'https://images.pokemontcg.io/cardback.jpg' }} />
+             onError={e => { e.currentTarget.src = CARD_BACK }} />
       </div>
       <p className="text-[10px] font-bold text-gray-600 text-center w-12 truncate">{item.name}</p>
     </motion.div>
@@ -286,7 +290,7 @@ function MiniCardRow({ cards, emptyColor = 'pink', badge, onCardClick }) {
             alt={card.name}
             className="w-full rounded-lg shadow-sm hover:opacity-90 transition-opacity"
             loading="lazy"
-            onError={e => { e.currentTarget.src = 'https://images.pokemontcg.io/cardback.jpg' }}
+            onError={e => { e.currentTarget.src = CARD_BACK }}
           />
           {badge && getDisplayPrice(card) > 0 && (
             <span
@@ -982,7 +986,7 @@ function WishlistCardModal({
         >✕</button>
 
         <img src={item.image} alt={item.name} className="w-full rounded-2xl mb-4 shadow-md"
-             onError={e => { e.currentTarget.src = 'https://images.pokemontcg.io/cardback.jpg' }} />
+             onError={e => { e.currentTarget.src = CARD_BACK }} />
 
         <h2 className="text-xl font-bold text-pink-500 mb-0.5">{item.name}</h2>
         <p className="text-sm text-gray-400 mb-3">
@@ -1261,6 +1265,10 @@ export default function WishlistDashboard({ user, profile, onToast, onGoExplore,
   const [salesHistoryOpen,   setSalesHistoryOpen]   = useState(false)
   const [tradesHistoryOpen,  setTradesHistoryOpen]  = useState(false)
   const [selectedFollowedCard, setSelectedFollowedCard] = useState(null)
+  const [packInvested,   setPackInvested]   = useState(0)      // sum of all pack prices
+  const [packLogs,       setPackLogs]       = useState([])     // recent pack log history
+  const [packLogOpen,    setPackLogOpen]    = useState(false)  // history modal open
+  const [packModalOpen,  setPackModalOpen]  = useState(false)  // log-a-pack modal open
 
   // Notify App whenever the active binder changes (so CardGrid can route new cards here)
   useEffect(() => { onBinderChange?.(selectedBinder?.id ?? null) }, [selectedBinder])
@@ -1403,6 +1411,16 @@ export default function WishlistDashboard({ user, profile, onToast, onGoExplore,
     } else {
       setFollowers([])
     }
+
+    // Pack investment total
+    const { data: packData } = await supabase
+      .from('pack_logs')
+      .select('id, pack_name, opened_at, pack_price, total_value, cards')
+      .eq('user_id', user.id)
+      .order('opened_at', { ascending: false })
+    const logs = packData ?? []
+    setPackLogs(logs)
+    setPackInvested(logs.reduce((sum, p) => sum + (p.pack_price || 0), 0))
 
     setLoading(false)
   }
@@ -2396,7 +2414,7 @@ export default function WishlistDashboard({ user, profile, onToast, onGoExplore,
           className="w-full cursor-pointer"
           loading="lazy"
           onClick={() => setSelectedItem(item)}
-          onError={e => { e.currentTarget.src = 'https://images.pokemontcg.io/cardback.jpg' }}
+          onError={e => { e.currentTarget.src = CARD_BACK }}
         />
         {item.owned && (
           item._isExpanded
@@ -2560,6 +2578,8 @@ export default function WishlistDashboard({ user, profile, onToast, onGoExplore,
             >+</button>
           </div>
         )}
+        {/* Spacer for expanded duplicate tiles — keeps binder dropdown + tag bar aligned */}
+        {item.owned && item._isExpanded && <div className="mt-1.5 h-6" />}
 
         {/* Chase — wishlist cards can set/unset; owned cards that are still chased can unset */}
         {(!item.owned || item.is_chase) && (() => {
@@ -2869,7 +2889,7 @@ export default function WishlistDashboard({ user, profile, onToast, onGoExplore,
         <div className="grid grid-cols-3 gap-3 px-4 pb-4">
           <StatCard icon="📦" label="Collection Value"    value={collectionValue} color="mint"  prefix="$" decimals={2} />
           <StatCard icon="✨" label="Wishlist Value"       value={wishlistValue}   color="lilac" prefix="$" decimals={2} />
-          <StatCard icon="💖" label="Total Cards"          value={totalCount}      color="pink"  />
+          <StatCard icon="🎴" label="Total Invested"       value={packInvested}    color="pink"  prefix="$" decimals={2} onClick={() => setPackLogOpen(true)} />
           <StatCard icon="✅" label="Progress"             value={totalCount > 0 ? Math.round((ownedCount / totalCount) * 100) : 0} color="lilac" suffix="%" />
           <StatCard icon="💰" label="Total Sales"          value={salesTotal}      color="mint"  prefix="$" decimals={2} onClick={openSalesHistory} />
           <StatCard icon="🤝" label="Cards Traded"         value={tradeCount}      color="pink"  onClick={openTradesHistory} />
@@ -3549,7 +3569,7 @@ export default function WishlistDashboard({ user, profile, onToast, onGoExplore,
                     <div key={s.id} className="flex items-center gap-3 p-2.5 bg-amber-50 rounded-xl border border-amber-100">
                       {s.card_image && (
                         <img src={s.card_image} alt={s.card_name} className="w-10 rounded-lg flex-shrink-0 shadow-sm"
-                             onError={e => { e.currentTarget.src = 'https://images.pokemontcg.io/cardback.jpg' }} />
+                             onError={e => { e.currentTarget.src = CARD_BACK }} />
                       )}
                       <div className="flex-1 min-w-0">
                         <p className="text-xs font-bold text-gray-700 truncate">{s.card_name}</p>
@@ -3596,7 +3616,7 @@ export default function WishlistDashboard({ user, profile, onToast, onGoExplore,
                     <div key={t.id} className="flex items-center gap-3 p-2.5 bg-sky-50 rounded-xl border border-sky-100">
                       {t.card_image && (
                         <img src={t.card_image} alt={t.card_name} className="w-10 rounded-lg flex-shrink-0 shadow-sm"
-                             onError={e => { e.currentTarget.src = 'https://images.pokemontcg.io/cardback.jpg' }} />
+                             onError={e => { e.currentTarget.src = CARD_BACK }} />
                       )}
                       <div className="flex-1 min-w-0">
                         <p className="text-xs font-bold text-gray-700 truncate">{t.card_name}</p>
@@ -3634,7 +3654,7 @@ export default function WishlistDashboard({ user, profile, onToast, onGoExplore,
                 className="absolute top-4 right-4 w-7 h-7 flex items-center justify-center rounded-full bg-gray-100 text-gray-400 hover:bg-gray-200 text-sm"
               >✕</button>
               <img src={selectedFollowedCard.image} alt={selectedFollowedCard.name} className="w-full rounded-xl mb-3 shadow-md"
-                   onError={e => { e.currentTarget.src = 'https://images.pokemontcg.io/cardback.jpg' }} />
+                   onError={e => { e.currentTarget.src = CARD_BACK }} />
               <h3 className="text-base font-bold text-gray-700 mb-1">{selectedFollowedCard.name}</h3>
               {getDisplayPrice(selectedFollowedCard) > 0 && (
                 <p className="text-sm font-semibold text-pink-500 mb-2">
@@ -3697,6 +3717,79 @@ export default function WishlistDashboard({ user, profile, onToast, onGoExplore,
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* ── Pack Log History Modal ──────────────────────────────────── */}
+      <AnimatePresence>
+        {packLogOpen && (
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm px-4"
+            onClick={() => setPackLogOpen(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-md max-h-[80vh] flex flex-col"
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-base font-bold text-gray-700">🎴 Pack History</h2>
+                <button onClick={() => setPackLogOpen(false)} className="text-gray-400 hover:text-gray-600 text-xl leading-none">×</button>
+              </div>
+              <div className="mb-3 text-sm text-gray-500">
+                Total invested: <span className="font-bold text-pink-500">${packInvested.toFixed(2)}</span>
+              </div>
+              {packLogs.length === 0 ? (
+                <p className="text-sm text-gray-400 text-center py-8">No packs logged yet.<br/>Hit "Log a Pack" to start tracking!</p>
+              ) : (
+                <div className="overflow-y-auto flex-1 space-y-2 pr-1">
+                  {packLogs.map(log => (
+                    <div key={log.id} className="border border-gray-100 rounded-xl p-3 flex items-start gap-3">
+                      <div className="text-2xl">🎴</div>
+                      <div className="flex-1 min-w-0">
+                        <div className="font-semibold text-gray-700 text-sm truncate">{log.pack_name}</div>
+                        <div className="text-xs text-gray-400">{new Date(log.opened_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</div>
+                        <div className="flex gap-3 mt-1 text-xs">
+                          <span className="text-rose-500 font-medium">Paid: ${Number(log.pack_price).toFixed(2)}</span>
+                          {log.total_value > 0 && <span className="text-emerald-600 font-medium">Value: ${Number(log.total_value).toFixed(2)}</span>}
+                        </div>
+                        {(log.cards ?? []).length > 0 && (
+                          <div className="flex gap-1 mt-2 flex-wrap">
+                            {(log.cards ?? []).slice(0, 5).map((c, i) => (
+                              <img key={i} src={c.image} alt={c.name} className="h-10 rounded-lg shadow-sm"
+                                   onError={e => { e.currentTarget.src = CARD_BACK }} />
+                            ))}
+                            {(log.cards ?? []).length > 5 && (
+                              <span className="text-xs text-gray-400 self-center">+{(log.cards ?? []).length - 5} more</span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <button
+                onClick={() => { setPackLogOpen(false); setPackModalOpen(true) }}
+                className="mt-4 w-full py-2.5 rounded-xl text-sm font-semibold bg-gradient-to-r from-pink-400 to-violet-400 text-white hover:opacity-90 transition"
+              >
+                + Log a New Pack
+              </button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── Log-a-Pack Modal ────────────────────────────────────────── */}
+      {packModalOpen && (
+        <PackLogModal
+          user={user}
+          onClose={() => setPackModalOpen(false)}
+          onSaved={(log) => {
+            setPackLogs(prev => [log, ...prev])
+            setPackInvested(prev => prev + (log.pack_price || 0))
+          }}
+        />
+      )}
 
       {/* ── Trade Confirmation Modal ────────────────────────────────── */}
       <AnimatePresence>

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
+import PackLogModal from './PackLogModal'
 
 // ── Daily Pokemon — deterministic per calendar day
 const DAILY_POKEMON = [
@@ -98,15 +99,46 @@ function getDailyPokemon() {
 
 // ── Vibes — matches existing vibe IDs
 const VIBES = [
-  { id: 'girlypop',    label: 'Girlypop',    emoji: '🌸', desc: 'Cute & soft',       bg: 'oklch(82% 0.10 0)',   ink: 'oklch(35% 0.10 0)' },
-  { id: 'space',       label: 'Space',       emoji: '✨', desc: 'Cosmic & celestial', bg: 'oklch(78% 0.09 240)', ink: 'oklch(30% 0.09 240)' },
-  { id: 'darkfairy',   label: 'Dark Fairy',  emoji: '🖤', desc: 'Mysterious vibes',   bg: 'oklch(72% 0.10 290)', ink: 'oklch(98% 0.02 290)' },
-  { id: 'cottagecore', label: 'Cottagecore', emoji: '🌿', desc: 'Cozy & botanical',   bg: 'oklch(85% 0.10 145)', ink: 'oklch(32% 0.10 145)' },
-  { id: 'nature',      label: 'Nature',      emoji: '🌱', desc: 'Grass-type gallery', bg: 'oklch(80% 0.13 130)', ink: 'oklch(28% 0.10 130)' },
-  { id: 'pastel',      label: 'Pastel',      emoji: '🍬', desc: 'Fairy-type softies', bg: 'oklch(90% 0.08 90)',  ink: 'oklch(38% 0.08 90)' },
-  { id: 'trainers',    label: 'Trainers',    emoji: '🃏', desc: 'Supporters & items', bg: 'oklch(88% 0.07 60)',  ink: 'oklch(35% 0.08 60)' },
-  { id: 'fullart',     label: 'Full Art',    emoji: '🎨', desc: 'Rare art showcase',  bg: 'oklch(85% 0.09 320)', ink: 'oklch(32% 0.10 320)' },
+  { id: 'girlypop',    label: 'Girlypop',    ball: 'love-ball',    desc: 'Cute & soft',       bg: 'oklch(82% 0.10 0)',   ink: 'oklch(35% 0.10 0)',
+    cardImg: 'https://images.pokemontcg.io/sv3pt5/91_hires.png' },
+  { id: 'space',       label: 'Space',       ball: 'moon-ball',    desc: 'Cosmic & celestial', bg: 'oklch(78% 0.09 240)', ink: 'oklch(30% 0.09 240)',
+    cardImg: 'https://images.pokemontcg.io/neo1/9_hires.png' },
+  { id: 'darkfairy',   label: 'Dark Fairy',  ball: 'dream-ball',   desc: 'Mysterious vibes',   bg: 'oklch(72% 0.10 290)', ink: 'oklch(98% 0.02 290)',
+    cardImg: 'https://images.pokemontcg.io/fossil/5_hires.png' },
+  { id: 'cottagecore', label: 'Cottagecore', ball: 'nest-ball',    desc: 'Cozy & botanical',   bg: 'oklch(85% 0.10 145)', ink: 'oklch(32% 0.10 145)',
+    cardImg: 'https://images.pokemontcg.io/dp5/11_hires.png' },
+  { id: 'nature',      label: 'Nature',      ball: 'safari-ball',  desc: 'Grass-type gallery', bg: 'oklch(80% 0.13 130)', ink: 'oklch(28% 0.10 130)',
+    cardImg: 'https://images.pokemontcg.io/base1/15_hires.png' },
+  { id: 'pastel',      label: 'Pastel',      ball: 'heal-ball',    desc: 'Fairy-type softies', bg: 'oklch(90% 0.08 90)',  ink: 'oklch(38% 0.08 90)',
+    cardImg: 'https://images.pokemontcg.io/jungle/19_hires.png' },
+  { id: 'trainers',    label: 'Trainers',    icon: 'pokedex',      desc: 'Supporters & items', bg: 'oklch(88% 0.07 60)',  ink: 'oklch(35% 0.08 60)',
+    cardImg: 'https://images.pokemontcg.io/swsh9/172_hires.png' },
+  { id: 'fullart',     label: 'Full Art',    icon: 'candy',        desc: 'Rare art showcase',  bg: 'oklch(85% 0.09 320)', ink: 'oklch(32% 0.10 320)',
+    cardImg: 'https://images.pokemontcg.io/sv3pt5/215_hires.png' },
 ]
+
+// ── Inline SVG icons for Trainers + Full Art ────────────────────────────────
+function PokedexIcon({ color }) {
+  return (
+    <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
+      <rect x="1" y="1" width="20" height="20" rx="4" fill={color} fillOpacity="0.18" stroke={color} strokeWidth="1.5"/>
+      <circle cx="7" cy="8" r="3" fill={color} fillOpacity="0.6"/>
+      <line x1="12" y1="7" x2="19" y2="7" stroke={color} strokeWidth="1.5" strokeLinecap="round"/>
+      <line x1="12" y1="10" x2="17" y2="10" stroke={color} strokeWidth="1.5" strokeLinecap="round"/>
+      <rect x="3" y="14" width="16" height="5" rx="2" fill={color} fillOpacity="0.25"/>
+    </svg>
+  )
+}
+
+function RareCandyIcon({ color }) {
+  return (
+    <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
+      <ellipse cx="11" cy="11" rx="8" ry="6" fill={color} fillOpacity="0.25" stroke={color} strokeWidth="1.5"/>
+      <ellipse cx="11" cy="9" rx="8" ry="6" fill={color} fillOpacity="0.55" stroke={color} strokeWidth="1.5"/>
+      <line x1="7" y1="9" x2="15" y2="9" stroke="white" strokeWidth="1" strokeOpacity="0.5"/>
+    </svg>
+  )
+}
 
 // ── Derive image URL from TCG card ID (e.g. "base1-4" → ".../base1/4_hires.png")
 function cardIdToImg(cardId) {
@@ -231,6 +263,25 @@ function SectionHeader({ T, kicker, title, onRight, rightLabel }) {
   )
 }
 
+function VibeBall({ vibe, size = 22 }) {
+  if (vibe.ball) {
+    return (
+      <span
+        className={`theme-ball ${vibe.ball}`}
+        style={{ width: size, height: size, flexShrink: 0 }}
+      >
+        <span className="theme-ball__top" />
+        <span className="theme-ball__band" />
+        <span className="theme-ball__button" />
+        <span className="theme-ball__mark" />
+      </span>
+    )
+  }
+  if (vibe.icon === 'pokedex') return <PokedexIcon color={vibe.ink} />
+  if (vibe.icon === 'candy')   return <RareCandyIcon color={vibe.ink} />
+  return null
+}
+
 function VibeTile({ vibe, compact = false, onClick }) {
   const [hov, setHov] = useState(false)
   return (
@@ -239,6 +290,7 @@ function VibeTile({ vibe, compact = false, onClick }) {
       onMouseEnter={() => setHov(true)}
       onMouseLeave={() => setHov(false)}
       style={{
+        position: 'relative', overflow: 'hidden',
         borderRadius: 16, padding: compact ? 14 : 18,
         background: vibe.bg, color: vibe.ink,
         cursor: 'pointer', border: 'none',
@@ -251,11 +303,28 @@ function VibeTile({ vibe, compact = false, onClick }) {
         fontFamily: 'inherit', textAlign: 'left',
       }}
     >
-      <div style={{ fontSize: compact ? 18 : 22 }}>{vibe.emoji}</div>
-      <div>
+      <VibeBall vibe={vibe} size={compact ? 18 : 22} />
+      <div style={{ position: 'relative', zIndex: 1 }}>
         <div style={{ fontWeight: 600, fontSize: compact ? 14 : 16, marginBottom: 2 }}>{vibe.label}</div>
         <div style={{ fontSize: 11, opacity: 0.7 }}>{vibe.desc}</div>
       </div>
+      {/* Card peek — decorative, clipped to tile */}
+      {!compact && vibe.cardImg && (
+        <img
+          src={vibe.cardImg}
+          alt=""
+          aria-hidden="true"
+          style={{
+            position: 'absolute', right: -12, bottom: -8,
+            height: 90, width: 'auto', borderRadius: 6,
+            transform: hov ? 'rotate(4deg) translateY(-4px)' : 'rotate(8deg)',
+            boxShadow: '0 6px 20px rgba(0,0,0,0.35)',
+            transition: 'transform 0.2s',
+            pointerEvents: 'none',
+          }}
+          onError={e => { e.currentTarget.style.display = 'none' }}
+        />
+      )}
     </button>
   )
 }
@@ -734,6 +803,7 @@ export default function HomePageEditorial({ user, profile, collectionIds, ownedI
   const [sharedCards,    setSharedCards]    = useState([])
   const [previewItemId,  setPreviewItemId]  = useState(null)
   const [selectedCard,   setSelectedCard]   = useState(null)
+  const [packModalOpen,  setPackModalOpen]  = useState(false)
   const [loadingFriends, setLoadingFriends] = useState(true)
   const [showcaseCards,  setShowcaseCards]  = useState([]) // alternate printings of the daily Pokemon
   const T = getTokens(isDark)
@@ -1031,6 +1101,27 @@ export default function HomePageEditorial({ user, profile, collectionIds, ownedI
           </div>
           <span style={{ fontSize: 22 }}>⚄</span>
         </button>
+
+        {user && (
+          <button
+            onClick={() => setPackModalOpen(true)}
+            style={{
+              width: '100%', padding: '16px 20px', borderRadius: 20,
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              background: isDark
+                ? 'linear-gradient(135deg, oklch(45% 0.15 180), oklch(40% 0.12 210))'
+                : 'linear-gradient(135deg, #a7f3d0, #6ee7b7)',
+              border: `1px solid ${T.borderStrong}`,
+              color: isDark ? '#d1fae5' : '#065f46', cursor: 'pointer', fontFamily: T.fontSans,
+            }}
+          >
+            <div style={{ textAlign: 'left' }}>
+              <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 2 }}>Log a pack</div>
+              <div style={{ fontSize: 12, opacity: 0.8 }}>Track what you pulled</div>
+            </div>
+            <span style={{ fontSize: 22 }}>🎴</span>
+          </button>
+        )}
       </div>
 
       {/* Browse by vibe */}
@@ -1063,16 +1154,14 @@ export default function HomePageEditorial({ user, profile, collectionIds, ownedI
       <div style={{
         gridColumn: '1 / -1',
         display: 'grid',
-        gridTemplateColumns: 'auto 1fr auto',
+        gridTemplateColumns: '280px 1fr 380px',
         alignItems: 'center',
-        gap: 16,
-        padding: '0 28px',
         borderBottom: `1px solid ${T.border}`,
         background: T.navBg,
         backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
       }}>
-        {/* Left — branding + nav */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 24 }}>
+        {/* Left — branding only (aligns with left sidebar) */}
+        <div style={{ display: 'flex', alignItems: 'center', paddingLeft: 24 }}>
           <button
             onClick={() => onNavigate('home')}
             style={{
@@ -1080,12 +1169,12 @@ export default function HomePageEditorial({ user, profile, collectionIds, ownedI
               display: 'flex', alignItems: 'center', gap: 8,
             }}
           >
-            <span className="theme-heading" style={{ fontSize: 26, fontWeight: 700, letterSpacing: '-0.02em', lineHeight: 1 }}>
+            <span className="theme-heading" style={{ fontSize: 24, fontWeight: 700, letterSpacing: '-0.02em', lineHeight: 1 }}>
               Poképop
             </span>
             <span
               className={`theme-ball ${isDark ? 'luxury-ball' : 'love-ball'}`}
-              style={{ width: 24, height: 24, flexShrink: 0 }}
+              style={{ width: 22, height: 22, flexShrink: 0 }}
             >
               <span className="theme-ball__top" />
               <span className="theme-ball__band" />
@@ -1093,22 +1182,16 @@ export default function HomePageEditorial({ user, profile, collectionIds, ownedI
               <span className="theme-ball__mark">{isDark ? 'L' : '♥'}</span>
             </span>
           </button>
-          <nav style={{ display: 'flex', gap: 22, fontSize: 13 }}>
-            <span style={{ color: T.brand, fontWeight: 600 }}>Home</span>
-            <button onClick={() => onNavigate('all')} style={{ background: 'none', border: 'none', color: T.ink1, cursor: 'pointer', fontSize: 13, fontFamily: T.fontSans }}>Browse</button>
-            <button onClick={() => onNavigate('wishlist', 'collection')} style={{ background: 'none', border: 'none', color: T.ink1, cursor: 'pointer', fontSize: 13, fontFamily: T.fontSans }}>My library</button>
-            <button onClick={() => onNavigate('wishlist', 'wishlist')} style={{ background: 'none', border: 'none', color: T.ink1, cursor: 'pointer', fontSize: 13, fontFamily: T.fontSans }}>Wishlist</button>
-          </nav>
         </div>
 
-        {/* Center — search bar */}
-        <div style={{ display: 'flex', justifyContent: 'center' }}>
+        {/* Center — search bar (aligns exactly with main content column) */}
+        <div style={{ display: 'flex', justifyContent: 'center', padding: '0 20px' }}>
           <button
             onClick={() => (onNavigateToSearch ?? onNavigate)('all')}
             style={{
               display: 'flex', alignItems: 'center', gap: 8,
               background: T.bgCard, border: `1px solid ${T.border}`,
-              borderRadius: 999, padding: '7px 16px', width: '100%', maxWidth: 380,
+              borderRadius: 999, padding: '7px 16px', width: '100%', maxWidth: 480,
               color: T.ink2, fontSize: 13, cursor: 'pointer', fontFamily: T.fontSans,
               boxShadow: '0 1px 4px rgba(0,0,0,0.06)',
             }}
@@ -1118,8 +1201,13 @@ export default function HomePageEditorial({ user, profile, collectionIds, ownedI
           </button>
         </div>
 
-        {/* Right — avatar */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
+        {/* Right — nav links + avatar (aligns with right rail) */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 18, paddingRight: 24 }}>
+          <nav style={{ display: 'flex', gap: 16, fontSize: 13 }}>
+            <span style={{ color: T.brand, fontWeight: 600 }}>Home</span>
+            <button onClick={() => onNavigate('all')} style={{ background: 'none', border: 'none', color: T.ink1, cursor: 'pointer', fontSize: 13, fontFamily: T.fontSans }}>Browse</button>
+            <button onClick={() => onNavigate('wishlist', 'collection')} style={{ background: 'none', border: 'none', color: T.ink1, cursor: 'pointer', fontSize: 13, fontFamily: T.fontSans }}>Library</button>
+          </nav>
           {user && <Avatar T={T} name={username} size={32} ring />}
         </div>
       </div>
@@ -1202,25 +1290,47 @@ export default function HomePageEditorial({ user, profile, collectionIds, ownedI
           {VIBES.map(v => <VibeTile key={v.id} vibe={v} onClick={onNavigate} />)}
         </div>
 
-        {/* Surprise me */}
-        <button
-          onClick={handleSurpriseMe}
-          style={{
-            width: '100%', padding: '18px 24px', borderRadius: 18,
-            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-            background: isDark
-              ? 'linear-gradient(135deg, oklch(50% 0.15 305), oklch(45% 0.18 340))'
-              : 'linear-gradient(135deg, #f9a8d4, #c084fc)',
-            border: `1px solid ${T.borderStrong}`,
-            color: 'white', cursor: 'pointer', fontFamily: T.fontSans, marginBottom: 32,
-          }}
-        >
-          <div style={{ textAlign: 'left' }}>
-            <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 2 }}>Surprise me</div>
-            <div style={{ fontSize: 12, opacity: 0.85 }}>Random vibe · 18,000+ cards</div>
-          </div>
-          <span style={{ fontSize: 22 }}>⚄</span>
-        </button>
+        {/* Surprise me + Log a Pack */}
+        <div style={{ display: 'flex', gap: 14, marginBottom: 32 }}>
+          <button
+            onClick={handleSurpriseMe}
+            style={{
+              flex: 1, padding: '18px 24px', borderRadius: 18,
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              background: isDark
+                ? 'linear-gradient(135deg, oklch(50% 0.15 305), oklch(45% 0.18 340))'
+                : 'linear-gradient(135deg, #f9a8d4, #c084fc)',
+              border: `1px solid ${T.borderStrong}`,
+              color: 'white', cursor: 'pointer', fontFamily: T.fontSans,
+            }}
+          >
+            <div style={{ textAlign: 'left' }}>
+              <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 2 }}>Surprise me</div>
+              <div style={{ fontSize: 12, opacity: 0.85 }}>Random vibe · 18,000+ cards</div>
+            </div>
+            <span style={{ fontSize: 22 }}>⚄</span>
+          </button>
+          {user && (
+            <button
+              onClick={() => setPackModalOpen(true)}
+              style={{
+                flex: 1, padding: '18px 24px', borderRadius: 18,
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                background: isDark
+                  ? 'linear-gradient(135deg, oklch(45% 0.15 180), oklch(40% 0.12 210))'
+                  : 'linear-gradient(135deg, #a7f3d0, #6ee7b7)',
+                border: `1px solid ${T.borderStrong}`,
+                color: isDark ? '#d1fae5' : '#065f46', cursor: 'pointer', fontFamily: T.fontSans,
+              }}
+            >
+              <div style={{ textAlign: 'left' }}>
+                <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 2 }}>Log a pack</div>
+                <div style={{ fontSize: 12, opacity: 0.8 }}>Track what you pulled</div>
+              </div>
+              <span style={{ fontSize: 22 }}>🎴</span>
+            </button>
+          )}
+        </div>
       </main>
 
       {/* ── Right rail — Friend activity (top 50%) + Shared cards (bottom 50%) */}
@@ -1330,6 +1440,14 @@ export default function HomePageEditorial({ user, profile, collectionIds, ownedI
           collectionIds={collectionIds}
           onClose={() => setSelectedCard(null)}
           isDark={isDark}
+        />
+      )}
+
+      {packModalOpen && user && (
+        <PackLogModal
+          user={user}
+          onClose={() => setPackModalOpen(false)}
+          onSaved={() => setPackModalOpen(false)}
         />
       )}
     </>

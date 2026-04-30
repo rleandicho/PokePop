@@ -7,7 +7,8 @@ import SearchBar from './SearchBar'
 
 const PAGE_SIZE   = 20
 const CACHE_LIMIT = 10   // max unique filter combinations held in memory
-const CARD_BACK   = 'https://images.pokemontcg.io/cardback.jpg'
+// Inline SVG card-back placeholder — no external URL dependency, never 404s
+const CARD_BACK = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="250" height="350" viewBox="0 0 250 350"><rect width="250" height="350" fill="#1a4fa0" rx="14"/><circle cx="125" cy="175" r="72" fill="none" stroke="rgba(255,255,255,0.22)" stroke-width="5"/><circle cx="125" cy="175" r="44" fill="rgba(255,255,255,0.07)" stroke="rgba(255,255,255,0.12)" stroke-width="3"/><circle cx="125" cy="175" r="12" fill="rgba(255,255,255,0.28)"/><line x1="0" y1="175" x2="53" y2="175" stroke="rgba(255,255,255,0.18)" stroke-width="2.5"/><line x1="197" y1="175" x2="250" y2="175" stroke="rgba(255,255,255,0.18)" stroke-width="2.5"/></svg>')}`
 
 // ─── Sort options ─────────────────────────────────────────────────────────────
 export const SORT_OPTIONS = [
@@ -1013,6 +1014,20 @@ function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, onClearF
   const [dbError,  setDbError]  = useState(null)   // set when card DB isn't ready yet
   const [selected, setSelected] = useState(null)
   const [langFilter, setLangFilter] = useState('en')  // null = all languages; 'en','ja','zh-tw',etc
+
+  // Auto-switch language filter when a set with a non-English ID is selected.
+  // e.g. setQuery = "set.id:ja-SV3" → setLangFilter('ja')
+  useEffect(() => {
+    if (!setQuery) return
+    const m = setQuery.match(/^set\.id:(\S+)$/)
+    if (!m) return
+    const setId = m[1]
+    const LANG_PREFIXES = ['zh-tw', 'zh-cn', 'zh', 'ko', 'ja', 'fr', 'de', 'it', 'pt', 'es']
+    for (const prefix of LANG_PREFIXES) {
+      if (setId.startsWith(prefix + '-')) { setLangFilter(prefix); return }
+    }
+    setLangFilter('en')   // English set — reset
+  }, [setQuery])
 
   // Lazy price refresh — fires when a card modal opens.
   // Silently fetches a fresh price from pokemontcg.io if the stored price is > 24h old,
