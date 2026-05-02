@@ -66,10 +66,10 @@ const DAILY_POKEMON = [
     showcase: ['neo3-7', 'neo3-6', 'neo3-14'],
   },
   {
-    name: 'Articuno', setId: 'fossil', setName: 'Fossil', cardId: 'fossil-17',
-    image: 'https://images.pokemontcg.io/fossil/17_hires.png', rarity: 'Holo Rare', hue: 200,
+    name: 'Articuno', setId: 'sv3pt5', setName: 'SV: 151', cardId: 'sv3pt5-144',
+    image: 'https://images.pokemontcg.io/sv3pt5/144_hires.png', rarity: 'Holo Rare', hue: 200,
     fact: 'Articuno is said to appear before those lost in icy mountains — legend says its wings are made of ice that never melts.',
-    showcase: ['fossil-17', 'fossil-5', 'fossil-2'],
+    showcase: ['sv3pt5-144', 'fossil-2', 'neo3-14'],
   },
   {
     name: 'Jolteon', setId: 'jungle', setName: 'Jungle', cardId: 'jungle-4',
@@ -359,7 +359,8 @@ function BottomNav({ T, onNavigate }) {
       background: T.navBg,
       backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
       borderTop: `1px solid ${T.border}`,
-      padding: '10px 20px 20px',
+      padding: '10px 20px',
+      paddingBottom: 'calc(20px + env(safe-area-inset-bottom, 0px))',
       display: 'flex', justifyContent: 'space-around',
     }}>
       {items.map(it => (
@@ -425,6 +426,11 @@ function PokeBall({ isDark, size = '0.75em' }) {
 
 // ── Daily hero — single Pokemon per day with fun fact + set tag + showcase cards
 function DailyHero({ T, pokemon, isDark, onSetClick, onCardClick, onBrowsePokemon, desktop = false, showcaseCards = [] }) {
+  const [imgFailed, setImgFailed] = useState(false)
+
+  // Reset failure state when the daily pokemon changes
+  useEffect(() => { setImgFailed(false) }, [pokemon.cardId])
+
   const mainCardData = {
     cardId:    pokemon.cardId,
     cardName:  pokemon.name,
@@ -460,16 +466,32 @@ function DailyHero({ T, pokemon, isDark, onSetClick, onCardClick, onBrowsePokemo
           onMouseLeave={e => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = 'none' }}
           title={`View ${pokemon.name} details`}
         >
-          <img
-            src={pokemon.image}
-            alt={pokemon.name}
-            style={{
-              height: desktop ? 280 : 180, width: 'auto', borderRadius: 12,
-              boxShadow: '0 12px 28px rgba(0,0,0,0.3), inset 0 0 0 1px rgba(255,255,255,0.1)',
-              display: 'block',
-            }}
-            onError={e => { e.currentTarget.style.opacity = '0' }}
-          />
+          {imgFailed ? (
+            <div style={{
+              height: desktop ? 280 : 180,
+              width: desktop ? 200 : 130,
+              borderRadius: 12,
+              background: `oklch(65% 0.15 ${pokemon.hue} / 0.18)`,
+              border: `2px dashed oklch(65% 0.15 ${pokemon.hue} / 0.35)`,
+              display: 'flex', flexDirection: 'column',
+              alignItems: 'center', justifyContent: 'center', gap: 8,
+              color: T.ink2, fontSize: 11,
+            }}>
+              <span style={{ fontSize: 32 }}>🃏</span>
+              <span>{pokemon.name}</span>
+            </div>
+          ) : (
+            <img
+              src={pokemon.image}
+              alt={pokemon.name}
+              style={{
+                height: desktop ? 280 : 180, width: 'auto', borderRadius: 12,
+                boxShadow: '0 12px 28px rgba(0,0,0,0.3), inset 0 0 0 1px rgba(255,255,255,0.1)',
+                display: 'block',
+              }}
+              onError={() => setImgFailed(true)}
+            />
+          )}
         </button>
 
         {/* Mobile: text beside image */}
@@ -1087,7 +1109,7 @@ export default function HomePageEditorial({ user, profile, collectionIds, ownedI
   // Mobile layout  (< 1100px)
   // ─────────────────────────────────────────────────────────────────────────
   const mobile = (
-    <div style={{ ...pageBase, paddingBottom: 90 }}>
+    <div style={{ ...pageBase, paddingBottom: 'calc(90px + env(safe-area-inset-bottom, 0px))' }}>
 
       {/* Top bar — Pokepop branding + search */}
       <div style={{ padding: '16px 20px 12px', textAlign: 'center' }}>
@@ -1102,7 +1124,7 @@ export default function HomePageEditorial({ user, profile, collectionIds, ownedI
           <span className="theme-heading" style={{ fontSize: 42, fontWeight: 700, letterSpacing: '-0.02em', lineHeight: 1 }}>
             Poképop
           </span>
-          <PokeBall isDark={isDark} size="0.75em" />
+          <PokeBall isDark={isDark} size="30px" />
         </button>
         <p style={{ fontSize: 12, color: T.ink2, marginBottom: 14, fontWeight: 500 }}>
           Discover Pokémon cards by vibe ✨
@@ -1210,13 +1232,20 @@ export default function HomePageEditorial({ user, profile, collectionIds, ownedI
         {VIBES.slice(4).map(v => <VibeTile key={v.id} vibe={v} compact onClick={onNavigate} />)}
       </div>
 
-      {/* Theme toggle — above bottom nav on mobile */}
+      {/* Theme toggle — above bottom nav on mobile, respects iPhone safe-area */}
       {onThemeToggle && (
-        <ThemeToggle
-          mode={themeMode}
-          onToggle={onThemeToggle}
-          className="sm:hidden fixed bottom-[72px] left-4 z-50 shadow-lg backdrop-blur-md"
-        />
+        <div style={{
+          position: 'fixed',
+          bottom: 'calc(76px + env(safe-area-inset-bottom, 0px))',
+          left: 16,
+          zIndex: 50,
+        }}>
+          <ThemeToggle
+            mode={themeMode}
+            onToggle={onThemeToggle}
+            className="shadow-lg backdrop-blur-md"
+          />
+        </div>
       )}
       <BottomNav T={T} onNavigate={onNavigate} />
     </div>

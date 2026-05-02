@@ -30,6 +30,7 @@ async function loadSets() {
 export default function PackLogModal({ user, onClose, onSaved }) {
   const [packName,     setPackName]     = useState('')
   const [packPrice,    setPackPrice]    = useState('')
+  const [packType,     setPackType]     = useState('')
   const [store,        setStore]        = useState('')
   const [cardSearch,   setCardSearch]   = useState('')
   const [cardResults,  setCardResults]  = useState([])
@@ -152,6 +153,7 @@ export default function PackLogModal({ user, onClose, onSaved }) {
       .insert({
         user_id:     user.id,
         pack_name:   packName.trim(),
+        pack_type:   packType.trim() || null,
         pack_price:  price,
         total_value: totalValue,
         store:       store.trim() || null,
@@ -214,6 +216,33 @@ export default function PackLogModal({ user, onClose, onSaved }) {
                 ))}
               </div>
             )}
+          </div>
+
+          {/* Pack Type */}
+          <div>
+            <label className="block text-xs font-semibold text-gray-500 mb-1">Pack Type</label>
+            <input
+              type="text"
+              value={packType}
+              onChange={e => setPackType(e.target.value)}
+              placeholder="e.g. Booster Pack, ETB…"
+              className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-pink-300 mb-2"
+            />
+            <div className="flex flex-wrap gap-1.5">
+              {['Booster Pack', 'Booster Bundle', 'ETB', 'Mini-Tin', 'Tin', 'Collection Box', 'Promo Pack'].map(t => (
+                <button
+                  key={t}
+                  type="button"
+                  onMouseDown={() => setPackType(t)}
+                  className={`px-2.5 py-1 rounded-full text-xs font-medium border transition
+                    ${packType === t
+                      ? 'bg-pink-400 border-pink-400 text-white'
+                      : 'border-gray-200 text-gray-500 hover:border-pink-300 hover:text-pink-400'}`}
+                >
+                  {t}
+                </button>
+              ))}
+            </div>
           </div>
 
           {/* Pack Price + Store row */}
