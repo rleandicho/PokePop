@@ -93,6 +93,10 @@ const VIBE_FILTERS = {
       ...names.map(n => `name.ilike.%${n}%`)
     ].join(','))
   },
+
+  megaevolution(q) {
+    return q.eq('series', 'Mega Evolution')
+  },
 }
 
 // ── Normalise a card row from the DB into the shape CardGrid expects ──────────
@@ -199,22 +203,43 @@ export async function fetchCardsFromDb({ vibe, search, setQuery, sort, page = 1,
   }
 
   // ── Apply name/set search ────────────────────────────────────
-  // Supports three modes:
-  //   "Haunter 56"   → name contains "Haunter" AND number = "56"
-  //   "perfect order"→ name, english_name, OR set_name contains the phrase
-  //   "Gengar"       → name or english_name (surfaces JP/CN variants by english_name)
+  // Supports five modes:
+  //   "swshp-SWSH094" → exact card ID lookup
+  //   "SWSH094"       → card number lookup (promo-style: letters + digits)
+  //   "094"           → exact card number (pure digits)
+  //   "Haunter 56"    → name contains "Haunter" AND number = "56"
+  //   "Gengar"        → name, english_name, or set_name contains the phrase
   if (search && search.trim()) {
     const s = search.trim()
-    // Detect "name number" pattern — e.g. "Haunter 56", "Pikachu 25"
-    const nameNumMatch = s.match(/^(.+?)\s+(\d+)$/)
-    if (nameNumMatch) {
-      const namePart   = nameNumMatch[1].trim()
-      const numberPart = nameNumMatch[2]
-      q = q.or(`name.ilike.%${namePart}%,english_name.ilike.%${namePart}%`)
-      q = q.eq('number', numberPart)
+
+    // Card ID: setId-number, e.g. "swshp-SWSH094", "sv3pt5-144", "base1-4"
+    // Right part must contain at least one digit to distinguish from Pokémon names like "Ho-Oh"
+    const cardIdMatch = s.match(/^([a-zA-Z0-9]{2,10})-([a-zA-Z0-9]*\d[a-zA-Z0-9]*)$/)
+
+    // Promo-style number: 2–6 letters + 2–4 digits, no spaces, e.g. SWSH094, XY123, GG26, TG30
+    const promoNumMatch = !cardIdMatch && s.match(/^[A-Za-z]{2,6}\d{2,4}$/)
+
+    // Pure number: 1–4 digits only, e.g. "4", "94", "094"
+    const pureNumMatch = !cardIdMatch && !promoNumMatch && s.match(/^\d{1,4}$/)
+
+    if (cardIdMatch) {
+      // Case-insensitive exact ID match (ilike without wildcards = case-insensitive =)
+      q = q.ilike('id', s)
+    } else if (promoNumMatch) {
+      // Case-insensitive number match, e.g. "swsh094" finds number "SWSH094"
+      q = q.ilike('number', s)
+    } else if (pureNumMatch) {
+      q = q.eq('number', s)
     } else {
-      // Regular search: name, english_name, or set_name
-      q = q.or(`name.ilike.%${s}%,english_name.ilike.%${s}%,set_name.ilike.%${s}%`)
+      // "Haunter 56" → name AND number
+      const nameNumMatch = s.match(/^(.+?)\s+(\d+)$/)
+      if (nameNumMatch) {
+        q = q.or(`name.ilike.%${nameNumMatch[1].trim()}%,english_name.ilike.%${nameNumMatch[1].trim()}%`)
+        q = q.eq('number', nameNumMatch[2])
+      } else {
+        // Regular search: name, english_name, or set_name
+        q = q.or(`name.ilike.%${s}%,english_name.ilike.%${s}%,set_name.ilike.%${s}%`)
+      }
     }
   }
 

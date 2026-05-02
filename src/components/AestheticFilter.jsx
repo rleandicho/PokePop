@@ -13,8 +13,9 @@ const VIBES = [
   { id: 'nature',      label: 'Nature 🌱',              color: 'bg-emerald-200 text-emerald-700' },
   { id: 'fullart',     label: 'Full Art 🎨',            color: 'bg-fuchsia-200 text-fuchsia-700' },
   { id: 'trainers',    label: 'Trainers & Supports 🃏', color: 'bg-orange-100 text-orange-600' },
-  { id: 'starters',    label: 'Starters 🔥',            color: 'bg-red-100 text-red-600' },
-  { id: 'dragons',     label: 'Dragons 🐉',             color: 'bg-blue-200 text-blue-700' },
+  { id: 'starters',       label: 'Starters 🔥',            color: 'bg-red-100 text-red-600' },
+  { id: 'dragons',        label: 'Dragons 🐉',             color: 'bg-blue-200 text-blue-700' },
+  { id: 'megaevolution',  label: 'Mega Evolution ⚡',      color: 'bg-orange-200 text-orange-700' },
 ]
 
 const WISHLIST_VIBE = { id: 'wishlist', label: 'Wishlist & Collection ✨📦', color: 'bg-rose-200 text-rose-700' }

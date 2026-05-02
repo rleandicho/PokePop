@@ -115,8 +115,10 @@ const VIBES = [
     cardImg: 'https://images.pokemontcg.io/sv3pt5/39_hires.png' },    // Jigglypuff #39
   { id: 'trainers',    label: 'Trainers',    icon: 'pokedex',      desc: 'Supporters & items', bg: 'oklch(88% 0.07 60)',  ink: 'oklch(35% 0.08 60)',
     cardImg: 'https://images.pokemontcg.io/sv3pt5/163_hires.png' },   // Giovanni's Charisma (trainer in 151)
-  { id: 'fullart',     label: 'Full Art',    icon: 'candy',        desc: 'Rare art showcase',  bg: 'oklch(85% 0.09 320)', ink: 'oklch(32% 0.10 320)',
+  { id: 'fullart',       label: 'Full Art',        icon: 'candy',        desc: 'Rare art showcase',   bg: 'oklch(85% 0.09 320)', ink: 'oklch(32% 0.10 320)',
     cardImg: 'https://images.pokemontcg.io/sv3pt5/182_hires.png' },   // Illustration rare (within 207 total)
+  { id: 'megaevolution', label: 'Mega Evolution',  icon: 'mega',         desc: 'All 4 ME sets',        bg: 'oklch(82% 0.12 40)',  ink: 'oklch(32% 0.12 40)',
+    cardImg: 'https://images.pokemontcg.io/me1/60.png' },             // Mega Gardevoir ex
 ]
 
 // ── Inline SVG icons for Trainers + Full Art ────────────────────────────────
@@ -146,6 +148,15 @@ function RareCandyIcon({ color }) {
       {/* Wrapper twist — right */}
       <path d="M18 11 Q 20 9 20.5 6.5" stroke={color} strokeWidth="1.8" strokeLinecap="round" fill="none"/>
       <path d="M18 11 Q 20 13 20.5 15.5" stroke={color} strokeWidth="1.8" strokeLinecap="round" fill="none"/>
+    </svg>
+  )
+}
+
+function MegaIcon({ color }) {
+  return (
+    <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
+      <text x="11" y="16" textAnchor="middle" fontSize="15" fontWeight="900" fontFamily="Arial, sans-serif" fill={color} fillOpacity="0.85">M</text>
+      <circle cx="11" cy="11" r="9.5" stroke={color} strokeWidth="1.5" fill="none" strokeOpacity="0.5"/>
     </svg>
   )
 }
@@ -289,6 +300,7 @@ function VibeBall({ vibe, size = 22 }) {
   }
   if (vibe.icon === 'pokedex') return <PokedexIcon color={vibe.ink} />
   if (vibe.icon === 'candy')   return <RareCandyIcon color={vibe.ink} />
+  if (vibe.icon === 'mega')    return <MegaIcon color={vibe.ink} />
   return null
 }
 

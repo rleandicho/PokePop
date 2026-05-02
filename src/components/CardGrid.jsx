@@ -1299,6 +1299,7 @@ function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, onClearF
         value={inlineSearch}
         onChange={setInlineSearch}
         onClear={handleInlineClear}
+        placeholder="Search by name, set, or card # (e.g. SWSH094)…"
         autoFocus={autoFocusSearch}
       />
       <SortToolbar
