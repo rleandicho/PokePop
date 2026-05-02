@@ -400,9 +400,11 @@ function GradientEm({ T, children }) {
   return (
     <em style={{
       fontStyle: 'italic',
-      background: `linear-gradient(135deg, ${T.brandSoft}, ${T.gold})`,
+      display: 'inline',
+      background: `linear-gradient(135deg, ${T.brandSoft}, ${T.brand})`,
       WebkitBackgroundClip: 'text', backgroundClip: 'text',
-      WebkitTextFillColor: 'transparent', color: 'transparent',
+      WebkitTextFillColor: 'transparent',
+      color: T.brand, // fallback for browsers that don't support background-clip:text
     }}>{children}</em>
   )
 }
@@ -869,7 +871,7 @@ function SharedCard({ T, card }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // Main component
 // ─────────────────────────────────────────────────────────────────────────────
-export default function HomePageEditorial({ user, profile, collectionIds, ownedIds, onNavigate, onNavigateToSearch, isDark = false, themeMode, onThemeToggle }) {
+export default function HomePageEditorial({ user, profile, collectionIds, ownedIds, onNavigate, onNavigateToSearch, isDark = false, themeMode, onThemeToggle, onCardAdded }) {
   const [recentCards,    setRecentCards]    = useState([])
   const [friendActivity, setFriendActivity] = useState([])
   const [sharedCards,    setSharedCards]    = useState([])
@@ -1151,8 +1153,11 @@ export default function HomePageEditorial({ user, profile, collectionIds, ownedI
       <div style={{ padding: '0 20px 20px' }}>
         <div style={{ fontSize: 11, color: T.ink2, letterSpacing: '0.18em', textTransform: 'uppercase', marginBottom: 8 }}>{today}</div>
         <h1 style={{ fontFamily: T.fontDisplay, fontWeight: 400, fontSize: 40, margin: '0 0 4px', letterSpacing: '-0.02em', lineHeight: 0.95, color: T.ink0 }}>
-          {user ? 'Welcome back,' : 'Discover your'}<br />
-          <GradientEm T={T}>{user ? `${username}.` : 'vibe.'}</GradientEm>
+          {user ? (
+            <>Welcome back,<br /><GradientEm T={T}>{username}.</GradientEm></>
+          ) : (
+            <GradientEm T={T}>Welcome!</GradientEm>
+          )}
         </h1>
       </div>
 
@@ -1389,7 +1394,7 @@ export default function HomePageEditorial({ user, profile, collectionIds, ownedI
         <h1 style={{ fontFamily: T.fontDisplay, fontWeight: 400, fontSize: 56, margin: '0 0 28px', lineHeight: 0.95, letterSpacing: '-0.02em', color: T.ink0 }}>
           {user
             ? <>Welcome back, <GradientEm T={T}>{username}.</GradientEm></>
-            : <>Discover your <GradientEm T={T}>vibe.</GradientEm></>
+            : <GradientEm T={T}>Welcome!</GradientEm>
           }
         </h1>
 
@@ -1562,6 +1567,7 @@ export default function HomePageEditorial({ user, profile, collectionIds, ownedI
           user={user}
           onClose={() => setPackModalOpen(false)}
           onSaved={() => setPackModalOpen(false)}
+          onCardsSaved={cards => cards.forEach(c => onCardAdded?.(c.id, true, 'english'))}
         />
       )}
     </>

@@ -220,6 +220,7 @@ export default function App() {
               isDark={isDark}
               themeMode={themeMode}
               onThemeToggle={() => setThemeMode(prev => prev === 'dark' ? 'light' : 'dark')}
+              onCardAdded={handleCardAdded}
             />
             {/* Desktop-only ThemeToggle — mobile version lives inside HomePageEditorial above BottomNav */}
             <ThemeToggle
@@ -293,6 +294,7 @@ export default function App() {
                     initialTab={wishlistTab}
                     onCardRemoved={handleCardRemoved}
                     onOwnedChanged={handleOwnedChanged}
+                    onCardAdded={handleCardAdded}
                   />
                 ) : (
                   <CardGrid

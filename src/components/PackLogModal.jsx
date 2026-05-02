@@ -27,7 +27,7 @@ async function loadSets() {
   }
 }
 
-export default function PackLogModal({ user, onClose, onSaved }) {
+export default function PackLogModal({ user, onClose, onSaved, onCardsSaved }) {
   const [packName,     setPackName]     = useState('')
   const [packPrice,    setPackPrice]    = useState('')
   const [packType,     setPackType]     = useState('')
@@ -140,12 +140,20 @@ export default function PackLogModal({ user, onClose, onSaved }) {
 
     if (addedCards.length > 0) {
       const rows = addedCards.map(c => ({
-        user_id: user.id,
-        card_id: c.id,
-        owned: true,
+        user_id:      user.id,
+        card_id:      c.id,
+        name:         c.name,
+        image:        c.image,
+        owned:        true,
+        edition:      'unspecified',
+        language:     'english',
         market_price: c.market_price || null,
       }))
-      await supabase.from('wishlists').upsert(rows, { onConflict: 'user_id,card_id' })
+      const { error: upsertErr } = await supabase
+        .from('wishlists')
+        .upsert(rows, { onConflict: 'user_id,card_id,edition,language' })
+      if (upsertErr) { setSaving(false); setError('Failed to save cards. Please try again.'); return }
+      onCardsSaved?.(addedCards)
     }
 
     const { data, error: insertErr } = await supabase

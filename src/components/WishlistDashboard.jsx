@@ -1210,7 +1210,7 @@ function WishlistCardModal({
 }
 
 // ─── Main dashboard ──────────────────────────────────────────────────────────
-export default function WishlistDashboard({ user, profile, onToast, onGoExplore, onBinderChange, initialTab = 'collection', onCardRemoved, onOwnedChanged }) {
+export default function WishlistDashboard({ user, profile, onToast, onGoExplore, onBinderChange, initialTab = 'collection', onCardRemoved, onOwnedChanged, onCardAdded }) {
   const [items,        setItems]        = useState([])
   const [loading,      setLoading]      = useState(true)
   const [selectedItem, setSelectedItem] = useState(null)
@@ -3863,6 +3863,7 @@ export default function WishlistDashboard({ user, profile, onToast, onGoExplore,
             setPackLogs(prev => [log, ...prev])
             setPackInvested(prev => prev + (log.pack_price || 0))
           }}
+          onCardsSaved={cards => cards.forEach(c => onCardAdded?.(c.id, true, 'english'))}
         />
       )}
 
