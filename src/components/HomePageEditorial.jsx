@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import PackLogModal from './PackLogModal'
+import ThemeToggle from './ThemeToggle'
 
 // ── Daily Pokemon — deterministic per calendar day
 const DAILY_POKEMON = [
@@ -689,6 +690,38 @@ function FriendCardModal({ T, card, user, collectionIds, onClose, isDark }) {
 
 // ── Friend activity row
 function ActivityItem({ T, item, isOpen, onToggle, onOpenCard }) {
+  // ── Pack-open activity item
+  if (item.type === 'pack') {
+    return (
+      <div style={{
+        display: 'flex', alignItems: 'flex-start', gap: 8,
+        padding: '9px 0',
+        borderBottom: `1px solid ${T.border}`,
+      }}>
+        <Avatar T={T} name={item.username} size={24} />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 12, lineHeight: 1.5, color: T.ink1 }}>
+            <a
+              href={`/share/${item.userId}`}
+              style={{ fontWeight: 600, color: T.ink0, textDecoration: 'none' }}
+              onMouseEnter={e => { e.currentTarget.style.color = T.brand; e.currentTarget.style.textDecoration = 'underline' }}
+              onMouseLeave={e => { e.currentTarget.style.color = T.ink0; e.currentTarget.style.textDecoration = 'none' }}
+            >
+              {item.username}
+            </a>
+            {' opened '}
+            <span style={{ fontWeight: 600, color: T.ink0 }}>{item.packName}</span>
+            {item.hasHit && (
+              <span style={{ color: '#f59e0b', fontWeight: 700 }}> and got a HIT 🔥</span>
+            )}
+          </div>
+          <div style={{ fontSize: 10, color: T.ink3, marginTop: 2 }}>🎴 pack opened · {item.time}</div>
+        </div>
+      </div>
+    )
+  }
+
+  // ── Card collection/wishlist activity item
   return (
     <div>
       <div style={{
@@ -814,7 +847,7 @@ function SharedCard({ T, card }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // Main component
 // ─────────────────────────────────────────────────────────────────────────────
-export default function HomePageEditorial({ user, profile, collectionIds, ownedIds, onNavigate, onNavigateToSearch, isDark = false }) {
+export default function HomePageEditorial({ user, profile, collectionIds, ownedIds, onNavigate, onNavigateToSearch, isDark = false, themeMode, onThemeToggle }) {
   const [recentCards,    setRecentCards]    = useState([])
   const [friendActivity, setFriendActivity] = useState([])
   const [sharedCards,    setSharedCards]    = useState([])
@@ -898,17 +931,27 @@ export default function HomePageEditorial({ user, profile, collectionIds, ownedI
 
       const profileMap = Object.fromEntries((friendProfiles ?? []).map(p => [p.id, p]))
 
-      const { data: activityRows } = await supabase
-        .from('wishlists')
-        .select('card_id, name, image, owned, created_at, user_id')
-        .in('user_id', followingIds)
-        .order('created_at', { ascending: false })
-        .limit(20)
+      // Fetch card activity and pack log activity in parallel
+      const [{ data: activityRows }, { data: packRows }] = await Promise.all([
+        supabase
+          .from('wishlists')
+          .select('card_id, name, image, owned, created_at, user_id')
+          .in('user_id', followingIds)
+          .order('created_at', { ascending: false })
+          .limit(20),
+        supabase
+          .from('pack_logs')
+          .select('id, user_id, pack_name, opened_at, cards')
+          .in('user_id', followingIds)
+          .order('opened_at', { ascending: false })
+          .limit(10),
+      ])
 
       if (cancelled) return
 
-      const formatted = (activityRows ?? []).map(w => ({
+      const cardItems = (activityRows ?? []).map(w => ({
         id:        `${w.user_id}-${w.card_id}-${w.created_at}`,
+        type:      'card',
         userId:    w.user_id,
         username:  profileMap[w.user_id]?.username ?? 'unknown',
         action:    w.owned ? 'added to collection' : 'wishlisted',
@@ -916,8 +959,25 @@ export default function HomePageEditorial({ user, profile, collectionIds, ownedI
         cardId:    w.card_id,
         cardImage: w.image ?? cardIdToImg(w.card_id),
         time:      timeAgo(w.created_at),
+        sortTime:  w.created_at,
       }))
-      setFriendActivity(formatted)
+
+      const packItems = (packRows ?? []).map(log => ({
+        id:       `pack-${log.id}`,
+        type:     'pack',
+        userId:   log.user_id,
+        username: profileMap[log.user_id]?.username ?? 'unknown',
+        packName: log.pack_name,
+        hasHit:   (log.cards ?? []).some(c => (c.market_price || 0) >= 5),
+        time:     timeAgo(log.opened_at),
+        sortTime: log.opened_at,
+      }))
+
+      const merged = [...cardItems, ...packItems]
+        .sort((a, b) => new Date(b.sortTime) - new Date(a.sortTime))
+        .slice(0, 25)
+
+      setFriendActivity(merged)
 
       const { data: allFriendCards } = await supabase
         .from('wishlists')
@@ -1150,6 +1210,14 @@ export default function HomePageEditorial({ user, profile, collectionIds, ownedI
         {VIBES.slice(4).map(v => <VibeTile key={v.id} vibe={v} compact onClick={onNavigate} />)}
       </div>
 
+      {/* Theme toggle — above bottom nav on mobile */}
+      {onThemeToggle && (
+        <ThemeToggle
+          mode={themeMode}
+          onToggle={onThemeToggle}
+          className="sm:hidden fixed bottom-[72px] left-4 z-50 shadow-lg backdrop-blur-md"
+        />
+      )}
       <BottomNav T={T} onNavigate={onNavigate} />
     </div>
   )

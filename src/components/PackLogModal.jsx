@@ -30,16 +30,18 @@ async function loadSets() {
 export default function PackLogModal({ user, onClose, onSaved }) {
   const [packName,     setPackName]     = useState('')
   const [packPrice,    setPackPrice]    = useState('')
+  const [store,        setStore]        = useState('')
   const [cardSearch,   setCardSearch]   = useState('')
   const [cardResults,  setCardResults]  = useState([])
   const [searching,    setSearching]    = useState(false)
   const [addedCards,   setAddedCards]   = useState([])
   const [saving,       setSaving]       = useState(false)
   const [error,        setError]        = useState('')
-  // Set name suggestions
-  const [allSets,      setAllSets]      = useState([])
+  // Set name suggestions + selected set
+  const [allSets,        setAllSets]        = useState([])
   const [setSuggestions, setSetSuggestions] = useState([])
   const [showSuggestions, setShowSuggestions] = useState(false)
+  const [selectedSetId,  setSelectedSetId]  = useState(null) // restrict card search to this set
   const nameRef    = useRef(null)
   const debounceRef = useRef(null)
 
@@ -61,10 +63,20 @@ export default function PackLogModal({ user, onClose, onSaved }) {
 
   function pickSet(set) {
     setPackName(set.name)
+    setSelectedSetId(set.id)
     setShowSuggestions(false)
+    setCardSearch('')
+    setCardResults([])
   }
 
-  // Search cards via TCG API
+  // Clear set restriction if user edits the pack name manually
+  function handlePackNameChange(val) {
+    setPackName(val)
+    setSelectedSetId(null) // clear set filter until they pick from suggestions again
+    setShowSuggestions(true)
+  }
+
+  // Search cards via TCG API — restricted to selected set if available
   useEffect(() => {
     if (!cardSearch.trim()) { setCardResults([]); return }
     clearTimeout(debounceRef.current)
@@ -73,7 +85,9 @@ export default function PackLogModal({ user, onClose, onSaved }) {
       try {
         const apiKey = import.meta.env.VITE_TCG_API_KEY
         const headers = apiKey ? { 'X-Api-Key': apiKey } : {}
-        const q = encodeURIComponent(`name:*${cardSearch.trim()}*`)
+        const parts = [`name:*${cardSearch.trim()}*`]
+        if (selectedSetId) parts.push(`set.id:${selectedSetId}`)
+        const q = encodeURIComponent(parts.join(' '))
         const res = await fetch(`https://api.pokemontcg.io/v2/cards?q=${q}&pageSize=12&select=id,name,images,tcgplayer`, { headers })
         const json = await res.json()
         setCardResults(json.data ?? [])
@@ -136,11 +150,12 @@ export default function PackLogModal({ user, onClose, onSaved }) {
     const { data, error: insertErr } = await supabase
       .from('pack_logs')
       .insert({
-        user_id: user.id,
-        pack_name: packName.trim(),
-        pack_price: price,
+        user_id:     user.id,
+        pack_name:   packName.trim(),
+        pack_price:  price,
         total_value: totalValue,
-        cards: addedCards.map(c => ({ id: c.id, name: c.name, image: c.image, market_price: c.market_price })),
+        store:       store.trim() || null,
+        cards:       addedCards.map(c => ({ id: c.id, name: c.name, image: c.image, market_price: c.market_price })),
       })
       .select()
       .single()
@@ -176,9 +191,9 @@ export default function PackLogModal({ user, onClose, onSaved }) {
               ref={nameRef}
               type="text"
               value={packName}
-              onChange={e => { setPackName(e.target.value); setShowSuggestions(true) }}
+              onChange={e => handlePackNameChange(e.target.value)}
               onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
-              onFocus={() => setSuggestions.length > 0 && setShowSuggestions(true)}
+              onFocus={() => setShowSuggestions(true)}
               placeholder="e.g. Stellar Crown, Twilight Masquerade…"
               className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-pink-300"
               autoComplete="off"
@@ -201,19 +216,40 @@ export default function PackLogModal({ user, onClose, onSaved }) {
             )}
           </div>
 
-          {/* Pack Price */}
-          <div>
-            <label className="block text-xs font-semibold text-gray-500 mb-1">What you paid ($)</label>
-            <input
-              type="number"
-              min="0"
-              step="0.01"
-              value={packPrice}
-              onChange={e => setPackPrice(e.target.value)}
-              placeholder="4.99"
-              className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-pink-300"
-            />
+          {/* Pack Price + Store row */}
+          <div className="flex gap-3">
+            <div className="flex-1">
+              <label className="block text-xs font-semibold text-gray-500 mb-1">What you paid ($)</label>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={packPrice}
+                onChange={e => setPackPrice(e.target.value)}
+                placeholder="4.99"
+                className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-pink-300"
+              />
+            </div>
+            <div className="flex-1">
+              <label className="block text-xs font-semibold text-gray-500 mb-1">Store (optional)</label>
+              <input
+                type="text"
+                value={store}
+                onChange={e => setStore(e.target.value)}
+                placeholder="Target, eBay…"
+                className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-pink-300"
+              />
+            </div>
           </div>
+
+          {/* Set restriction indicator */}
+          {selectedSetId && (
+            <div className="flex items-center gap-2 text-xs text-emerald-700 bg-emerald-50 rounded-lg px-3 py-1.5">
+              <span>🎯</span>
+              <span>Card search limited to <strong>{packName}</strong></span>
+              <button onClick={() => { setSelectedSetId(null) }} className="ml-auto text-gray-400 hover:text-gray-600">✕</button>
+            </div>
+          )}
 
           {/* Card Search */}
           <div>

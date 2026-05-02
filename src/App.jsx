@@ -218,11 +218,14 @@ export default function App() {
               onNavigate={handleNavigate}
               onNavigateToSearch={handleNavigateToSearch}
               isDark={isDark}
+              themeMode={themeMode}
+              onThemeToggle={() => setThemeMode(prev => prev === 'dark' ? 'light' : 'dark')}
             />
+            {/* Desktop-only ThemeToggle — mobile version lives inside HomePageEditorial above BottomNav */}
             <ThemeToggle
               mode={themeMode}
               onToggle={() => setThemeMode(prev => prev === 'dark' ? 'light' : 'dark')}
-              className="fixed bottom-5 left-5 z-40 shadow-lg backdrop-blur-md"
+              className="hidden sm:flex fixed bottom-5 left-5 z-40 shadow-lg backdrop-blur-md"
             />
           </motion.div>
         ) : (

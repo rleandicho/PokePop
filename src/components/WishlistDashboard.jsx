@@ -1269,6 +1269,7 @@ export default function WishlistDashboard({ user, profile, onToast, onGoExplore,
   const [packLogs,       setPackLogs]       = useState([])     // recent pack log history
   const [packLogOpen,    setPackLogOpen]    = useState(false)  // history modal open
   const [packModalOpen,  setPackModalOpen]  = useState(false)  // log-a-pack modal open
+  const [historyCard,    setHistoryCard]    = useState(null)   // card preview from pack history
 
   // Notify App whenever the active binder changes (so CardGrid can route new cards here)
   useEffect(() => { onBinderChange?.(selectedBinder?.id ?? null) }, [selectedBinder])
@@ -1415,7 +1416,7 @@ export default function WishlistDashboard({ user, profile, onToast, onGoExplore,
     // Pack investment total
     const { data: packData } = await supabase
       .from('pack_logs')
-      .select('id, pack_name, opened_at, pack_price, total_value, cards')
+      .select('id, pack_name, opened_at, pack_price, total_value, cards, store')
       .eq('user_id', user.id)
       .order('opened_at', { ascending: false })
     const logs = packData ?? []
@@ -1775,6 +1776,16 @@ export default function WishlistDashboard({ user, profile, onToast, onGoExplore,
       onOwnedChanged?.(cardId, newOwned)
       onToast(newOwned ? 'Added to Collection! ✨📦' : 'Moved back to Wishlist 💖')
     }
+  }
+
+  async function handleDeletePack(logId) {
+    const { error } = await supabase.from('pack_logs').delete().eq('id', logId)
+    if (error) { onToast('Failed to delete pack log'); return }
+    setPackLogs(prev => {
+      const next = prev.filter(l => l.id !== logId)
+      setPackInvested(next.reduce((s, l) => s + (l.pack_price || 0), 0))
+      return next
+    })
   }
 
   async function handleSold(item, price) {
@@ -3743,27 +3754,46 @@ export default function WishlistDashboard({ user, profile, onToast, onGoExplore,
               ) : (
                 <div className="overflow-y-auto flex-1 space-y-2 pr-1">
                   {packLogs.map(log => (
-                    <div key={log.id} className="border border-gray-100 rounded-xl p-3 flex items-start gap-3">
+                    <div key={log.id} className="border border-gray-100 rounded-xl p-3 flex items-start gap-3 group relative">
                       <div className="text-2xl">🎴</div>
                       <div className="flex-1 min-w-0">
                         <div className="font-semibold text-gray-700 text-sm truncate">{log.pack_name}</div>
-                        <div className="text-xs text-gray-400">{new Date(log.opened_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</div>
+                        <div className="text-xs text-gray-400 flex gap-2 flex-wrap">
+                          <span>{new Date(log.opened_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                          {log.store && <span>· 📍 {log.store}</span>}
+                        </div>
                         <div className="flex gap-3 mt-1 text-xs">
                           <span className="text-rose-500 font-medium">Paid: ${Number(log.pack_price).toFixed(2)}</span>
-                          {log.total_value > 0 && <span className="text-emerald-600 font-medium">Value: ${Number(log.total_value).toFixed(2)}</span>}
+                          {log.total_value > 0 && <span className="text-emerald-600 font-medium">Pack worth: ${Number(log.total_value).toFixed(2)}</span>}
                         </div>
                         {(log.cards ?? []).length > 0 && (
                           <div className="flex gap-1 mt-2 flex-wrap">
-                            {(log.cards ?? []).slice(0, 5).map((c, i) => (
-                              <img key={i} src={c.image} alt={c.name} className="h-10 rounded-lg shadow-sm"
-                                   onError={e => { e.currentTarget.src = CARD_BACK }} />
+                            {(log.cards ?? []).slice(0, 6).map((c, i) => (
+                              <button
+                                key={i}
+                                onClick={() => setHistoryCard(c)}
+                                className="relative hover:scale-110 transition-transform"
+                                title={c.name}
+                              >
+                                <img src={c.image} alt={c.name} className="h-10 rounded-lg shadow-sm"
+                                     onError={e => { e.currentTarget.src = CARD_BACK }} />
+                              </button>
                             ))}
-                            {(log.cards ?? []).length > 5 && (
-                              <span className="text-xs text-gray-400 self-center">+{(log.cards ?? []).length - 5} more</span>
+                            {(log.cards ?? []).length > 6 && (
+                              <span className="text-xs text-gray-400 self-center">+{(log.cards ?? []).length - 6} more</span>
                             )}
                           </div>
                         )}
                       </div>
+                      {/* Delete button — visible on hover */}
+                      <button
+                        onClick={() => handleDeletePack(log.id)}
+                        className="absolute top-2 right-2 w-6 h-6 rounded-full flex items-center justify-center
+                                   text-gray-300 hover:text-rose-400 hover:bg-rose-50 transition opacity-0 group-hover:opacity-100"
+                        title="Delete this pack log"
+                      >
+                        ×
+                      </button>
                     </div>
                   ))}
                 </div>
@@ -3773,6 +3803,51 @@ export default function WishlistDashboard({ user, profile, onToast, onGoExplore,
                 className="mt-4 w-full py-2.5 rounded-xl text-sm font-semibold bg-gradient-to-r from-pink-400 to-violet-400 text-white hover:opacity-90 transition"
               >
                 + Log a New Pack
+              </button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── Pack history card preview ───────────────────────────────── */}
+      <AnimatePresence>
+        {historyCard && (
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm px-4"
+            onClick={() => setHistoryCard(null)}
+          >
+            <motion.div
+              initial={{ scale: 0.85, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.85, opacity: 0 }}
+              className="bg-white rounded-2xl shadow-2xl p-5 w-full max-w-xs flex flex-col items-center gap-4"
+              onClick={e => e.stopPropagation()}
+            >
+              <img
+                src={historyCard.image}
+                alt={historyCard.name}
+                className="w-full max-w-[200px] rounded-xl shadow-lg"
+                onError={e => { e.currentTarget.src = CARD_BACK }}
+              />
+              <div className="text-center">
+                <div className="font-bold text-gray-700 text-base">{historyCard.name}</div>
+                {historyCard.market_price > 0 && (
+                  <div className="text-emerald-600 font-semibold text-sm mt-0.5">${Number(historyCard.market_price).toFixed(2)}</div>
+                )}
+              </div>
+              <a
+                href={`https://www.tcgplayer.com/search/pokemon/product?q=${encodeURIComponent(historyCard.name)}&view=grid`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-full py-2.5 rounded-xl text-sm font-semibold text-center
+                           bg-gradient-to-r from-blue-500 to-indigo-500 text-white hover:opacity-90 transition"
+              >
+                View on TCGPlayer →
+              </a>
+              <button
+                onClick={() => setHistoryCard(null)}
+                className="text-xs text-gray-400 hover:text-gray-600"
+              >
+                Close
               </button>
             </motion.div>
           </motion.div>
