@@ -1237,6 +1237,10 @@ export default function WishlistDashboard({ user, profile, onToast, onGoExplore,
   const [pendingNewLanguage, setPendingNewLanguage] = useState('')
   const [pendingNewImageUrl, setPendingNewImageUrl] = useState('')
 
+  // Quick-add from empty binder slot
+  const [quickAddSlot,      setQuickAddSlot]      = useState(null)   // globalIdx or null
+  const [quickAddSearch,    setQuickAddSearch]    = useState('')
+
   // Tracks the current slotsPerPage of the active BinderView (reported via callback).
   // Used by computeNextBinderSlot and handleInsertPage to stay consistent with the display.
   const binderSlotsPerPage = useRef(9)
@@ -1289,7 +1293,7 @@ export default function WishlistDashboard({ user, profile, onToast, onGoExplore,
           .from('wishlists')
           // edition column: run migration before this works →
           //   ALTER TABLE wishlists ADD COLUMN IF NOT EXISTS edition TEXT NOT NULL DEFAULT 'unlimited';
-          .select('id, card_id, name, image, owned, market_price, mid_price, low_price, manual_price, price_source, slot_index, binder_id, edition, is_chase, is_favorite, quantity, language, tags, condition')
+          .select('id, card_id, name, image, owned, market_price, mid_price, low_price, manual_price, price_source, slot_index, binder_id, edition, is_chase, is_favorite, quantity, language, tags, condition, category')
           .eq('user_id', user.id)
           .order('created_at', { ascending: false })
       ),
@@ -1318,7 +1322,27 @@ export default function WishlistDashboard({ user, profile, onToast, onGoExplore,
       ),
     ])
 
-    setItems(wishlist ?? [])
+    // Enrich wishlist items with set_name + number from tcg_cards (single batch lookup)
+    const rawItems = wishlist ?? []
+    const cardIds  = [...new Set(rawItems.map(i => i.card_id).filter(Boolean))]
+    if (cardIds.length) {
+      const { data: metaRows } = await supabase
+        .from('tcg_cards')
+        .select('id, set_name, number')
+        .in('id', cardIds)
+      if (metaRows?.length) {
+        const metaMap = Object.fromEntries(metaRows.map(r => [r.id, r]))
+        setItems(rawItems.map(i => ({
+          ...i,
+          set_name:    metaMap[i.card_id]?.set_name    ?? null,
+          card_number: metaMap[i.card_id]?.number      ?? null,
+        })))
+      } else {
+        setItems(rawItems)
+      }
+    } else {
+      setItems(rawItems)
+    }
     setIsPublic(prof?.is_public ?? false)
 
     // Fetch sales and trade totals
@@ -1935,6 +1959,17 @@ export default function WishlistDashboard({ user, profile, onToast, onGoExplore,
       .eq('id', rowId)
   }
 
+  async function toggleTradeStatus(rowId, currentCategory) {
+    const newVal =
+      currentCategory === 'for_sale'  ? 'for_trade' :
+      currentCategory === 'for_trade' ? null         : 'for_sale'
+    setItems(prev => prev.map(i => i.id === rowId ? { ...i, category: newVal } : i))
+    await supabase
+      .from('wishlists')
+      .update({ category: newVal })
+      .eq('id', rowId)
+  }
+
   async function removeFollower(followerId) {
     await supabase
       .from('follows')
@@ -2295,6 +2330,24 @@ export default function WishlistDashboard({ user, profile, onToast, onGoExplore,
     return firstEmpty === -1 ? totalSlots : firstEmpty
   }
 
+  // Quick-add: assign a collection card (not yet in this binder) to the clicked empty slot
+  async function handleQuickAddCard(item) {
+    if (!selectedBinder || quickAddSlot === null) return
+    const { error } = await supabase
+      .from('wishlists')
+      .update({ binder_id: selectedBinder.id, slot_index: quickAddSlot })
+      .eq('id', item.id)
+    if (!error) {
+      setItems(prev => prev.map(i => i.id === item.id
+        ? { ...i, binder_id: selectedBinder.id, slot_index: quickAddSlot }
+        : i
+      ))
+      onToast(`${item.name} added to binder ✅`)
+    }
+    setQuickAddSlot(null)
+    setQuickAddSearch('')
+  }
+
   // Handles onTransfer from BinderView — routes virtual copies to removeOneCopy
   function handleBinderTransfer(itemId, targetBinderId) {
     const item = binderDisplayItems.find(i => i.id === itemId)
@@ -2391,22 +2444,40 @@ export default function WishlistDashboard({ user, profile, onToast, onGoExplore,
       {item.owned && (() => {
         const favCount = items.filter(i => i.is_favorite).length
         const favAtMax = !item.is_favorite && favCount >= 3
+        const tradeIcon = item.category === 'for_sale' ? '💰' : item.category === 'for_trade' ? '🔄' : '↕️'
+        const tradeTitle = item.category === 'for_sale' ? 'For Sale — click to mark For Trade' : item.category === 'for_trade' ? 'For Trade — click to clear' : 'Mark as For Sale / For Trade'
         return (
-          <button
-            onClick={() => !favAtMax && toggleFavorite(item.id, item.is_favorite)}
-            disabled={favAtMax}
-            className={`absolute top-1.5 left-1.5 z-10 w-6 h-6 rounded-full flex items-center
-                       justify-center text-xs shadow-sm transition-all leading-none
-                       ${item.is_favorite
-                         ? 'bg-indigo-400 text-white'
-                         : favAtMax
-                           ? 'bg-white/70 text-gray-200 cursor-not-allowed'
-                           : 'bg-white/70 text-gray-300 hover:bg-indigo-100 hover:text-indigo-400'
-                       }`}
-            title={item.is_favorite ? 'Remove from favourites' : favAtMax ? 'Max 3 favourites' : 'Add to favourites'}
-          >
-            {item.is_favorite ? '★' : '☆'}
-          </button>
+          <>
+            <button
+              onClick={() => !favAtMax && toggleFavorite(item.id, item.is_favorite)}
+              disabled={favAtMax}
+              className={`absolute top-1.5 left-1.5 z-10 w-6 h-6 rounded-full flex items-center
+                         justify-center text-xs shadow-sm transition-all leading-none
+                         ${item.is_favorite
+                           ? 'bg-indigo-400 text-white'
+                           : favAtMax
+                             ? 'bg-white/70 text-gray-200 cursor-not-allowed'
+                             : 'bg-white/70 text-gray-300 hover:bg-indigo-100 hover:text-indigo-400'
+                         }`}
+              title={item.is_favorite ? 'Remove from favourites' : favAtMax ? 'Max 3 favourites' : 'Add to favourites'}
+            >
+              {item.is_favorite ? '★' : '☆'}
+            </button>
+            <button
+              onClick={() => toggleTradeStatus(item.id, item.category)}
+              className={`absolute top-8 left-1.5 z-10 w-6 h-6 rounded-full flex items-center
+                         justify-center text-xs shadow-sm transition-all leading-none
+                         ${item.category === 'for_sale'
+                           ? 'bg-emerald-400 text-white'
+                           : item.category === 'for_trade'
+                             ? 'bg-blue-400 text-white'
+                             : 'bg-white/70 text-gray-300 hover:bg-emerald-50 hover:text-emerald-400'
+                         }`}
+              title={tradeTitle}
+            >
+              {tradeIcon}
+            </button>
+          </>
         )
       })()}
 
@@ -2444,6 +2515,11 @@ export default function WishlistDashboard({ user, profile, onToast, onGoExplore,
 
       <div className="p-2 text-center">
         <p className="text-sm font-bold text-gray-700 truncate">{item.name}</p>
+        {(item.set_name || item.card_number) && (
+          <p className="text-[10px] text-gray-400 truncate mb-0.5">
+            {[item.set_name, item.card_number ? `#${item.card_number}` : null].filter(Boolean).join(' · ')}
+          </p>
+        )}
 
         {(() => {
           const { value: p, label, source } = getPriceInfo(item)
@@ -2909,7 +2985,7 @@ export default function WishlistDashboard({ user, profile, onToast, onGoExplore,
       </>}
 
       {/* ── Collection / Wishlist sub-nav ──────────────────────────── */}
-      {(activeTab === 'collection' || activeTab === 'wishlist') && (
+      {(activeTab === 'collection' || activeTab === 'wishlist' || activeTab === 'fortrade') && (
         <div className="px-4 pt-1 pb-2 space-y-2">
           <div className="flex items-center gap-2 flex-wrap">
             <motion.button
@@ -2944,6 +3020,22 @@ export default function WishlistDashboard({ user, profile, onToast, onGoExplore,
                 {wishlistCount}
               </span>
             </motion.button>
+            <motion.button
+              whileTap={{ scale: 0.96 }}
+              onClick={() => setActiveTab('fortrade')}
+              className={`flex items-center gap-1.5 px-4 py-1.5 rounded-full text-sm font-semibold
+                         border transition-all shadow-sm
+                         ${activeTab === 'fortrade'
+                           ? 'bg-amber-400 text-white border-amber-400'
+                           : 'bg-white/60 text-gray-500 border-gray-200 hover:bg-white/80'
+                         }`}
+            >
+              💰 For Trade/Sale
+              <span className={`text-[11px] font-bold px-1.5 py-0.5 rounded-full leading-none
+                ${activeTab === 'fortrade' ? 'bg-white/30 text-white' : 'bg-amber-100 text-amber-600'}`}>
+                {items.filter(i => i.category === 'for_sale' || i.category === 'for_trade').length}
+              </span>
+            </motion.button>
           </div>
           <div className="relative">
             <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm pointer-events-none">🔍</span>
@@ -2951,7 +3043,7 @@ export default function WishlistDashboard({ user, profile, onToast, onGoExplore,
               type="text"
               value={cardSearch}
               onChange={e => { setCardSearch(e.target.value); setCollectionPage(1); setWishlistPage(1) }}
-              placeholder={`Search ${activeTab === 'collection' ? 'collection' : 'wishlist'}…`}
+              placeholder={`Search ${activeTab === 'collection' ? 'collection' : activeTab === 'wishlist' ? 'wishlist' : 'for trade/sale'}…`}
               className="w-full pl-8 pr-8 py-2 text-sm rounded-full border border-gray-200
                          bg-white/70 focus:bg-white focus:outline-none focus:ring-2 focus:ring-pink-300
                          placeholder-gray-300 text-gray-600 transition-all"
@@ -3189,6 +3281,7 @@ export default function WishlistDashboard({ user, profile, onToast, onGoExplore,
               onMovePage={handleMovePage}
               onDeletePage={handleDeletePage}
               onSlotsPerPageChange={spp => { binderSlotsPerPage.current = spp }}
+              onEmptySlotClick={slot => { setQuickAddSlot(slot); setQuickAddSearch('') }}
             />
           ) : (
             <p className="text-center text-pink-300 font-semibold mt-16 text-sm">
@@ -3491,6 +3584,131 @@ export default function WishlistDashboard({ user, profile, onToast, onGoExplore,
           })()}
         </div>
       )}
+
+      {/* ── For Trade / Sale ───────────────────────────────────────── */}
+      {activeTab === 'fortrade' && (() => {
+        const s = cardSearch.toLowerCase()
+        const forTradeItems = items
+          .filter(i => i.category === 'for_sale' || i.category === 'for_trade')
+          .filter(i => !s || (i.name ?? '').toLowerCase().includes(s) || (i.set_name ?? '').toLowerCase().includes(s))
+        return (
+          <div className="max-w-6xl mx-auto pb-16">
+            {items.filter(i => i.category === 'for_sale' || i.category === 'for_trade').length === 0 ? (
+              <div className="text-center mt-16 px-4">
+                <p className="text-4xl mb-4">💰</p>
+                <p className="text-amber-400 font-semibold text-lg mb-2">No cards listed yet!</p>
+                <p className="text-gray-400 text-sm">
+                  In your collection, tap the <strong>↕️</strong> button on any card to mark it as For Sale or For Trade.
+                </p>
+              </div>
+            ) : (
+              <>
+                <div className="px-4 pt-3 pb-2 flex gap-3 flex-wrap">
+                  {['for_sale', 'for_trade'].map(cat => {
+                    const count = forTradeItems.filter(i => i.category === cat).length
+                    if (!count) return null
+                    return (
+                      <span key={cat} className={`text-xs font-semibold px-3 py-1 rounded-full
+                        ${cat === 'for_sale' ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-100 text-blue-700'}`}>
+                        {cat === 'for_sale' ? '💰 For Sale' : '🔄 For Trade'} · {count}
+                      </span>
+                    )
+                  })}
+                </div>
+                <motion.div
+                  className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 p-4"
+                  initial="hidden" animate="show"
+                  variants={{ hidden: {}, show: { transition: { staggerChildren: 0.04 } } }}
+                >
+                  <AnimatePresence>{forTradeItems.map(renderTile)}</AnimatePresence>
+                </motion.div>
+              </>
+            )}
+          </div>
+        )
+      })()}
+
+      {/* ── Quick-add to binder slot ────────────────────────────────── */}
+      <AnimatePresence>
+        {quickAddSlot !== null && (() => {
+          const binderItemIds = new Set(
+            items.filter(i => i.binder_id === selectedBinder?.id).map(i => i.id)
+          )
+          const candidates = items.filter(i =>
+            i.owned && !binderItemIds.has(i.id)
+          )
+          const s = quickAddSearch.toLowerCase()
+          const filtered = s
+            ? candidates.filter(i =>
+                (i.name ?? '').toLowerCase().includes(s) ||
+                (i.set_name ?? '').toLowerCase().includes(s)
+              )
+            : candidates
+          return (
+            <motion.div
+              key="quick-add-overlay"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4"
+              style={{ background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(4px)' }}
+              onClick={e => { if (e.target === e.currentTarget) { setQuickAddSlot(null); setQuickAddSearch('') } }}
+            >
+              <motion.div
+                initial={{ opacity: 0, y: 40 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 40 }}
+                className="w-full max-w-md rounded-2xl shadow-2xl overflow-hidden"
+                style={{ background: 'var(--app-bg, #fff)', maxHeight: '80vh', display: 'flex', flexDirection: 'column' }}
+              >
+                <div className="px-4 pt-4 pb-2 flex items-center justify-between gap-2">
+                  <h3 className="font-bold text-gray-700 text-base">Add to slot #{quickAddSlot + 1}</h3>
+                  <button
+                    onClick={() => { setQuickAddSlot(null); setQuickAddSearch('') }}
+                    className="w-7 h-7 rounded-full bg-gray-100 hover:bg-gray-200 text-gray-400 text-sm flex items-center justify-center"
+                  >✕</button>
+                </div>
+                <div className="px-4 pb-2">
+                  <input
+                    autoFocus
+                    type="text"
+                    value={quickAddSearch}
+                    onChange={e => setQuickAddSearch(e.target.value)}
+                    placeholder="Search your collection…"
+                    className="w-full px-3 py-2 text-sm rounded-full border border-gray-200 bg-white/80
+                               focus:outline-none focus:ring-2 focus:ring-violet-300 placeholder-gray-300 text-gray-600"
+                  />
+                </div>
+                <div className="overflow-y-auto flex-1 px-4 pb-4">
+                  {filtered.length === 0 ? (
+                    <p className="text-center text-gray-300 text-sm py-8">
+                      {candidates.length === 0 ? 'All collection cards are already in this binder.' : 'No matches found.'}
+                    </p>
+                  ) : (
+                    <div className="grid grid-cols-3 gap-2 pt-1">
+                      {filtered.slice(0, 60).map(item => (
+                        <button
+                          key={item.id}
+                          onClick={() => handleQuickAddCard(item)}
+                          className="rounded-xl overflow-hidden border-2 border-transparent hover:border-violet-400 transition-all text-left"
+                        >
+                          <img
+                            src={item.image}
+                            alt={item.name}
+                            className="w-full"
+                            onError={e => { e.currentTarget.src = CARD_BACK }}
+                          />
+                          <p className="text-[9px] font-semibold text-gray-600 truncate px-1 py-0.5 text-center">{item.name}</p>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </motion.div>
+            </motion.div>
+          )
+        })()}
+      </AnimatePresence>
 
       {/* ── Modals ─────────────────────────────────────────────────── */}
       <AnimatePresence>

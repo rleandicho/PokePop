@@ -1067,27 +1067,25 @@ export default function HomePageEditorial({ user, profile, collectionIds, ownedI
 
       if (error || cancelled || !data?.length) return
 
-      const cards = await Promise.all(
-        data.map(async ({ card_id, owned }) => {
-          const fallbackImg = cardIdToImg(card_id)
-          try {
-            const headers = {}
-            if (import.meta.env.VITE_TCG_API_KEY) headers['X-Api-Key'] = import.meta.env.VITE_TCG_API_KEY
-            const res  = await fetch(`https://api.pokemontcg.io/v2/cards/${card_id}`, { headers })
-            const json = await res.json()
-            const c    = json.data
-            return {
-              id:    card_id,
-              name:  c?.name   ?? card_id,
-              set:   c?.set?.name ?? '',
-              image: c?.images?.small ?? fallbackImg,
-              owned,
-            }
-          } catch {
-            return { id: card_id, name: card_id, set: '', image: fallbackImg, owned }
-          }
-        })
-      )
+      // Batch-fetch card metadata from Supabase (handles Japanese cards correctly)
+      const cardIds = data.map(r => r.card_id)
+      const { data: tcgRows } = await supabase
+        .from('tcg_cards')
+        .select('id, name, set_name, image_small, jp_image_small, card_language')
+        .in('id', cardIds)
+      const cardMap = Object.fromEntries((tcgRows ?? []).map(c => [c.id, c]))
+
+      const cards = data.map(({ card_id, owned }) => {
+        const tc  = cardMap[card_id]
+        const img = tc?.image_small ?? tc?.jp_image_small ?? cardIdToImg(card_id)
+        return {
+          id:    card_id,
+          name:  tc?.name    ?? card_id,
+          set:   tc?.set_name ?? '',
+          image: img,
+          owned,
+        }
+      })
 
       if (!cancelled) setRecentCards(cards)
     }

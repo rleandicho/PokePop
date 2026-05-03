@@ -231,14 +231,19 @@ export async function fetchCardsFromDb({ vibe, search, setQuery, sort, page = 1,
     } else if (pureNumMatch) {
       q = q.eq('number', s)
     } else {
-      // "Haunter 56" → name AND number
-      const nameNumMatch = s.match(/^(.+?)\s+(\d+)$/)
+      // "Haunter 56" → name AND number (also handle hyphen: "haunter-56")
+      const nameNumMatch = s.replace(/-/g, ' ').match(/^(.+?)\s+(\d+)$/)
       if (nameNumMatch) {
         q = q.or(`name.ilike.%${nameNumMatch[1].trim()}%,english_name.ilike.%${nameNumMatch[1].trim()}%`)
         q = q.eq('number', nameNumMatch[2])
       } else {
-        // Regular search: name, english_name, or set_name
-        q = q.or(`name.ilike.%${s}%,english_name.ilike.%${s}%,set_name.ilike.%${s}%`)
+        // Normalize hyphens to spaces ("felt-hat-pikachu" → "felt hat pikachu"),
+        // then split into words. All words must match somewhere (AND semantics),
+        // each word may appear in name, english_name, or set_name (OR within word).
+        const words = s.replace(/-/g, ' ').trim().split(/\s+/).filter(Boolean)
+        for (const word of words) {
+          q = q.or(`name.ilike.%${word}%,english_name.ilike.%${word}%,set_name.ilike.%${word}%`)
+        }
       }
     }
   }

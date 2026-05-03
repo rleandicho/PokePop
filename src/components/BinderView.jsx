@@ -596,7 +596,7 @@ function ThemeControls({ theme, onThemeChange, binderSize, onSizeChange }) {
 }
 
 // ─── Main BinderView ──────────────────────────────────────────────────────────
-export default function BinderView({ items, user, readOnly = false, initialTheme, onThemeChange, binders, onTransfer, currentBinderId, onCardClick, onSlotsSwapped, onRemoveFromCollection, onInsertPage, onMovePage, onDeletePage, onSlotsPerPageChange }) {
+export default function BinderView({ items, user, readOnly = false, initialTheme, onThemeChange, binders, onTransfer, currentBinderId, onCardClick, onSlotsSwapped, onRemoveFromCollection, onInsertPage, onMovePage, onDeletePage, onSlotsPerPageChange, onEmptySlotClick }) {
   const [binderSize,   setBinderSize]   = useState('3x3')
   const [theme,        setTheme]        = useState(initialTheme ?? DEFAULT_THEME)
   const [slotArray,    setSlotArray]    = useState([])
@@ -660,7 +660,13 @@ export default function BinderView({ items, user, readOnly = false, initialTheme
     }
 
     setSelectedIdx(prev => {
-      // First click: select this slot
+      // First click on an empty slot → open quick-add picker instead of selecting
+      if (prev === null && !slotArray[globalIdx]) {
+        onEmptySlotClick?.(globalIdx)
+        return null
+      }
+
+      // First click on a card slot: select it
       if (prev === null) return globalIdx
 
       // Same slot clicked: deselect
