@@ -7,85 +7,85 @@ import ThemeToggle from './ThemeToggle'
 const DAILY_POKEMON = [
   {
     name: 'Charizard', setId: 'base1', setName: 'Base Set', cardId: 'base1-4',
-    image: 'https://images.pokemontcg.io/base1/4_hires.png', rarity: 'Holo Rare', hue: 20,
+    image: 'https://images.pokemontcg.io/base1/4.png', rarity: 'Holo Rare', hue: 20,
     fact: 'The 1st Edition Base Set Charizard sold for $420,000 at auction in 2022 — the highest price ever paid for a Pokémon card.',
     showcase: ['base1-4', 'base1-2', 'base1-15'],
   },
   {
     name: 'Lugia', setId: 'neo1', setName: 'Neo Genesis', cardId: 'neo1-9',
-    image: 'https://images.pokemontcg.io/neo1/9_hires.png', rarity: 'Holo Rare', hue: 220,
+    image: 'https://images.pokemontcg.io/neo1/9.png', rarity: 'Holo Rare', hue: 220,
     fact: 'Lugia was designed for the Pokémon movie before appearing in the games — one of the few Pokémon created for film first.',
     showcase: ['neo1-9', 'neo1-2', 'neo1-16'],
   },
   {
     name: 'Mew ex', setId: 'sv3pt5', setName: 'SV: 151', cardId: 'sv3pt5-205',
-    image: 'https://images.pokemontcg.io/sv3pt5/205_hires.png', rarity: 'Special Illustration Rare', hue: 305,
+    image: 'https://images.pokemontcg.io/sv3pt5/205.png', rarity: 'Special Illustration Rare', hue: 305,
     fact: 'Mew is the only Pokémon that can learn every TM and HM — the Pokédex calls it the ancestor of all Pokémon.',
     showcase: ['sv3pt5-205', 'sv3pt5-232', 'sv3pt5-167'],
   },
   {
     name: 'Mewtwo', setId: 'base1', setName: 'Base Set', cardId: 'base1-10',
-    image: 'https://images.pokemontcg.io/base1/10_hires.png', rarity: 'Holo Rare', hue: 290,
+    image: 'https://images.pokemontcg.io/base1/10.png', rarity: 'Holo Rare', hue: 290,
     fact: 'Mewtwo had the highest HP of any Pokémon in the original Base Set — engineered from Mew\'s DNA and the ultimate collector\'s pursuit.',
     showcase: ['base1-10', 'base1-4', 'base1-2'],
   },
   {
     name: 'Gengar', setId: 'fossil', setName: 'Fossil', cardId: 'fossil-5',
-    image: 'https://images.pokemontcg.io/fossil/5_hires.png', rarity: 'Holo Rare', hue: 275,
+    image: 'https://images.pokemontcg.io/fossil/5.png', rarity: 'Holo Rare', hue: 275,
     fact: 'The Fossil Set Gengar is beloved for its eerie art — depicted emerging from shadows, it perfectly captures Gengar\'s ghostly nature.',
     showcase: ['fossil-5', 'fossil-2', 'fossil-6'],
   },
   {
     name: 'Pikachu', setId: 'base1', setName: 'Base Set', cardId: 'base1-58',
-    image: 'https://images.pokemontcg.io/base1/58_hires.png', rarity: 'Common', hue: 60,
+    image: 'https://images.pokemontcg.io/base1/58.png', rarity: 'Common', hue: 60,
     fact: 'Despite being the franchise mascot, the Base Set Pikachu is a Common card. The "yellow cheeks" vs "red cheeks" print variant debate is legendary among collectors.',
     showcase: ['base1-58', 'base1-4', 'base1-10'],
   },
   {
     name: 'Blastoise', setId: 'base1', setName: 'Base Set', cardId: 'base1-2',
-    image: 'https://images.pokemontcg.io/base1/2_hires.png', rarity: 'Holo Rare', hue: 210,
+    image: 'https://images.pokemontcg.io/base1/2.png', rarity: 'Holo Rare', hue: 210,
     fact: 'Blastoise was chosen for the original Base Set booster box alongside Chansey — its twin water cannons made it an instant collector icon.',
     showcase: ['base1-2', 'base1-4', 'base1-15'],
   },
   {
     name: 'Venusaur', setId: 'base1', setName: 'Base Set', cardId: 'base1-15',
-    image: 'https://images.pokemontcg.io/base1/15_hires.png', rarity: 'Holo Rare', hue: 130,
+    image: 'https://images.pokemontcg.io/base1/15.png', rarity: 'Holo Rare', hue: 130,
     fact: 'Completing the Base Set holy trio — Charizard, Blastoise, and Venusaur — was every collector\'s first major milestone back in 1999.',
     showcase: ['base1-15', 'base1-4', 'base1-2'],
   },
   {
     name: 'Umbreon', setId: 'neo2', setName: 'Neo Discovery', cardId: 'neo2-13',
-    image: 'https://images.pokemontcg.io/neo2/13_hires.png', rarity: 'Holo Rare', hue: 250,
+    image: 'https://images.pokemontcg.io/neo2/13.png', rarity: 'Holo Rare', hue: 250,
     fact: 'Umbreon evolves from Eevee with high friendship at night — a poetic constraint that made players genuinely bond with their Eevee before evolving it.',
     showcase: ['neo2-13', 'neo2-5', 'neo2-7'],
   },
   {
     name: 'Ho-Oh', setId: 'neo3', setName: 'Neo Revelation', cardId: 'neo3-7',
-    image: 'https://images.pokemontcg.io/neo3/7_hires.png', rarity: 'Holo Rare', hue: 15,
+    image: 'https://images.pokemontcg.io/neo3/7.png', rarity: 'Holo Rare', hue: 15,
     fact: 'Ho-Oh appears in the very first episode of the Pokémon anime — years before the games revealed it was a legendary Pokémon.',
     showcase: ['neo3-7', 'neo3-6', 'neo3-14'],
   },
   {
     name: 'Articuno', setId: 'sv3pt5', setName: 'SV: 151', cardId: 'sv3pt5-144',
-    image: 'https://images.pokemontcg.io/sv3pt5/144_hires.png', rarity: 'Holo Rare', hue: 200,
+    image: 'https://images.pokemontcg.io/sv3pt5/144.png', rarity: 'Holo Rare', hue: 200,
     fact: 'Articuno is said to appear before those lost in icy mountains — legend says its wings are made of ice that never melts.',
     showcase: ['sv3pt5-144', 'fossil-2', 'neo3-14'],
   },
   {
     name: 'Jolteon', setId: 'jungle', setName: 'Jungle', cardId: 'jungle-4',
-    image: 'https://images.pokemontcg.io/jungle/4_hires.png', rarity: 'Holo Rare', hue: 60,
+    image: 'https://images.pokemontcg.io/jungle/4.png', rarity: 'Holo Rare', hue: 60,
     fact: 'Jolteon can fire 10,000-volt electric bolts — its cells generate electricity charged to extreme power when it experiences strong emotions.',
     showcase: ['jungle-4', 'jungle-6', 'jungle-3'],
   },
   {
     name: 'Eevee', setId: 'jungle', setName: 'Jungle', cardId: 'jungle-51',
-    image: 'https://images.pokemontcg.io/jungle/51_hires.png', rarity: 'Common', hue: 35,
+    image: 'https://images.pokemontcg.io/jungle/51.png', rarity: 'Common', hue: 35,
     fact: 'Eevee has the most evolutionary forms of any Pokémon — eight distinct evolutions based on item, environment, time of day, or friendship.',
     showcase: ['jungle-51', 'jungle-4', 'jungle-6'],
   },
   {
     name: 'Dragonite', setId: 'fossil', setName: 'Fossil', cardId: 'fossil-4',
-    image: 'https://images.pokemontcg.io/fossil/4_hires.png', rarity: 'Holo Rare', hue: 35,
+    image: 'https://images.pokemontcg.io/fossil/4.png', rarity: 'Holo Rare', hue: 35,
     fact: 'Dragonite can circle the globe in just 16 hours — it guides lost ships and planes to safety, earning the nickname "Sea Incarnate."',
     showcase: ['fossil-4', 'fossil-5', 'fossil-2'],
   },
@@ -102,21 +102,21 @@ function getDailyPokemon() {
 // cardImg: national-dex numbers in sv3pt5 (Pokémon 151 set, cards 1-151 = national dex, 207 total)
 const VIBES = [
   { id: 'girlypop',    label: 'Girlypop',    ball: 'love-ball',    desc: 'Cute & soft',        bg: 'oklch(82% 0.10 0)',   ink: 'oklch(35% 0.10 0)',
-    cardImg: 'https://images.pokemontcg.io/sv3pt5/35_hires.png' },   // Clefairy #35
+    cardImg: 'https://images.pokemontcg.io/sv3pt5/35.png' },   // Clefairy #35
   { id: 'space',       label: 'Space',       ball: 'moon-ball',    desc: 'Cosmic & celestial', bg: 'oklch(78% 0.09 240)', ink: 'oklch(30% 0.09 240)',
-    cardImg: 'https://images.pokemontcg.io/neo1/9_hires.png' },       // Lugia (Neo Genesis)
+    cardImg: 'https://images.pokemontcg.io/neo1/9.png' },       // Lugia (Neo Genesis)
   { id: 'darkfairy',   label: 'Dark Fairy',  ball: 'dream-ball',   desc: 'Mysterious vibes',   bg: 'oklch(72% 0.10 290)', ink: 'oklch(98% 0.02 290)',
-    cardImg: 'https://images.pokemontcg.io/sv3pt5/94_hires.png' },    // Gengar #94
+    cardImg: 'https://images.pokemontcg.io/sv3pt5/94.png' },    // Gengar #94
   { id: 'cottagecore', label: 'Cottagecore', ball: 'nest-ball',    desc: 'Cozy & botanical',   bg: 'oklch(85% 0.10 145)', ink: 'oklch(32% 0.10 145)',
-    cardImg: 'https://images.pokemontcg.io/sv3pt5/133_hires.png' },   // Eevee #133
+    cardImg: 'https://images.pokemontcg.io/sv3pt5/133.png' },   // Eevee #133
   { id: 'nature',      label: 'Nature',      ball: 'safari-ball',  desc: 'Grass-type gallery', bg: 'oklch(80% 0.13 130)', ink: 'oklch(28% 0.10 130)',
-    cardImg: 'https://images.pokemontcg.io/sv3pt5/3_hires.png' },     // Venusaur #3
+    cardImg: 'https://images.pokemontcg.io/sv3pt5/3.png' },     // Venusaur #3
   { id: 'pastel',      label: 'Pastel',      ball: 'heal-ball',    desc: 'Fairy-type softies', bg: 'oklch(90% 0.08 90)',  ink: 'oklch(38% 0.08 90)',
-    cardImg: 'https://images.pokemontcg.io/sv3pt5/39_hires.png' },    // Jigglypuff #39
+    cardImg: 'https://images.pokemontcg.io/sv3pt5/39.png' },    // Jigglypuff #39
   { id: 'trainers',    label: 'Trainers',    icon: 'pokedex',      desc: 'Supporters & items', bg: 'oklch(88% 0.07 60)',  ink: 'oklch(35% 0.08 60)',
-    cardImg: 'https://images.pokemontcg.io/sv3pt5/163_hires.png' },   // Giovanni's Charisma (trainer in 151)
+    cardImg: 'https://images.pokemontcg.io/sv3pt5/163.png' },   // Giovanni's Charisma (trainer in 151)
   { id: 'fullart',       label: 'Full Art',        icon: 'candy',        desc: 'Rare art showcase',   bg: 'oklch(85% 0.09 320)', ink: 'oklch(32% 0.10 320)',
-    cardImg: 'https://images.pokemontcg.io/sv3pt5/182_hires.png' },   // Illustration rare (within 207 total)
+    cardImg: 'https://images.pokemontcg.io/sv3pt5/182.png' },   // Illustration rare (within 207 total)
   { id: 'megaevolution', label: 'Mega Evolution',  icon: 'mega',         desc: 'All 4 ME sets',        bg: 'oklch(82% 0.12 40)',  ink: 'oklch(32% 0.12 40)',
     cardImg: 'https://images.pokemontcg.io/me1/60.png' },             // Mega Gardevoir ex
 ]
@@ -161,13 +161,13 @@ function MegaIcon({ color }) {
   )
 }
 
-// ── Derive image URL from TCG card ID (e.g. "base1-4" → ".../base1/4_hires.png")
+// ── Derive image URL from TCG card ID (e.g. "base1-4" → ".../base1/4.png")
 function cardIdToImg(cardId) {
   const dash = cardId.lastIndexOf('-')
   if (dash === -1) return ''
   const setId = cardId.slice(0, dash)
   const num   = cardId.slice(dash + 1)
-  return `https://images.pokemontcg.io/${setId}/${num}_hires.png`
+  return `https://images.pokemontcg.io/${setId}/${num}.png`
 }
 
 // ── Human-readable relative time
@@ -445,8 +445,8 @@ function DailyHero({ T, pokemon, cardImage, isDark, onSetClick, onCardClick, onB
   // Reset failure state when the daily pokemon or its resolved image changes
   useEffect(() => { setImgFailed(false) }, [pokemon.cardId, cardImage])
 
-  // cardImage is fetched from Supabase (our ground truth) — never a raw _hires.png CDN URL
-  const resolvedImage = cardImage ?? pokemon.image.replace('_hires.png', '.png')
+  // cardImage is fetched from Supabase (our ground truth) — never a raw .png CDN URL
+  const resolvedImage = cardImage ?? pokemon.image
 
   const mainCardData = {
     cardId:    pokemon.cardId,
@@ -900,10 +900,8 @@ export default function HomePageEditorial({ user, profile, collectionIds, ownedI
   const dailyPokemon  = getDailyPokemon()
 
   // Verified image URL for the daily card — loaded from our DB so we never show a card-back
-  // (pokemontcg.io returns HTTP 200 + card-back image for missing _hires.png, so onError never fires)
-  const [dailyCardImage, setDailyCardImage] = useState(
-    dailyPokemon.image.replace('_hires.png', '.png')  // immediate non-hires fallback
-  )
+  // (pokemontcg.io returns HTTP 200 + card-back image for missing .png, so onError never fires)
+  const [dailyCardImage, setDailyCardImage] = useState(dailyPokemon.image)
   useEffect(() => {
     let cancelled = false
     supabase

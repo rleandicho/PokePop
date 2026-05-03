@@ -601,6 +601,9 @@ export default function BinderView({ items, user, readOnly = false, initialTheme
   const [theme,        setTheme]        = useState(initialTheme ?? DEFAULT_THEME)
   const [slotArray,    setSlotArray]    = useState([])
   const [selectedIdx,  setSelectedIdx]  = useState(null)
+  const selectedIdxRef = useRef(null)
+  // Keep ref in sync so handleSlotClick can read current selection without deps churn
+  useEffect(() => { selectedIdxRef.current = selectedIdx }, [selectedIdx])
 
   function patchTheme(patch) {
     setTheme(prev => {
@@ -629,6 +632,7 @@ export default function BinderView({ items, user, readOnly = false, initialTheme
     const arr = buildSlotArray(items, totalSlots)
     setSlotArray(arr)
     setSelectedIdx(null)
+    selectedIdxRef.current = null
 
     // Find any cards that were auto-placed (slot_index doesn't match their position).
     // Persist their positions so they don't shift when other cards move.
@@ -659,59 +663,68 @@ export default function BinderView({ items, user, readOnly = false, initialTheme
       return
     }
 
-    setSelectedIdx(prev => {
-      // First click on an empty slot → open quick-add picker instead of selecting
-      if (prev === null && !slotArray[globalIdx]) {
-        onEmptySlotClick?.(globalIdx)
-        return null
-      }
+    const prev    = selectedIdxRef.current
+    const itemB   = slotArray[globalIdx]
+    const isEmpty = !itemB
 
-      // First click on a card slot: select it
-      if (prev === null) return globalIdx
+    // ── Case 1: nothing selected + empty slot → quick-add (no state change in BinderView)
+    if (prev === null && isEmpty) {
+      onEmptySlotClick?.(globalIdx)
+      return
+    }
 
-      // Same slot clicked: deselect
-      if (prev === globalIdx) return null
+    // ── Case 2: nothing selected + card slot → select it
+    if (prev === null) {
+      selectedIdxRef.current = globalIdx
+      setSelectedIdx(globalIdx)
+      return
+    }
 
-      // Two empty slots: deselect without swapping
-      const itemA = slotArray[prev]
-      const itemB = slotArray[globalIdx]
-      if (!itemA && !itemB) return null
+    // ── Case 3: same slot clicked → deselect
+    if (prev === globalIdx) {
+      selectedIdxRef.current = null
+      setSelectedIdx(null)
+      return
+    }
 
-      // Perform the swap optimistically
-      setSlotArray(arr => {
-        const next      = [...arr]
-        next[prev]      = itemB
-        next[globalIdx] = itemA
-        return next
-      })
+    // ── Case 4: a slot was selected — always deselect first
+    selectedIdxRef.current = null
+    setSelectedIdx(null)
 
-      // Notify parent so its items state stays in sync (used by moveCardToBinder
-      // to compute the next available slot index without a DB round-trip)
-      // Use _sourceId for virtual copies so parent updates the real row.
-      const swaps = []
-      if (itemA) swaps.push({ id: itemA._sourceId ?? itemA.id, slot_index: globalIdx })
-      if (itemB) swaps.push({ id: itemB._sourceId ?? itemB.id, slot_index: prev })
-      if (swaps.length) onSlotsSwapped?.(swaps)
+    const itemA = slotArray[prev]
 
-      // Persist to Supabase — use _sourceId so virtual copies write to the real row.
-      // Virtual copy IDs (e.g. "uuid-copy-1") are not valid DB ids; skip them.
-      const isRealId = id => !String(id).includes('-copy-')
-      if (user) {
-        const ops = []
-        if (itemA) {
-          const id = itemA._sourceId ?? itemA.id
-          if (isRealId(id)) ops.push(supabase.from('wishlists').update({ slot_index: globalIdx }).eq('id', id))
-        }
-        if (itemB) {
-          const id = itemB._sourceId ?? itemB.id
-          if (isRealId(id)) ops.push(supabase.from('wishlists').update({ slot_index: prev }).eq('id', id))
-        }
-        Promise.all(ops)  // errors are silent; local slotArray is source of truth
-      }
+    // Both empty → nothing to do
+    if (!itemA && isEmpty) return
 
-      return null  // deselect after swap
+    // ── Perform the swap optimistically
+    setSlotArray(arr => {
+      const next      = [...arr]
+      next[prev]      = itemB
+      next[globalIdx] = itemA
+      return next
     })
-  }, [slotArray, user, readOnly, onCardClick, onSlotsSwapped])
+
+    // Notify parent so its items state stays in sync
+    const swaps = []
+    if (itemA) swaps.push({ id: itemA._sourceId ?? itemA.id, slot_index: globalIdx })
+    if (itemB) swaps.push({ id: itemB._sourceId ?? itemB.id, slot_index: prev })
+    if (swaps.length) onSlotsSwapped?.(swaps)
+
+    // Persist to Supabase
+    const isRealId = id => !String(id).includes('-copy-')
+    if (user) {
+      const ops = []
+      if (itemA) {
+        const id = itemA._sourceId ?? itemA.id
+        if (isRealId(id)) ops.push(supabase.from('wishlists').update({ slot_index: globalIdx }).eq('id', id))
+      }
+      if (itemB) {
+        const id = itemB._sourceId ?? itemB.id
+        if (isRealId(id)) ops.push(supabase.from('wishlists').update({ slot_index: prev }).eq('id', id))
+      }
+      Promise.all(ops)
+    }
+  }, [slotArray, user, readOnly, onCardClick, onSlotsSwapped, onEmptySlotClick])
 
   const pages = chunk(slotArray, slotsPerPage)
 
