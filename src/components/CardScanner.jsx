@@ -23,29 +23,62 @@ function priceFallback(card, field) {
   )
 }
 
-function guessSearchFromText(text) {
-  const lines = text
+function cleanOcrLine(line) {
+  return line
+    .replace(/[^\w\s.'/-]/g, ' ')
+    .replace(/\b(?:HP|DMG|x2|Retreat|Weakness|Resistance)\b/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function buildSearchCandidates(text) {
+  const rawLines = text
     .split(/\n+/)
-    .map(line => line.replace(/[^\w\s.'-]/g, ' ').replace(/\s+/g, ' ').trim())
+    .map(line => line.replace(/[^\w\s.'/-]/g, ' ').replace(/\s+/g, ' ').trim())
+    .filter(line => line.length >= 3)
+  const lines = rawLines
+    .map(cleanOcrLine)
     .filter(line => line.length >= 3)
 
-  const hpLine = lines.find(line => /\b\d{2,3}\s*HP\b/i.test(line))
-  if (hpLine) return hpLine.replace(/\b\d{2,3}\s*HP\b.*$/i, '').trim()
+  const candidates = []
+  const hpLine = rawLines.find(line => /\b\d{2,3}\s*HP\b/i.test(line))
+  if (hpLine) candidates.push(cleanOcrLine(hpLine.replace(/\b\d{2,3}\s*HP\b.*$/i, '')))
 
-  const numberLine = lines.find(line => /\b[A-Z]{2,6}\d{2,4}\b/i.test(line))
-  if (numberLine) return numberLine.match(/\b[A-Z]{2,6}\d{2,4}\b/i)?.[0] ?? ''
+  for (const line of lines) {
+    const promoNumber = line.match(/\b[A-Z]{2,6}\d{2,4}\b/i)?.[0]
+    if (promoNumber) candidates.push(promoNumber)
 
-  return lines.find(line => !/^pokemon$/i.test(line) && line.length <= 36) ?? lines[0] ?? ''
+    const collectorNumber = line.match(/\b(\d{1,3})\s*\/\s*\d{1,3}\b/)?.[1]
+    if (collectorNumber) candidates.push(collectorNumber)
+
+    const likelyName = line
+      .replace(/\b\d{1,3}\s*\/\s*\d{1,3}\b/g, ' ')
+      .replace(/\b\d{1,3}\b/g, ' ')
+      .replace(/\b(?:Basic|Stage|Trainer|Supporter|Item|Stadium|Energy|Pokemon|Pokémon)\b/gi, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+
+    const wordCount = likelyName.split(/\s+/).filter(Boolean).length
+    if (likelyName.length >= 3 && likelyName.length <= 32 && wordCount <= 4) {
+      candidates.push(likelyName)
+      candidates.push(likelyName.replace(/\b(?:ex|EX|GX|V|VMAX|VSTAR)\b/g, '').trim())
+    }
+  }
+
+  return [...new Set(candidates.map(c => cleanOcrLine(c)).filter(c => c.length >= 2))]
 }
 
 export default function CardScanner({ user, isDark = false, onToast, onCardAdded, onBack }) {
   const videoRef = useRef(null)
   const canvasRef = useRef(null)
   const streamRef = useRef(null)
+  const detectingRef = useRef(false)
+  const lastCandidateRef = useRef('')
   const [cameraOn, setCameraOn] = useState(false)
   const [cameraError, setCameraError] = useState('')
   const [query, setQuery] = useState('')
   const [detectedText, setDetectedText] = useState('')
+  const [scanStatus, setScanStatus] = useState('Start the camera to scan automatically.')
   const [results, setResults] = useState([])
   const [searching, setSearching] = useState(false)
   const [savingId, setSavingId] = useState('')
@@ -61,10 +94,103 @@ export default function CardScanner({ user, isDark = false, onToast, onCardAdded
     setCameraOn(false)
   }, [])
 
+  const runSearch = useCallback(async (nextQuery = query, { quiet = false } = {}) => {
+    const trimmed = nextQuery.trim()
+    if (!trimmed) return []
+
+    setSearching(true)
+    const { cards, error } = await fetchCardsFromDb({
+      search: trimmed,
+      sort: 'newest',
+      page: 1,
+      pageSize: 8,
+    })
+    setSearching(false)
+
+    if (error) {
+      if (!quiet) onToast?.('Could not search cards. Try again.')
+      return []
+    }
+    setResults(cards ?? [])
+    return cards ?? []
+  }, [onToast, query])
+
+  const searchCandidates = useCallback(async (candidates, { quiet = false } = {}) => {
+    if (!candidates.length) return false
+
+    for (const candidate of candidates.slice(0, 8)) {
+      if (!candidate || candidate === lastCandidateRef.current) continue
+      lastCandidateRef.current = candidate
+      setQuery(candidate)
+      setScanStatus(`Checking "${candidate}"...`)
+      const cards = await runSearch(candidate, { quiet: true })
+      if (cards.length) {
+        setScanStatus(`Matched "${candidate}"`)
+        return true
+      }
+    }
+
+    setScanStatus('Text found, but no card match yet. Move closer to the card name or number.')
+    if (!quiet) onToast?.('Text found, but no card match yet.')
+    return false
+  }, [onToast, runSearch])
+
+  const captureAndDetect = useCallback(async ({ quiet = false } = {}) => {
+    if (detectingRef.current) return
+    const video = videoRef.current
+    const canvas = canvasRef.current
+    if (!video || !canvas || video.readyState < 2) return
+
+    detectingRef.current = true
+    canvas.width = video.videoWidth || 1280
+    canvas.height = video.videoHeight || 720
+    const ctx = canvas.getContext('2d')
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+
+    if (!supportsTextDetection) {
+      setDetectedText('This browser does not support camera text detection yet. Type the card name or number below.')
+      setScanStatus('Manual search is needed in this browser.')
+      if (!quiet) onToast?.('Type the card name or number to search.')
+      detectingRef.current = false
+      return
+    }
+
+    try {
+      const detector = new window.TextDetector()
+      const detections = await detector.detect(canvas)
+      const rawText = detections.map(item => item.rawValue).filter(Boolean).join('\n')
+      const candidates = buildSearchCandidates(rawText)
+      setDetectedText(rawText || 'No readable text found. Try better lighting or move closer to the card name.')
+      if (candidates.length) {
+        await searchCandidates(candidates, { quiet })
+      } else {
+        setScanStatus('Looking for the card name or collector number...')
+      }
+    } catch (err) {
+      setDetectedText('Text detection failed. Type the card name or number below.')
+      setScanStatus('Automatic scan paused. Manual search is still available.')
+      setCameraError(err?.message || '')
+    } finally {
+      detectingRef.current = false
+    }
+  }, [onToast, searchCandidates, supportsTextDetection])
+
   useEffect(() => () => stopCamera(), [stopCamera])
+
+  useEffect(() => {
+    if (!cameraOn) return undefined
+    setScanStatus(supportsTextDetection ? 'Scanning automatically...' : 'Manual search is needed in this browser.')
+    const id = window.setInterval(() => {
+      captureAndDetect({ quiet: true })
+    }, 1800)
+    return () => window.clearInterval(id)
+  }, [cameraOn, captureAndDetect, supportsTextDetection])
 
   async function startCamera() {
     setCameraError('')
+    setDetectedText('')
+    setResults([])
+    lastCandidateRef.current = ''
     if (!navigator.mediaDevices?.getUserMedia) {
       setCameraError('Camera access is not available in this browser.')
       return
@@ -78,61 +204,10 @@ export default function CardScanner({ user, isDark = false, onToast, onCardAdded
       streamRef.current = stream
       if (videoRef.current) videoRef.current.srcObject = stream
       setCameraOn(true)
+      setScanStatus('Scanning automatically...')
     } catch (err) {
       setCameraError(err?.message || 'Camera permission was blocked.')
     }
-  }
-
-  async function captureAndDetect() {
-    const video = videoRef.current
-    const canvas = canvasRef.current
-    if (!video || !canvas) return
-
-    canvas.width = video.videoWidth || 1280
-    canvas.height = video.videoHeight || 720
-    const ctx = canvas.getContext('2d')
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
-
-    if (!supportsTextDetection) {
-      setDetectedText('This browser does not support camera text detection yet. Type the card name or number below.')
-      onToast?.('Type the card name or number to search.')
-      return
-    }
-
-    try {
-      const detector = new window.TextDetector()
-      const detections = await detector.detect(canvas)
-      const rawText = detections.map(item => item.rawValue).filter(Boolean).join('\n')
-      const guess = guessSearchFromText(rawText)
-      setDetectedText(rawText || 'No readable text found. Try better lighting or type the card name.')
-      if (guess) {
-        setQuery(guess)
-        await runSearch(guess)
-      }
-    } catch (err) {
-      setDetectedText('Text detection failed. Type the card name or number below.')
-      setCameraError(err?.message || '')
-    }
-  }
-
-  async function runSearch(nextQuery = query) {
-    const trimmed = nextQuery.trim()
-    if (!trimmed) return
-
-    setSearching(true)
-    const { cards, error } = await fetchCardsFromDb({
-      search: trimmed,
-      sort: 'newest',
-      page: 1,
-      pageSize: 8,
-    })
-    setSearching(false)
-
-    if (error) {
-      onToast?.('Could not search cards. Try again.')
-      return
-    }
-    setResults(cards ?? [])
   }
 
   async function saveCard(card, owned) {
@@ -184,7 +259,7 @@ export default function CardScanner({ user, isDark = false, onToast, onCardAdded
             </p>
             <h2 className="text-2xl sm:text-3xl font-black mt-1">Scan or search a card</h2>
             <p className={`text-sm mt-1 ${isDark ? 'text-violet-100/70' : 'text-slate-500'}`}>
-              Point the camera at the card name or number, then add the match to your collection or wishlist.
+              Point the camera at the card name or collector number. The scanner will keep checking while the camera is on.
             </p>
           </div>
           <button
@@ -237,15 +312,21 @@ export default function CardScanner({ user, isDark = false, onToast, onCardAdded
               </button>
               <button
                 type="button"
-                onClick={captureAndDetect}
+                onClick={() => captureAndDetect({ quiet: false })}
                 disabled={!cameraOn}
                 className={`rounded-full px-4 py-2 text-sm font-bold shadow-sm disabled:opacity-45 ${
                   isDark ? 'bg-violet-200 text-slate-950' : 'bg-white text-violet-600'
                 }`}
               >
-                Capture
+                Scan Now
               </button>
             </div>
+
+            <p className={`rounded-2xl px-3 py-2 text-xs font-semibold ${
+              isDark ? 'bg-slate-900/70 text-violet-100/70' : 'bg-pink-50 text-slate-500'
+            }`}>
+              {scanStatus}
+            </p>
 
             {cameraError && <p className="text-xs font-semibold text-rose-400">{cameraError}</p>}
             {!supportsTextDetection && (
