@@ -60,6 +60,8 @@ function buildSearchCandidates(text) {
     .filter(line => line.length >= 3)
 
   const candidates = []
+  const names = []
+  const collectorNumbers = []
   const hpLine = rawLines.find(line => /\b\d{2,3}\s*HP\b/i.test(line))
   if (hpLine) candidates.push(cleanOcrLine(hpLine.replace(/\b\d{2,3}\s*HP\b.*$/i, '')))
 
@@ -68,7 +70,7 @@ function buildSearchCandidates(text) {
     if (promoNumber) candidates.push(promoNumber)
 
     const collectorNumber = line.match(/\b(\d{1,3})\s*\/\s*\d{1,3}\b/)?.[1]
-    if (collectorNumber) candidates.push(collectorNumber)
+    if (collectorNumber) collectorNumbers.push(collectorNumber)
 
     const likelyName = line
       .replace(/\b\d{1,3}\s*\/\s*\d{1,3}\b/g, ' ')
@@ -79,10 +81,18 @@ function buildSearchCandidates(text) {
 
     const wordCount = likelyName.split(/\s+/).filter(Boolean).length
     if (likelyName.length >= 3 && likelyName.length <= 32 && wordCount <= 4) {
-      candidates.push(likelyName)
-      candidates.push(likelyName.replace(/\b(?:ex|EX|GX|V|VMAX|VSTAR)\b/g, '').trim())
+      names.push(likelyName)
+      names.push(likelyName.replace(/\b(?:ex|EX|GX|V|VMAX|VSTAR)\b/g, '').trim())
     }
   }
+
+  const cleanNames = [...new Set(names.map(c => cleanOcrLine(c)).filter(c => !isNoisyCandidate(c)))]
+  const cleanNumbers = [...new Set(collectorNumbers.filter(Boolean))]
+
+  for (const name of cleanNames) {
+    for (const number of cleanNumbers) candidates.push(`${name} ${number}`)
+  }
+  candidates.push(...cleanNames, ...cleanNumbers)
 
   return [...new Set(candidates.map(c => cleanOcrLine(c)).filter(c => !isNoisyCandidate(c)))]
 }
@@ -156,6 +166,7 @@ export default function CardScanner({ user, isDark = false, onToast, onCardAdded
     if (!trimmed) return []
 
     setSearching(true)
+    setScanStatus(`Searching database for "${trimmed}"...`)
     const { cards, error } = await fetchCardsFromDb({
       search: trimmed,
       sort: 'newest',
