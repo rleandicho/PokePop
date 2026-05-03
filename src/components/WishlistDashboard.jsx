@@ -1240,6 +1240,11 @@ export default function WishlistDashboard({ user, profile, onToast, onGoExplore,
   // Quick-add from empty binder slot
   const [quickAddSlot,      setQuickAddSlot]      = useState(null)   // globalIdx or null
   const [quickAddSearch,    setQuickAddSearch]    = useState('')
+  // Stable callback so BinderView's useCallback doesn't recreate handleSlotClick on every render
+  const handleEmptySlotClick = useCallback(slot => {
+    setQuickAddSlot(slot)
+    setQuickAddSearch('')
+  }, [])
 
   // Tracks the current slotsPerPage of the active BinderView (reported via callback).
   // Used by computeNextBinderSlot and handleInsertPage to stay consistent with the display.
@@ -3281,7 +3286,7 @@ export default function WishlistDashboard({ user, profile, onToast, onGoExplore,
               onMovePage={handleMovePage}
               onDeletePage={handleDeletePage}
               onSlotsPerPageChange={spp => { binderSlotsPerPage.current = spp }}
-              onEmptySlotClick={slot => { setQuickAddSlot(slot); setQuickAddSearch('') }}
+              onEmptySlotClick={handleEmptySlotClick}
             />
           ) : (
             <p className="text-center text-pink-300 font-semibold mt-16 text-sm">
