@@ -81,6 +81,16 @@ function buildSlotArray(items, totalSlots) {
   return arr
 }
 
+function getDisplayId(item) {
+  return item ? String(item.id ?? item._sourceId ?? item.card_id ?? '') : null
+}
+
+function getPersistId(item) {
+  if (!item) return null
+  if (item._isExpanded && item._copyIndex > 0) return null
+  return item._sourceId ?? item.id ?? null
+}
+
 // ─── Empty "Chase Hole" slot ──────────────────────────────────────────────────
 function EmptySlot({ isSelected, pageStyle, onClick, readOnly }) {
   const dark       = pageStyle === 'black'
@@ -601,7 +611,9 @@ export default function BinderView({ items, user, readOnly = false, initialTheme
   const [theme,        setTheme]        = useState(initialTheme ?? DEFAULT_THEME)
   const [slotArray,    setSlotArray]    = useState([])
   const [selectedIdx,  setSelectedIdx]  = useState(null)
-  const selectedIdxRef = useRef(null)
+  const selectedIdxRef  = useRef(null)
+  const selectedItemRef = useRef(null)
+  const lastDriftSigRef = useRef(null)
   // Keep ref in sync so handleSlotClick can read current selection without deps churn
   useEffect(() => { selectedIdxRef.current = selectedIdx }, [selectedIdx])
 
@@ -631,8 +643,21 @@ export default function BinderView({ items, user, readOnly = false, initialTheme
     const totalSlots = totalPages * slotsPerPage
     const arr = buildSlotArray(items, totalSlots)
     setSlotArray(arr)
-    setSelectedIdx(null)
-    selectedIdxRef.current = null
+
+    // Preserve a selected card across parent re-renders triggered by slot sync,
+    // quantity expansion, or virtual-copy updates.
+    const selectedItemId = selectedItemRef.current
+    const nextSelectedIdx = selectedItemId
+      ? arr.findIndex(item => getDisplayId(item) === selectedItemId)
+      : null
+    if (nextSelectedIdx != null && nextSelectedIdx >= 0) {
+      setSelectedIdx(nextSelectedIdx)
+      selectedIdxRef.current = nextSelectedIdx
+    } else {
+      setSelectedIdx(null)
+      selectedIdxRef.current = null
+      selectedItemRef.current = null
+    }
 
     // Find any cards that were auto-placed (slot_index doesn't match their position).
     // Persist their positions so they don't shift when other cards move.
@@ -640,18 +665,26 @@ export default function BinderView({ items, user, readOnly = false, initialTheme
       .map((item, idx) => (item && item.slot_index !== idx) ? { item, idx } : null)
       .filter(Boolean)
     if (drifted.length) {
-      const swaps = drifted.map(({ item, idx }) => ({ id: item._sourceId ?? item.id, slot_index: idx }))
-      onSlotsSwapped?.(swaps)
-      // Also write to DB for real (non-virtual-copy) rows
-      if (user) {
-        const isRealId = id => !String(id).includes('-copy-')
-        drifted.forEach(({ item, idx }) => {
-          const realId = item._sourceId ?? item.id
-          if (isRealId(realId)) {
-            supabase.from('wishlists').update({ slot_index: idx }).eq('id', realId)
-          }
-        })
+      // Guard: only call onSlotsSwapped if the drift set has actually changed.
+      // Without this, calling onSlotsSwapped → setItems in parent → new items ref
+      // → this effect re-fires → infinite loop.
+      const sig = drifted.map(d => `${getDisplayId(d.item)}:${d.idx}`).sort().join('|')
+      if (sig !== lastDriftSigRef.current) {
+        lastDriftSigRef.current = sig
+        const swaps = drifted.map(({ item, idx }) => ({ id: item.id, slot_index: idx }))
+        onSlotsSwapped?.(swaps)
+        // Also write to DB for real (non-virtual-copy) rows
+        if (user) {
+          drifted.forEach(({ item, idx }) => {
+            const persistId = getPersistId(item)
+            if (persistId) {
+              supabase.from('wishlists').update({ slot_index: idx }).eq('id', persistId)
+            }
+          })
+        }
       }
+    } else {
+      lastDriftSigRef.current = null
     }
   }, [items, slotsPerPage])
 
@@ -676,6 +709,7 @@ export default function BinderView({ items, user, readOnly = false, initialTheme
     // ── Case 2: nothing selected + card slot → select it
     if (prev === null) {
       selectedIdxRef.current = globalIdx
+      selectedItemRef.current = getDisplayId(itemB)
       setSelectedIdx(globalIdx)
       return
     }
@@ -683,12 +717,14 @@ export default function BinderView({ items, user, readOnly = false, initialTheme
     // ── Case 3: same slot clicked → deselect
     if (prev === globalIdx) {
       selectedIdxRef.current = null
+      selectedItemRef.current = null
       setSelectedIdx(null)
       return
     }
 
     // ── Case 4: a slot was selected — always deselect first
     selectedIdxRef.current = null
+    selectedItemRef.current = null
     setSelectedIdx(null)
 
     const itemA = slotArray[prev]
@@ -706,21 +742,20 @@ export default function BinderView({ items, user, readOnly = false, initialTheme
 
     // Notify parent so its items state stays in sync
     const swaps = []
-    if (itemA) swaps.push({ id: itemA._sourceId ?? itemA.id, slot_index: globalIdx })
-    if (itemB) swaps.push({ id: itemB._sourceId ?? itemB.id, slot_index: prev })
+    if (itemA) swaps.push({ id: itemA.id, slot_index: globalIdx })
+    if (itemB) swaps.push({ id: itemB.id, slot_index: prev })
     if (swaps.length) onSlotsSwapped?.(swaps)
 
     // Persist to Supabase
-    const isRealId = id => !String(id).includes('-copy-')
     if (user) {
       const ops = []
       if (itemA) {
-        const id = itemA._sourceId ?? itemA.id
-        if (isRealId(id)) ops.push(supabase.from('wishlists').update({ slot_index: globalIdx }).eq('id', id))
+        const id = getPersistId(itemA)
+        if (id) ops.push(supabase.from('wishlists').update({ slot_index: globalIdx }).eq('id', id))
       }
       if (itemB) {
-        const id = itemB._sourceId ?? itemB.id
-        if (isRealId(id)) ops.push(supabase.from('wishlists').update({ slot_index: prev }).eq('id', id))
+        const id = getPersistId(itemB)
+        if (id) ops.push(supabase.from('wishlists').update({ slot_index: prev }).eq('id', id))
       }
       Promise.all(ops)
     }

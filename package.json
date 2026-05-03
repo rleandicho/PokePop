@@ -14,7 +14,9 @@
     "seed-chinese": "node scripts/seed-chinese-exclusives.mjs",
     "seed-tcgdex": "node scripts/seed-tcgdex.mjs",
     "fix-en-names": "node scripts/fix-en-names.mjs",
-    "source-artofpkm": "node scripts/source-artofpkm-images.mjs"
+    "source-artofpkm": "node scripts/source-artofpkm-images.mjs",
+    "import-pkmncards": "node scripts/import-pkmncards.mjs",
+    "import-special-promos": "node scripts/import-special-promos.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.102.1",

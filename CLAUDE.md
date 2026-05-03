@@ -1,14 +1,16 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to Claude Code and other AI agents working in this repository.
 
 ## Commands
 
 ```bash
-npm run dev       # Start Vite dev server at http://localhost:5173
-npm run build     # Production build to /dist
-npm run lint      # ESLint check
-npm run preview   # Preview the production build locally
+npm run dev                    # Start Vite dev server at http://localhost:5173
+npm run build                  # Production build to /dist
+npm run lint                   # ESLint check
+npm run preview                # Preview the production build locally
+npm run import-pkmncards       # Dry-run/import PkmnCards-backed set gaps
+npm run import-special-promos  # Dry-run/import Trick-or-Trade, Toys"R"Us, Build-A-Bear promos
 ```
 
 No test suite is configured.
@@ -16,55 +18,77 @@ No test suite is configured.
 ## Environment
 
 Create a `.env` file at the project root with:
-```
+
+```env
 VITE_SUPABASE_URL=...
 VITE_SUPABASE_ANON_KEY=...
-SUPABASE_SERVICE_ROLE_KEY=...   # for seeder scripts
-VITE_TCG_API_KEY=...            # pokemontcg.io key (optional, increases rate limit)
-EBAY_CLIENT_ID=...              # eBay developer Client ID (Browse API, free at developer.ebay.com)
-EBAY_CLIENT_SECRET=...          # eBay developer Client Secret
-PRICECHARTING_API_KEY=...       # free key from pricecharting.com/api
+SUPABASE_SERVICE_ROLE_KEY=...   # for seeder/cleanup scripts; do not expose in client code
+VITE_TCG_API_KEY=...            # pokemontcg.io key, optional but useful for import/price limits
+EBAY_CLIENT_ID=...              # eBay Browse API client ID
+EBAY_CLIENT_SECRET=...
+PRICECHARTING_API_KEY=...
 ```
 
 ## Architecture
 
-Single-page React app (no routing except `PublicWishlist` via react-router-dom). All state is managed in `App.jsx` — there is no global store.
+Single-page React app. Most app state is managed in `App.jsx`; public share pages use `react-router-dom`.
 
-**View routing** is controlled by `activeVibe` (string) in `App.jsx`:
-- `'home'` → `HomePage`
-- `'wishlist'` → `WishlistDashboard`
-- anything else → `CardGrid` (filtered by vibe)
+**View routing** is controlled by `activeVibe` in `App.jsx`:
 
-**Card data** comes exclusively from the [Pokémon TCG API](https://api.pokemontcg.io/v2/cards). No card data is stored in Supabase — only user wishlists and binder metadata.
+- `home` renders the editorial home page.
+- `wishlist` renders `WishlistDashboard`.
+- Other vibe IDs render `CardGrid`.
 
-**Supabase tables:**
-- `profiles` — `{ id, username }` — one row per auth user
-- `wishlists` — `{ user_id, card_id, owned, binder_id, slot_index, manual_price, market_price, mid_price, low_price }`
+**Card data** is served from the self-hosted Supabase card database through `tcg_cards_with_price`, not directly from PokemonTCG API at runtime. Import scripts populate gaps from PokemonTCG API, TCGDex, Limitless, PkmnCards, Pokellector, and curated special-promo mappings.
 
-### Key data flows
+**Supabase tables**
 
-**`collectionIds` / `ownedIds`** — Sets of card IDs fetched once on login (`App.jsx:fetchCollectionIds`), then kept in sync via `onCardAdded` / `onCardRemoved` callbacks threaded down to `CardGrid`. This avoids re-fetching Supabase on every card interaction.
+- `profiles`: public profile metadata.
+- `wishlists`: collection/wishlist rows, quantities, binder assignment, slot indexes, manual prices, tags, condition, language, category.
+- `binders`: user binder metadata and display preferences.
+- `follows`: trainer follow graph.
+- `tcg_sets`, `tcg_cards`, `tcg_prices`: self-hosted card catalog, metadata, image URLs, and cached prices.
+- `card_sales`, `card_trades`: sale/trade history used by the dashboard.
 
-**TCG query building** — `CardGrid.jsx:buildTcgQuery` assembles the `q=` parameter from three independent parts: a name wildcard search, a set filter (`setQuery`), and a vibe filter (`VIBE_QUERIES`). Parts are AND-joined with spaces. Vibe filter is skipped for `'all'`.
+## Key Data Flows
 
-**Pagination & caching** — `CardGrid` fetches 20 cards at a time (`PAGE_SIZE`). All pages for a given filter combination are accumulated in a `resultsCache` ref (LRU, max 10 entries). The cache key is `vibe|search|setQuery` — sort is excluded because sorting is done client-side after fetch.
+**Collection identity cache**: `App.jsx` fetches `collectionIds`, `ownedIds`, and language ownership once on login, then keeps those sets in sync through callbacks from card add/remove flows.
 
-**1st Edition pricing** — WotC sets (base1–ecard3) are tracked in `src/lib/sets.js:FIRST_ED_SET_IDS`. Cards from these sets are split into two entries at fetch time: one `_is1stEd: true` entry and one Unlimited entry. `get1stEdPrice` reads only the `1stEditionHolofoil` / `1stEditionNormal` TCGPlayer tiers. Unlimited cards never touch those keys (`getBestPrice` in `CardGrid.jsx` explicitly excludes `1stEdition*`).
+**Card query layer**: `src/lib/cardDb.js:fetchCardsFromDb` queries `tcg_cards_with_price`, applies vibe filters, set filters, language filters, search aliases, sorting, and pagination. Special search aliases map `trick or treat` / `trick or trade` to `trt22`, `trt23`, and `trt24`; `trt22`, `trt23`, `trt24` to one year; `toysrus` / `toys r us` to `toysrus`; and `build a bear` / `buildabear` to `buildabear`.
 
-**Sets dropdown** — `AestheticFilter` fetches the full set list from the TCG API and caches it in `localStorage` under `pokepop_sets_v1` with a 24-hour TTL. An in-memory reference (`setsCache`) prevents redundant `JSON.parse` calls within a session.
+**Pagination and caching**: `CardGrid` fetches 20 cards at a time. Results are cached by vibe/search/set/language/sort so the UI does not refetch pages unnecessarily.
 
-**WishlistDashboard / BinderView** — Binders are virtual groupings of wishlist rows. `BinderView` renders cards into a slot grid; `buildSlotArray` places cards with a known `slot_index` first, then fills gaps with unplaced cards. Price resolution priority: `manual_price → market_price → mid_price → low_price`.
+**Pricing**: Price priority is generally manual override first, then cached market/mid/low fields. WotC 1st Edition handling remains guarded so Unlimited cards do not inherit `1stEdition*` price keys.
 
-### Component responsibilities
+**Sets dropdown**: `AestheticFilter` reads `tcg_sets` from Supabase, caches under `pokepop_sets_v7`, groups by language, then by series. Promo-like sets are grouped under Promos.
+
+**WishlistDashboard / BinderView**: Binders are virtual groupings of owned wishlist rows. `BinderView` renders cards into a slot grid; `buildSlotArray` places cards with known `slot_index` values first, then fills gaps with unplaced cards. Click-to-move works by selecting a card slot, then clicking another card or empty slot. The latest binder fix preserves selected card identity across parent re-renders and keeps virtual duplicate-copy slot IDs separate from real Supabase row IDs.
+
+**Binder quick-add**: Clicking an empty binder slot with no selected card opens a quick-add picker for owned cards not already in the active binder. The picked card receives the clicked `slot_index`.
+
+**Card sell/trade actions**: Collection card tiles include sell/trade controls added by Claude. Selling records a sale price in `card_sales`; trading records the card in `card_trades`. These actions update collection state and feed the dashboard totals/history modals.
+
+**Special promo imports**: `scripts/import-pkmncards.mjs` fixed MEP and fills PkmnCards-backed promo gaps such as SVP. `scripts/import-special-promos.mjs` imports Trick-or-Trade 2022/2023/2024, Toys"R"Us promos, and Build-A-Bear promos. If SVP padded duplicates exist from an older import pass, run `scripts/cleanup-svp-padded-duplicates.sql` in Supabase SQL Editor.
+
+## Component Responsibilities
 
 | Component | Role |
 |---|---|
-| `App.jsx` | Auth, session state, view routing, collectionIds/ownedIds cache |
-| `CardGrid.jsx` | TCG API fetching, pagination, sort, 1st-Ed split, add/remove to Supabase |
-| `AestheticFilter.jsx` | Vibe pills + sets accordion; calls back with `setQuery` fragments |
-| `WishlistDashboard.jsx` | Binder CRUD, per-binder stats, pagination |
-| `BinderView.jsx` | Slot-grid display, drag-to-reorder, theme customization |
-| `HomePage.jsx` | Landing bento grid + collection summary for logged-in users |
-| `Auth.jsx` | Sign-in/sign-up/forgot-password modal |
+| `App.jsx` | Auth, session state, view routing, collection/owned ID cache |
+| `CardGrid.jsx` | Card library UI, pagination, sorting, 1st-Ed split, add/remove to Supabase |
+| `AestheticFilter.jsx` | Vibe pills and Supabase-backed set accordion |
+| `WishlistDashboard.jsx` | Collection/wishlist dashboard, binder CRUD, sell/trade flows, quick-add picker |
+| `BinderView.jsx` | Slot-grid display, click-to-move organization, page management, theme customization |
+| `HomePageEditorial.jsx` | Editorial landing/dashboard experience |
+| `Auth.jsx` | Sign-in/sign-up/password flows |
+| `src/lib/cardDb.js` | Supabase card search/query layer |
 | `src/lib/supabase.js` | Single Supabase client instance |
-| `src/lib/sets.js` | 1st Edition set allow-list + price helpers |
+| `src/lib/sets.js` | 1st Edition allow-list and price helpers |
+
+## Notes For Future Agents
+
+- Do not push service-role keys or secrets.
+- Do not bulk overwrite sets without a dry-run diff first. Set IDs differ between PkmnCards, PokemonTCG API, and local special-promo set IDs.
+- Preserve the strict 20-card grid pagination in the main card library.
+- Preserve the pricing firewall that prevents Unlimited cards from reading 1st Edition pricing keys.
+- When editing binder behavior, account for quantity-expanded virtual copies and real wishlist row IDs separately.

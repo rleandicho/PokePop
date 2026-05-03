@@ -20,6 +20,26 @@ const PRICE_TTL_MS    = 24 * 60 * 60 * 1000  // 24 hours
 
 // Promo set name fragments — mirrors AestheticFilter's PROMO_QUERY logic
 const PROMO_NAME_FRAGMENTS = ['%Promo%', '%POP Series%', '%McDonald%']
+const SEARCH_SET_ALIASES = [
+  { match: /^(trick\s*(or|&)?\s*(treat|trade)|trick\s*or\s*treat|trick\s*or\s*trade|trickortreat|trickortrade)$/i, setIds: ['trt22', 'trt23', 'trt24'] },
+  { match: /^trt22$/i, setIds: ['trt22'] },
+  { match: /^trt23$/i, setIds: ['trt23'] },
+  { match: /^trt24$/i, setIds: ['trt24'] },
+  { match: /^(toys?\s*r\s*us|toysrus)$/i, setIds: ['toysrus'] },
+  { match: /^(build\s*a\s*bear|buildabear|build-a-bear)$/i, setIds: ['buildabear'] },
+]
+
+function resolveSearchSetAlias(search) {
+  const normalized = search
+    .trim()
+    .replace(/[“”]/g, '"')
+    .replace(/[‘’]/g, "'")
+    .replace(/['"]/g, '')
+    .replace(/[-_]+/g, ' ')
+    .replace(/\s+/g, ' ')
+
+  return SEARCH_SET_ALIASES.find(alias => alias.match.test(normalized))?.setIds ?? null
+}
 
 // ── Vibe → Supabase filter definitions ───────────────────────────────────────
 // Each entry is a function that receives a Supabase query builder and returns
@@ -211,6 +231,7 @@ export async function fetchCardsFromDb({ vibe, search, setQuery, sort, page = 1,
   //   "Gengar"        → name, english_name, or set_name contains the phrase
   if (search && search.trim()) {
     const s = search.trim()
+    const aliasSetIds = resolveSearchSetAlias(s)
 
     // Card ID: setId-number, e.g. "swshp-SWSH094", "sv3pt5-144", "base1-4"
     // Right part must contain at least one digit to distinguish from Pokémon names like "Ho-Oh"
@@ -222,7 +243,9 @@ export async function fetchCardsFromDb({ vibe, search, setQuery, sort, page = 1,
     // Pure number: 1–4 digits only, e.g. "4", "94", "094"
     const pureNumMatch = !cardIdMatch && !promoNumMatch && s.match(/^\d{1,4}$/)
 
-    if (cardIdMatch) {
+    if (aliasSetIds) {
+      q = q.in('set_id', aliasSetIds)
+    } else if (cardIdMatch) {
       // Case-insensitive exact ID match (ilike without wildcards = case-insensitive =)
       q = q.ilike('id', s)
     } else if (promoNumMatch) {
