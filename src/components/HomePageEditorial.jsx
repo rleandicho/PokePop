@@ -439,16 +439,19 @@ function PokeBall({ isDark, size = '0.75em' }) {
 }
 
 // ── Daily hero — single Pokemon per day with fun fact + set tag + showcase cards
-function DailyHero({ T, pokemon, isDark, onSetClick, onCardClick, onBrowsePokemon, desktop = false, showcaseCards = [] }) {
+function DailyHero({ T, pokemon, cardImage, isDark, onSetClick, onCardClick, onBrowsePokemon, desktop = false, showcaseCards = [] }) {
   const [imgFailed, setImgFailed] = useState(false)
 
-  // Reset failure state when the daily pokemon changes
-  useEffect(() => { setImgFailed(false) }, [pokemon.cardId])
+  // Reset failure state when the daily pokemon or its resolved image changes
+  useEffect(() => { setImgFailed(false) }, [pokemon.cardId, cardImage])
+
+  // cardImage is fetched from Supabase (our ground truth) — never a raw _hires.png CDN URL
+  const resolvedImage = cardImage ?? pokemon.image.replace('_hires.png', '.png')
 
   const mainCardData = {
     cardId:    pokemon.cardId,
     cardName:  pokemon.name,
-    cardImage: pokemon.image,
+    cardImage: resolvedImage,
   }
 
   return (
@@ -496,7 +499,7 @@ function DailyHero({ T, pokemon, isDark, onSetClick, onCardClick, onBrowsePokemo
             </div>
           ) : (
             <img
-              src={pokemon.image}
+              src={resolvedImage}
               alt={pokemon.name}
               style={{
                 height: desktop ? 280 : 180, width: 'auto', borderRadius: 12,
@@ -895,6 +898,27 @@ export default function HomePageEditorial({ user, profile, collectionIds, ownedI
   const T = getTokens(isDark)
 
   const dailyPokemon  = getDailyPokemon()
+
+  // Verified image URL for the daily card — loaded from our DB so we never show a card-back
+  // (pokemontcg.io returns HTTP 200 + card-back image for missing _hires.png, so onError never fires)
+  const [dailyCardImage, setDailyCardImage] = useState(
+    dailyPokemon.image.replace('_hires.png', '.png')  // immediate non-hires fallback
+  )
+  useEffect(() => {
+    let cancelled = false
+    supabase
+      .from('tcg_cards')
+      .select('image_small, jp_image_small')
+      .eq('id', dailyPokemon.cardId)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (cancelled) return
+        const img = data?.image_small ?? data?.jp_image_small
+        if (img) setDailyCardImage(img)
+        // else keep the non-hires fallback already set
+      })
+    return () => { cancelled = true }
+  }, [dailyPokemon.cardId])
   const totalCards    = collectionIds?.size ?? 0
   const ownedCards    = ownedIds?.size      ?? 0
   const username      = profile?.username ?? user?.email?.split('@')[0] ?? 'collector'
@@ -1173,7 +1197,7 @@ export default function HomePageEditorial({ user, profile, collectionIds, ownedI
 
       {/* Daily hero */}
       <div style={{ padding: '0 20px 32px' }}>
-        <DailyHero T={T} pokemon={dailyPokemon} isDark={isDark} onSetClick={handleSetClick} onCardClick={setSelectedCard} onBrowsePokemon={handleBrowsePokemon} />
+        <DailyHero T={T} pokemon={dailyPokemon} cardImage={dailyCardImage} isDark={isDark} onSetClick={handleSetClick} onCardClick={setSelectedCard} onBrowsePokemon={handleBrowsePokemon} />
       </div>
 
       {/* My Collection + Surprise Me — above Browse by Vibe */}
