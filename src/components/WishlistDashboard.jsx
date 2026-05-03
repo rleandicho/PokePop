@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from 'react'
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import CardLists from './CardLists'
 import { motion, AnimatePresence } from 'framer-motion'
 import { supabase } from '../lib/supabase'
