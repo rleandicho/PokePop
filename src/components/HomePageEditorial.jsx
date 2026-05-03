@@ -313,11 +313,12 @@ function VibeTile({ vibe, compact = false, onClick }) {
       onMouseLeave={() => setHov(false)}
       style={{
         position: 'relative', overflow: 'hidden',
-        borderRadius: 16, padding: compact ? 14 : 18,
+        borderRadius: 16, padding: compact ? '13px 12px' : 18,
         background: vibe.bg, color: vibe.ink,
         cursor: 'pointer', border: 'none',
-        minHeight: compact ? 92 : 110,
-        width: compact ? 150 : '100%',
+        minHeight: compact ? 104 : 110,
+        width: '100%',
+        minWidth: 0,
         display: 'flex', flexDirection: 'column', justifyContent: 'space-between',
         transform: hov ? 'translateY(-2px)' : 'none',
         boxShadow: hov ? '0 12px 30px rgba(0,0,0,0.25)' : 'none',
@@ -327,9 +328,9 @@ function VibeTile({ vibe, compact = false, onClick }) {
     >
       <VibeBall vibe={vibe} size={compact ? 18 : 22} />
       {/* Text block — sits above gradient shield */}
-      <div style={{ position: 'relative', zIndex: 2 }}>
-        <div style={{ fontWeight: 600, fontSize: compact ? 14 : 16, marginBottom: 2 }}>{vibe.label}</div>
-        <div style={{ fontSize: 11, opacity: 0.7 }}>{vibe.desc}</div>
+      <div style={{ position: 'relative', zIndex: 2, minWidth: 0 }}>
+        <div style={{ fontWeight: 600, fontSize: compact ? 13 : 16, lineHeight: compact ? 1.08 : 1.15, marginBottom: 3, overflowWrap: 'anywhere' }}>{vibe.label}</div>
+        <div style={{ fontSize: compact ? 10.5 : 11, lineHeight: 1.2, opacity: 0.7, overflowWrap: 'anywhere' }}>{vibe.desc}</div>
       </div>
       {/* Card peek — decorative, clipped to tile */}
       {!compact && vibe.cardImg && (
@@ -363,6 +364,7 @@ function BottomNav({ T, onNavigate }) {
   const items = [
     { id: 'home',     label: 'Home',    icon: '⌂' },
     { id: 'all',      label: 'Browse',  icon: '▤' },
+    { id: 'scanner',  label: 'Scanner', icon: '▣' },
     { id: 'wishlist', label: 'Library', icon: '⊞' },
   ]
   return (
@@ -377,13 +379,21 @@ function BottomNav({ T, onNavigate }) {
     }}>
       {items.map(it => (
         <button key={it.id} onClick={() => onNavigate(it.id)} style={{
-          display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3,
+          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 3,
           color: it.id === 'home' ? T.brand : T.ink2,
-          fontSize: 10, cursor: 'pointer', flex: 1,
+          fontSize: 10, lineHeight: 1, cursor: 'pointer', flex: 1,
           background: 'none', border: 'none', fontFamily: T.fontSans,
         }}>
-          <span style={{ fontSize: 18 }}>{it.icon}</span>
-          <span>{it.label}</span>
+          <span style={{
+            width: 22,
+            height: 22,
+            display: 'grid',
+            placeItems: 'center',
+            fontSize: 18,
+            lineHeight: 1,
+            fontWeight: it.id === 'scanner' ? 800 : 400,
+          }}>{it.icon}</span>
+          <span style={{ lineHeight: 1.1 }}>{it.label}</span>
         </button>
       ))}
     </div>
@@ -1265,7 +1275,7 @@ export default function HomePageEditorial({ user, profile, collectionIds, ownedI
       <div style={{ padding: '0 20px 16px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
         {VIBES.slice(0, 4).map(v => <VibeTile key={v.id} vibe={v} onClick={onNavigate} />)}
       </div>
-      <div style={{ display: 'flex', gap: 12, overflowX: 'auto', padding: '0 20px 32px', scrollbarWidth: 'none' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10, padding: '0 20px 32px' }}>
         {VIBES.slice(4).map(v => <VibeTile key={v.id} vibe={v} compact onClick={onNavigate} />)}
       </div>
 

@@ -1210,7 +1210,7 @@ function WishlistCardModal({
 }
 
 // ─── Main dashboard ──────────────────────────────────────────────────────────
-export default function WishlistDashboard({ user, profile, onToast, onGoExplore, onBinderChange, initialTab = 'collection', onCardRemoved, onOwnedChanged, onCardAdded }) {
+export default function WishlistDashboard({ user, profile, onToast, onGoExplore, onOpenScanner, onBinderChange, initialTab = 'collection', onCardRemoved, onOwnedChanged, onCardAdded }) {
   const [items,        setItems]        = useState([])
   const [loading,      setLoading]      = useState(true)
   const [selectedItem, setSelectedItem] = useState(null)
@@ -2852,6 +2852,16 @@ export default function WishlistDashboard({ user, profile, onToast, onGoExplore,
         >
           ▤ Browse All Cards
         </motion.button>
+        <motion.button
+          whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.97 }}
+          onClick={onOpenScanner}
+          className="w-full sm:hidden flex items-center justify-center gap-1.5
+                     text-sm font-bold px-4 py-2.5
+                     bg-white/70 text-violet-600 border border-violet-200
+                     rounded-full shadow-sm transition-all"
+        >
+          Scan Cards
+        </motion.button>
 
         {/* Row 1: My Cards + Virtual Binder */}
         <div className="flex gap-2 sm:hidden">
@@ -2992,18 +3002,18 @@ export default function WishlistDashboard({ user, profile, onToast, onGoExplore,
       {/* ── Collection / Wishlist sub-nav ──────────────────────────── */}
       {(activeTab === 'collection' || activeTab === 'wishlist' || activeTab === 'fortrade') && (
         <div className="px-4 pt-1 pb-2 space-y-2">
-          <div className="flex items-center gap-2 flex-wrap">
+          <div className="grid grid-cols-3 gap-1.5 sm:flex sm:items-center sm:gap-2 sm:flex-wrap">
             <motion.button
               whileTap={{ scale: 0.96 }}
               onClick={() => { setActiveTab('collection'); setCollectionPage(1) }}
-              className={`flex items-center gap-1.5 px-4 py-1.5 rounded-full text-sm font-semibold
+              className={`flex min-w-0 items-center justify-center gap-1 px-2 py-1.5 rounded-full text-[11px] sm:text-sm font-semibold
                          border transition-all shadow-sm
                          ${activeTab === 'collection'
                            ? 'bg-emerald-400 text-white border-emerald-400'
                            : 'bg-white/60 text-gray-500 border-gray-200 hover:bg-white/80'
                          }`}
             >
-              📦 Collection
+              <span className="hidden sm:inline">📦 Collection</span><span className="sm:hidden">Cards</span>
               <span className={`text-[11px] font-bold px-1.5 py-0.5 rounded-full leading-none
                 ${activeTab === 'collection' ? 'bg-white/30 text-white' : 'bg-emerald-100 text-emerald-600'}`}>
                 {totalCopies !== ownedCount ? totalCopies : ownedCount}
@@ -3012,14 +3022,14 @@ export default function WishlistDashboard({ user, profile, onToast, onGoExplore,
             <motion.button
               whileTap={{ scale: 0.96 }}
               onClick={() => { setActiveTab('wishlist'); setWishlistPage(1) }}
-              className={`flex items-center gap-1.5 px-4 py-1.5 rounded-full text-sm font-semibold
+              className={`flex min-w-0 items-center justify-center gap-1 px-2 py-1.5 rounded-full text-[11px] sm:text-sm font-semibold
                          border transition-all shadow-sm
                          ${activeTab === 'wishlist'
                            ? 'bg-violet-400 text-white border-violet-400'
                            : 'bg-white/60 text-gray-500 border-gray-200 hover:bg-white/80'
                          }`}
             >
-              ✨ Wishlist
+              <span className="hidden sm:inline">✨ Wishlist</span><span className="sm:hidden">Wishlist</span>
               <span className={`text-[11px] font-bold px-1.5 py-0.5 rounded-full leading-none
                 ${activeTab === 'wishlist' ? 'bg-white/30 text-white' : 'bg-violet-100 text-violet-600'}`}>
                 {wishlistCount}
@@ -3028,14 +3038,14 @@ export default function WishlistDashboard({ user, profile, onToast, onGoExplore,
             <motion.button
               whileTap={{ scale: 0.96 }}
               onClick={() => setActiveTab('fortrade')}
-              className={`flex items-center gap-1.5 px-4 py-1.5 rounded-full text-sm font-semibold
+              className={`flex min-w-0 items-center justify-center gap-1 px-2 py-1.5 rounded-full text-[11px] sm:text-sm font-semibold
                          border transition-all shadow-sm
                          ${activeTab === 'fortrade'
                            ? 'bg-amber-400 text-white border-amber-400'
                            : 'bg-white/60 text-gray-500 border-gray-200 hover:bg-white/80'
                          }`}
             >
-              💰 For Trade/Sale
+              <span className="hidden sm:inline">💰 For Trade/Sale</span><span className="sm:hidden">Trade/Sale</span>
               <span className={`text-[11px] font-bold px-1.5 py-0.5 rounded-full leading-none
                 ${activeTab === 'fortrade' ? 'bg-white/30 text-white' : 'bg-amber-100 text-amber-600'}`}>
                 {items.filter(i => i.category === 'for_sale' || i.category === 'for_trade').length}

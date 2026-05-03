@@ -7,6 +7,7 @@ import AestheticFilter     from './components/AestheticFilter'
 import CardGrid            from './components/CardGrid'
 import WishlistDashboard   from './components/WishlistDashboard'
 import HomePageEditorial   from './components/HomePageEditorial'
+import CardScanner         from './components/CardScanner'
 import Auth                from './components/Auth'
 import Toast               from './components/Toast'
 import ThemeToggle         from './components/ThemeToggle'
@@ -162,6 +163,7 @@ export default function App() {
   const showToast     = useCallback((msg) => setToast(msg), [])
   const isHome        = activeVibe === 'home'
   const isWishlist    = activeVibe === 'wishlist'
+  const isScanner     = activeVibe === 'scanner'
   const isDark        = themeMode === 'dark'
 
   // ── Back-to-top visibility ──────────────────────────────────────────────────
@@ -265,13 +267,13 @@ export default function App() {
                   Discover Pokémon cards by vibe ✨
                 </p>
                 {/* On mobile, hide Auth when in wishlist — WishlistDashboard shows username/sign out there */}
-                <div className={isWishlist ? 'hidden sm:block' : ''}>
+                <div className={isWishlist || isScanner ? 'hidden sm:block' : ''}>
                   <Auth user={user} username={profile?.username} isDark={isDark} />
                 </div>
               </header>
 
               {/* ── Filters — hidden on wishlist/collection view ───────────────── */}
-              {!isWishlist && (
+              {!isWishlist && !isScanner && (
                 <AestheticFilter
                   active={activeVibe}
                   onChange={handleVibeChange}
@@ -283,13 +285,22 @@ export default function App() {
 
               {/* ── Main content ────────────────────────────────────────────────── */}
               <main className="max-w-6xl mx-auto pb-16">
-                {isWishlist ? (
+                {isScanner ? (
+                  <CardScanner
+                    user={user}
+                    isDark={isDark}
+                    onToast={showToast}
+                    onCardAdded={handleCardAdded}
+                    onBack={() => { setActiveVibe('all'); setSetQuery(null) }}
+                  />
+                ) : isWishlist ? (
                   <WishlistDashboard
                     key={wishlistTab}
                     user={user}
                     profile={profile}
                     onToast={showToast}
                     onGoExplore={() => { setActiveVibe('all'); setSetQuery(null) }}
+                    onOpenScanner={() => { setActiveVibe('scanner'); setSetQuery(null) }}
                     onBinderChange={setActiveBinderId}
                     initialTab={wishlistTab}
                     onCardRemoved={handleCardRemoved}
