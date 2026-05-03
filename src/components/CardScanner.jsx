@@ -68,6 +68,21 @@ function buildSearchCandidates(text) {
   return [...new Set(candidates.map(c => cleanOcrLine(c)).filter(c => c.length >= 2))]
 }
 
+function sortScannerResults(cards) {
+  return [...cards].sort((a, b) => {
+    const langA = a.card_language ?? 'en'
+    const langB = b.card_language ?? 'en'
+    if (langA === 'en' && langB !== 'en') return -1
+    if (langA !== 'en' && langB === 'en') return 1
+
+    const priceA = bestPrice(a) ?? -1
+    const priceB = bestPrice(b) ?? -1
+    if (priceA !== priceB) return priceB - priceA
+
+    return (b.set?.releaseDate ?? '').localeCompare(a.set?.releaseDate ?? '')
+  })
+}
+
 export default function CardScanner({ user, isDark = false, onToast, onCardAdded, onBack }) {
   const videoRef = useRef(null)
   const canvasRef = useRef(null)
@@ -80,6 +95,8 @@ export default function CardScanner({ user, isDark = false, onToast, onCardAdded
   const [query, setQuery] = useState('')
   const [detectedText, setDetectedText] = useState('')
   const [scanStatus, setScanStatus] = useState('Start the camera to scan automatically.')
+  const [scanLocked, setScanLocked] = useState(false)
+  const [matchedCandidate, setMatchedCandidate] = useState('')
   const [results, setResults] = useState([])
   const [searching, setSearching] = useState(false)
   const [savingId, setSavingId] = useState('')
@@ -132,8 +149,9 @@ export default function CardScanner({ user, isDark = false, onToast, onCardAdded
       if (!quiet) onToast?.('Could not search cards. Try again.')
       return []
     }
-    setResults(cards ?? [])
-    return cards ?? []
+    const sortedCards = sortScannerResults(cards ?? [])
+    setResults(sortedCards)
+    return sortedCards
   }, [onToast, query])
 
   const searchCandidates = useCallback(async (candidates, { quiet = false } = {}) => {
@@ -146,7 +164,9 @@ export default function CardScanner({ user, isDark = false, onToast, onCardAdded
       setScanStatus(`Checking "${candidate}"...`)
       const cards = await runSearch(candidate, { quiet: true })
       if (cards.length) {
-        setScanStatus(`Matched "${candidate}"`)
+        setMatchedCandidate(candidate)
+        setScanLocked(true)
+        setScanStatus(`Matched "${candidate}". Scan paused so results stay stable.`)
         return true
       }
     }
@@ -157,6 +177,7 @@ export default function CardScanner({ user, isDark = false, onToast, onCardAdded
   }, [onToast, runSearch])
 
   const captureAndDetect = useCallback(async ({ quiet = false } = {}) => {
+    if (scanLocked) return
     if (detectingRef.current) return
     const video = videoRef.current
     const canvas = canvasRef.current
@@ -192,7 +213,7 @@ export default function CardScanner({ user, isDark = false, onToast, onCardAdded
     } finally {
       detectingRef.current = false
     }
-  }, [readWithTesseract, searchCandidates, supportsTextDetection])
+  }, [readWithTesseract, scanLocked, searchCandidates, supportsTextDetection])
 
   useEffect(() => () => {
     stopCamera()
@@ -212,6 +233,8 @@ export default function CardScanner({ user, isDark = false, onToast, onCardAdded
     setCameraError('')
     setDetectedText('')
     setResults([])
+    setScanLocked(false)
+    setMatchedCandidate('')
     lastCandidateRef.current = ''
     if (!navigator.mediaDevices?.getUserMedia) {
       setCameraError('Camera access is not available in this browser.')
@@ -230,6 +253,25 @@ export default function CardScanner({ user, isDark = false, onToast, onCardAdded
     } catch (err) {
       setCameraError(err?.message || 'Camera permission was blocked.')
     }
+  }
+
+  function retryCurrentScan() {
+    setScanLocked(false)
+    setMatchedCandidate('')
+    setResults([])
+    lastCandidateRef.current = ''
+    setScanStatus(supportsTextDetection ? 'Scanning automatically...' : 'Scanning with fallback OCR...')
+    captureAndDetect({ quiet: false })
+  }
+
+  function nextScan() {
+    setQuery('')
+    setDetectedText('')
+    setResults([])
+    setScanLocked(false)
+    setMatchedCandidate('')
+    lastCandidateRef.current = ''
+    setScanStatus(supportsTextDetection ? 'Ready for the next card.' : 'Ready for the next card with fallback OCR.')
   }
 
   async function saveCard(card, owned) {
@@ -281,7 +323,7 @@ export default function CardScanner({ user, isDark = false, onToast, onCardAdded
             </p>
             <h2 className="text-2xl sm:text-3xl font-black mt-1">Scan or search a card</h2>
             <p className={`text-sm mt-1 ${isDark ? 'text-violet-100/70' : 'text-slate-500'}`}>
-              Point the camera at the card name or collector number. The scanner will keep checking while the camera is on.
+              Point the camera at the card name or collector number. The scanner pauses after a match so results stay stable.
             </p>
           </div>
           <button
@@ -350,6 +392,27 @@ export default function CardScanner({ user, isDark = false, onToast, onCardAdded
               {scanStatus}
             </p>
 
+            {scanLocked && (
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={retryCurrentScan}
+                  className={`rounded-full px-4 py-2 text-sm font-bold shadow-sm ${
+                    isDark ? 'bg-slate-900 text-violet-100 border border-violet-300/20' : 'bg-white text-violet-600 border border-violet-100'
+                  }`}
+                >
+                  Retry
+                </button>
+                <button
+                  type="button"
+                  onClick={nextScan}
+                  className="rounded-full bg-gradient-to-r from-emerald-400 to-cyan-400 px-4 py-2 text-sm font-bold text-white shadow-sm"
+                >
+                  Next Scan
+                </button>
+              </div>
+            )}
+
             {cameraError && <p className="text-xs font-semibold text-rose-400">{cameraError}</p>}
             {!supportsTextDetection && (
               <p className={`text-xs ${isDark ? 'text-violet-100/60' : 'text-slate-500'}`}>
@@ -389,6 +452,13 @@ export default function CardScanner({ user, isDark = false, onToast, onCardAdded
         </div>
 
         <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {scanLocked && matchedCandidate && (
+            <div className={`sm:col-span-2 lg:col-span-4 rounded-2xl px-4 py-3 text-sm font-semibold ${
+              isDark ? 'bg-emerald-300/10 text-emerald-100 border border-emerald-300/20' : 'bg-emerald-50 text-emerald-700 border border-emerald-100'
+            }`}>
+              Results locked for "{matchedCandidate}". Use Retry to rescan this card or Next Scan for a new card.
+            </div>
+          )}
           {results.map(card => {
             const price = bestPrice(card)
             return (
