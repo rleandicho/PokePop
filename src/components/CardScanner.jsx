@@ -72,6 +72,7 @@ export default function CardScanner({ user, isDark = false, onToast, onCardAdded
   const videoRef = useRef(null)
   const canvasRef = useRef(null)
   const streamRef = useRef(null)
+  const workerRef = useRef(null)
   const detectingRef = useRef(false)
   const lastCandidateRef = useRef('')
   const [cameraOn, setCameraOn] = useState(false)
@@ -92,6 +93,26 @@ export default function CardScanner({ user, isDark = false, onToast, onCardAdded
     streamRef.current?.getTracks?.().forEach(track => track.stop())
     streamRef.current = null
     setCameraOn(false)
+  }, [])
+
+  const readWithTesseract = useCallback(async (canvas) => {
+    setScanStatus(workerRef.current ? 'Reading text with fallback OCR...' : 'Loading fallback OCR...')
+    const { createWorker, PSM } = await import('tesseract.js')
+    if (!workerRef.current) {
+      workerRef.current = await createWorker('eng', 1, {
+        logger: message => {
+          if (message.status === 'recognizing text') {
+            setScanStatus(`Reading text ${Math.round((message.progress || 0) * 100)}%...`)
+          }
+        },
+      })
+      await workerRef.current.setParameters({
+        tessedit_pageseg_mode: PSM.SPARSE_TEXT,
+      })
+    }
+
+    const { data } = await workerRef.current.recognize(canvas)
+    return data?.text ?? ''
   }, [])
 
   const runSearch = useCallback(async (nextQuery = query, { quiet = false } = {}) => {
@@ -147,18 +168,16 @@ export default function CardScanner({ user, isDark = false, onToast, onCardAdded
     const ctx = canvas.getContext('2d')
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
 
-    if (!supportsTextDetection) {
-      setDetectedText('This browser does not support camera text detection yet. Type the card name or number below.')
-      setScanStatus('Manual search is needed in this browser.')
-      if (!quiet) onToast?.('Type the card name or number to search.')
-      detectingRef.current = false
-      return
-    }
-
     try {
-      const detector = new window.TextDetector()
-      const detections = await detector.detect(canvas)
-      const rawText = detections.map(item => item.rawValue).filter(Boolean).join('\n')
+      let rawText = ''
+      if (supportsTextDetection) {
+        const detector = new window.TextDetector()
+        const detections = await detector.detect(canvas)
+        rawText = detections.map(item => item.rawValue).filter(Boolean).join('\n')
+      }
+      if (!rawText.trim()) {
+        rawText = await readWithTesseract(canvas)
+      }
       const candidates = buildSearchCandidates(rawText)
       setDetectedText(rawText || 'No readable text found. Try better lighting or move closer to the card name.')
       if (candidates.length) {
@@ -168,21 +187,24 @@ export default function CardScanner({ user, isDark = false, onToast, onCardAdded
       }
     } catch (err) {
       setDetectedText('Text detection failed. Type the card name or number below.')
-      setScanStatus('Automatic scan paused. Manual search is still available.')
+      setScanStatus('Automatic scan could not read this frame. Manual search is still available.')
       setCameraError(err?.message || '')
     } finally {
       detectingRef.current = false
     }
-  }, [onToast, searchCandidates, supportsTextDetection])
+  }, [readWithTesseract, searchCandidates, supportsTextDetection])
 
-  useEffect(() => () => stopCamera(), [stopCamera])
+  useEffect(() => () => {
+    stopCamera()
+    workerRef.current?.terminate?.()
+  }, [stopCamera])
 
   useEffect(() => {
     if (!cameraOn) return undefined
-    setScanStatus(supportsTextDetection ? 'Scanning automatically...' : 'Manual search is needed in this browser.')
+    setScanStatus(supportsTextDetection ? 'Scanning automatically...' : 'Scanning with fallback OCR...')
     const id = window.setInterval(() => {
       captureAndDetect({ quiet: true })
-    }, 1800)
+    }, supportsTextDetection ? 1800 : 6500)
     return () => window.clearInterval(id)
   }, [cameraOn, captureAndDetect, supportsTextDetection])
 
@@ -204,7 +226,7 @@ export default function CardScanner({ user, isDark = false, onToast, onCardAdded
       streamRef.current = stream
       if (videoRef.current) videoRef.current.srcObject = stream
       setCameraOn(true)
-      setScanStatus('Scanning automatically...')
+      setScanStatus(supportsTextDetection ? 'Scanning automatically...' : 'Scanning with fallback OCR...')
     } catch (err) {
       setCameraError(err?.message || 'Camera permission was blocked.')
     }
@@ -331,7 +353,7 @@ export default function CardScanner({ user, isDark = false, onToast, onCardAdded
             {cameraError && <p className="text-xs font-semibold text-rose-400">{cameraError}</p>}
             {!supportsTextDetection && (
               <p className={`text-xs ${isDark ? 'text-violet-100/60' : 'text-slate-500'}`}>
-                Camera text detection is not supported in every browser yet. Manual search is available below.
+                This browser does not support native camera text detection, so Pokepop is using fallback OCR. First scan can take a little longer.
               </p>
             )}
 
