@@ -26,9 +26,28 @@ function priceFallback(card, field) {
 function cleanOcrLine(line) {
   return line
     .replace(/[^\w\s.'/-]/g, ' ')
-    .replace(/\b(?:HP|DMG|x2|Retreat|Weakness|Resistance)\b/gi, ' ')
+    .replace(/\b(?:HP|DMG|x2|Retreat|Weakness|Resistance|Rule|Rules?)\b/gi, ' ')
     .replace(/\s+/g, ' ')
     .trim()
+}
+
+function isNoisyCandidate(candidate) {
+  const c = candidate.toLowerCase().replace(/[^a-z0-9]/g, '')
+  if (!c) return true
+  if (/^\d+$/.test(c)) return false
+  if (/^[a-z]{2,6}\d{2,4}$/i.test(candidate)) return false
+
+  const noisyWords = new Set([
+    'trad', 'train', 'traine', 'trainer', 'support', 'supporter',
+    'item', 'stadium', 'energy', 'basic', 'stage', 'card', 'cards',
+    'pokemon', 'pokmon', 'weakness', 'resistance', 'retreat',
+    'ability', 'attack', 'damage', 'during', 'your', 'turn',
+  ])
+
+  if (noisyWords.has(c)) return true
+  if (/^tra[a-z]{0,4}$/.test(c)) return true
+  if (c.length <= 4 && !['mew', 'muk', 'jynx', 'hooh', 'abra', 'onix'].includes(c)) return true
+  return false
 }
 
 function buildSearchCandidates(text) {
@@ -54,7 +73,7 @@ function buildSearchCandidates(text) {
     const likelyName = line
       .replace(/\b\d{1,3}\s*\/\s*\d{1,3}\b/g, ' ')
       .replace(/\b\d{1,3}\b/g, ' ')
-      .replace(/\b(?:Basic|Stage|Trainer|Supporter|Item|Stadium|Energy|Pokemon|Pokémon)\b/gi, ' ')
+      .replace(/\b(?:Basic|Stage|Trainer|Supporter|Item|Stadium|Energy|Pokemon|Pokémon|Trad|Train|Traine)\b/gi, ' ')
       .replace(/\s+/g, ' ')
       .trim()
 
@@ -65,7 +84,7 @@ function buildSearchCandidates(text) {
     }
   }
 
-  return [...new Set(candidates.map(c => cleanOcrLine(c)).filter(c => c.length >= 2))]
+  return [...new Set(candidates.map(c => cleanOcrLine(c)).filter(c => !isNoisyCandidate(c)))]
 }
 
 function sortScannerResults(cards) {
