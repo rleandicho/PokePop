@@ -360,12 +360,12 @@ function VibeTile({ vibe, compact = false, onClick }) {
   )
 }
 
-function BottomNav({ T, onNavigate }) {
+function BottomNav({ T, user, onNavigate, onRequestSignIn }) {
   const items = [
-    { id: 'home',     label: 'Home',    icon: '⌂' },
-    { id: 'all',      label: 'Browse',  icon: '▤' },
-    { id: 'scanner',  label: 'Scanner', icon: '▣' },
-    { id: 'wishlist', label: 'Library', icon: '⊞' },
+    { id: 'home',     label: 'Home',    icon: '⌂',  authRequired: false },
+    { id: 'all',      label: 'Browse',  icon: '▤',  authRequired: false },
+    { id: 'scanner',  label: 'Scanner', icon: '▣',  authRequired: false },
+    { id: 'wishlist', label: 'Library', icon: '⊞',  authRequired: true  },
   ]
   return (
     <div style={{
@@ -378,7 +378,10 @@ function BottomNav({ T, onNavigate }) {
       display: 'flex', justifyContent: 'space-around',
     }}>
       {items.map(it => (
-        <button key={it.id} onClick={() => onNavigate(it.id)} style={{
+        <button key={it.id} onClick={() => {
+          if (it.authRequired && !user) { onRequestSignIn?.(); return }
+          onNavigate(it.id)
+        }} style={{
           display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 3,
           color: it.id === 'home' ? T.brand : T.ink2,
           fontSize: 10, lineHeight: 1, cursor: 'pointer', flex: 1,
@@ -422,7 +425,10 @@ function GradientEm({ T, children }) {
   return (
     <em style={{
       fontStyle: 'italic',
-      display: 'inline',
+      // inline-block so padding applies — prevents WebkitBackgroundClip from cropping
+      // ascenders/descenders when the gradient bounding box aligns with the line box
+      display: 'inline-block',
+      padding: '0.05em 0.02em',
       background: `linear-gradient(135deg, ${T.brandSoft}, ${T.brand})`,
       WebkitBackgroundClip: 'text', backgroundClip: 'text',
       WebkitTextFillColor: 'transparent',
@@ -894,6 +900,85 @@ function SharedCard({ T, card }) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Mini sign-in prompt — shown when guest clicks Library or collection links
+// ─────────────────────────────────────────────────────────────────────────────
+function MiniAuthModal({ T, isDark, onClose }) {
+  const [email,    setEmail]    = useState('')
+  const [password, setPassword] = useState('')
+  const [isSignUp, setIsSignUp] = useState(false)
+  const [loading,  setLoading]  = useState(false)
+  const [error,    setError]    = useState(null)
+
+  async function handleSubmit(e) {
+    e.preventDefault()
+    setLoading(true)
+    setError(null)
+    const fn = isSignUp
+      ? supabase.auth.signUp({ email, password })
+      : supabase.auth.signInWithPassword({ email, password })
+    const { error: err } = await fn
+    setLoading(false)
+    if (err) { setError(err.message); return }
+    onClose()
+  }
+
+  return (
+    <div
+      style={{ position: 'fixed', inset: 0, zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20,
+        background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(8px)' }}
+      onClick={onClose}
+    >
+      <div
+        style={{ background: T.bgCard, borderRadius: 24, padding: '28px 24px', width: '100%', maxWidth: 360,
+          boxShadow: '0 20px 60px rgba(0,0,0,0.3)', border: `1px solid ${T.border}` }}
+        onClick={e => e.stopPropagation()}
+      >
+        <div style={{ textAlign: 'center', marginBottom: 20 }}>
+          <div style={{ marginBottom: 10 }}>
+            <PokeBall isDark={isDark} size="36px" />
+          </div>
+          <div style={{ fontSize: 18, fontWeight: 700, color: T.ink0, marginBottom: 4 }}>
+            {isSignUp ? 'Create account' : 'Log in to track your collection'}
+          </div>
+          <div style={{ fontSize: 13, color: T.ink2 }}>
+            {isSignUp ? 'Pick an email and password to get started' : 'Sign in with your email and password'}
+          </div>
+        </div>
+        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <input
+            type="email" value={email} onChange={e => setEmail(e.target.value)}
+            placeholder="Email" required autoFocus
+            style={{ padding: '10px 14px', borderRadius: 12, border: `1px solid ${T.border}`,
+              background: T.bgCardStrong, color: T.ink0, fontSize: 14, outline: 'none', fontFamily: T.fontSans }}
+          />
+          <input
+            type="password" value={password} onChange={e => setPassword(e.target.value)}
+            placeholder="Password" required
+            style={{ padding: '10px 14px', borderRadius: 12, border: `1px solid ${T.border}`,
+              background: T.bgCardStrong, color: T.ink0, fontSize: 14, outline: 'none', fontFamily: T.fontSans }}
+          />
+          {error && <div style={{ fontSize: 12, color: '#ef4444', textAlign: 'center' }}>{error}</div>}
+          <button
+            type="submit" disabled={loading}
+            style={{ padding: '11px', borderRadius: 12, background: 'linear-gradient(135deg, #f9a8d4, #c084fc)',
+              color: 'white', fontWeight: 700, fontSize: 14, border: 'none', cursor: 'pointer', marginTop: 4 }}
+          >
+            {loading ? '…' : isSignUp ? 'Create account' : 'Sign in'}
+          </button>
+        </form>
+        <button
+          onClick={() => setIsSignUp(p => !p)}
+          style={{ display: 'block', width: '100%', textAlign: 'center', marginTop: 12,
+            fontSize: 12, color: T.ink2, background: 'none', border: 'none', cursor: 'pointer' }}
+        >
+          {isSignUp ? 'Already have an account? Sign in' : "Don't have an account? Sign up"}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Main component
 // ─────────────────────────────────────────────────────────────────────────────
 export default function HomePageEditorial({ user, profile, collectionIds, ownedIds, onNavigate, onNavigateToSearch, isDark = false, themeMode, onThemeToggle, onCardAdded }) {
@@ -902,6 +987,7 @@ export default function HomePageEditorial({ user, profile, collectionIds, ownedI
   const [sharedCards,    setSharedCards]    = useState([])
   const [previewItemId,  setPreviewItemId]  = useState(null)
   const [selectedCard,   setSelectedCard]   = useState(null)
+  const [showMiniAuth,   setShowMiniAuth]   = useState(false)
   const [packModalOpen,  setPackModalOpen]  = useState(false)
   const [loadingFriends, setLoadingFriends] = useState(true)
   const [showcaseCards,  setShowcaseCards]  = useState([]) // alternate printings of the daily Pokemon
@@ -1194,7 +1280,7 @@ export default function HomePageEditorial({ user, profile, collectionIds, ownedI
       {/* Editorial headline */}
       <div style={{ padding: '0 20px 20px' }}>
         <div style={{ fontSize: 11, color: T.ink2, letterSpacing: '0.18em', textTransform: 'uppercase', marginBottom: 8 }}>{today}</div>
-        <h1 style={{ fontFamily: T.fontDisplay, fontWeight: 400, fontSize: 40, margin: '0 0 4px', letterSpacing: '-0.02em', lineHeight: 0.95, color: T.ink0 }}>
+        <h1 style={{ fontFamily: T.fontDisplay, fontWeight: 400, fontSize: 40, margin: '0 0 4px', letterSpacing: '-0.02em', lineHeight: 1.1, color: T.ink0 }}>
           {user ? (
             <>Welcome back,<br /><GradientEm T={T}>{username}.</GradientEm></>
           ) : (
@@ -1226,6 +1312,25 @@ export default function HomePageEditorial({ user, profile, collectionIds, ownedI
               <div style={{ fontSize: 12, color: T.ink2 }}>{totalCards} cards · {ownedCards} owned</div>
             </div>
             <span style={{ fontSize: 22 }}>⊞</span>
+          </button>
+        )}
+
+        {!user && (
+          <button
+            onClick={() => setShowMiniAuth(true)}
+            style={{
+              width: '100%', padding: '13px 20px', borderRadius: 20,
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              background: T.bgCard, border: `1px solid ${T.border}`,
+              color: T.ink0, cursor: 'pointer', fontFamily: T.fontSans,
+              boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
+            }}
+          >
+            <div style={{ textAlign: 'left' }}>
+              <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 2 }}>Log in</div>
+              <div style={{ fontSize: 12, color: T.ink2 }}>Track your collection & wishlist</div>
+            </div>
+            <span style={{ fontSize: 20 }}>→</span>
           </button>
         )}
 
@@ -1294,7 +1399,7 @@ export default function HomePageEditorial({ user, profile, collectionIds, ownedI
           />
         </div>
       )}
-      <BottomNav T={T} onNavigate={onNavigate} />
+      <BottomNav T={T} user={user} onNavigate={onNavigate} onRequestSignIn={() => setShowMiniAuth(true)} />
     </div>
   )
 
@@ -1383,9 +1488,9 @@ export default function HomePageEditorial({ user, profile, collectionIds, ownedI
         display: 'flex', flexDirection: 'column',
       }}>
         <div style={{ fontSize: 10, color: T.ink2, letterSpacing: '0.18em', textTransform: 'uppercase', padding: '0 10px 8px' }}>Library</div>
-        <SideItem T={T} icon="⊞" label="All cards"  count={totalCards || undefined}   active onClick={() => onNavigate('wishlist', 'collection')} />
-        <SideItem T={T} icon="✓" label="Owned"      count={ownedCards || undefined}    onClick={() => onNavigate('wishlist', 'collection')} />
-        <SideItem T={T} icon="♥" label="Wishlist"   count={(totalCards - ownedCards) || undefined}  onClick={() => onNavigate('wishlist', 'wishlist')} />
+        <SideItem T={T} icon="⊞" label="All cards"  count={user ? (totalCards || undefined) : undefined}   active onClick={() => user ? onNavigate('wishlist', 'collection') : setShowMiniAuth(true)} />
+        <SideItem T={T} icon="✓" label="Owned"      count={user ? (ownedCards || undefined) : undefined}    onClick={() => user ? onNavigate('wishlist', 'collection') : setShowMiniAuth(true)} />
+        <SideItem T={T} icon="♥" label="Wishlist"   count={user ? ((totalCards - ownedCards) || undefined) : undefined}  onClick={() => user ? onNavigate('wishlist', 'wishlist') : setShowMiniAuth(true)} />
 
         <div style={{ height: 1, background: T.border, margin: '16px 10px' }} />
 
@@ -1433,7 +1538,7 @@ export default function HomePageEditorial({ user, profile, collectionIds, ownedI
       {/* ── Main column */}
       <main style={{ overflowY: 'auto', padding: '28px 32px' }}>
         <div style={{ fontSize: 11, color: T.ink2, letterSpacing: '0.18em', textTransform: 'uppercase', marginBottom: 8 }}>{today}</div>
-        <h1 style={{ fontFamily: T.fontDisplay, fontWeight: 400, fontSize: 56, margin: '0 0 28px', lineHeight: 0.95, letterSpacing: '-0.02em', color: T.ink0 }}>
+        <h1 style={{ fontFamily: T.fontDisplay, fontWeight: 400, fontSize: 56, margin: '0 0 28px', lineHeight: 1.05, letterSpacing: '-0.02em', color: T.ink0 }}>
           {user
             ? <>Welcome back, <GradientEm T={T}>{username}.</GradientEm></>
             : <GradientEm T={T}>Welcome!</GradientEm>
@@ -1465,7 +1570,7 @@ export default function HomePageEditorial({ user, profile, collectionIds, ownedI
             </div>
             <span style={{ fontSize: 22 }}>⚄</span>
           </button>
-          {user && (
+          {user ? (
             <button
               onClick={() => setPackModalOpen(true)}
               style={{
@@ -1483,6 +1588,23 @@ export default function HomePageEditorial({ user, profile, collectionIds, ownedI
                 <div style={{ fontSize: 12, opacity: 0.8 }}>Track what you pulled</div>
               </div>
               <span style={{ fontSize: 22 }}>🎴</span>
+            </button>
+          ) : (
+            <button
+              onClick={() => setShowMiniAuth(true)}
+              style={{
+                flex: 1, padding: '18px 24px', borderRadius: 18,
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                background: T.bgCard, border: `1px solid ${T.border}`,
+                color: T.ink0, cursor: 'pointer', fontFamily: T.fontSans,
+                boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
+              }}
+            >
+              <div style={{ textAlign: 'left' }}>
+                <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 2 }}>Log in</div>
+                <div style={{ fontSize: 12, color: T.ink2 }}>Track your collection</div>
+              </div>
+              <span style={{ fontSize: 22 }}>→</span>
             </button>
           )}
         </div>
@@ -1611,6 +1733,10 @@ export default function HomePageEditorial({ user, profile, collectionIds, ownedI
           onSaved={() => setPackModalOpen(false)}
           onCardsSaved={cards => cards.forEach(c => onCardAdded?.(c.id, true, 'english'))}
         />
+      )}
+
+      {showMiniAuth && !user && (
+        <MiniAuthModal T={T} isDark={isDark} onClose={() => setShowMiniAuth(false)} />
       )}
     </>
   )

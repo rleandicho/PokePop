@@ -191,7 +191,7 @@ export default function PublicWishlist() {
         fetchAllRows(() =>
           supabase
             .from('wishlists')
-            .select('card_id, name, image, owned, market_price, mid_price, low_price, manual_price, slot_index, binder_id, is_chase, is_favorite, quantity, created_at')
+            .select('card_id, name, image, owned, market_price, mid_price, low_price, manual_price, slot_index, binder_id, is_chase, is_favorite, quantity, created_at, category')
             .eq('user_id', userId)
             .order('created_at', { ascending: false })
         ),
@@ -225,8 +225,8 @@ export default function PublicWishlist() {
         )
       }
 
-      const [wishlist, { data: binderData }, followResult, viewerCollection] = await Promise.all(queries)
-      setItems(wishlist ?? [])
+      const [wishlistRaw, { data: binderData }, followResult, viewerCollection] = await Promise.all(queries)
+      setItems(wishlistRaw ?? [])
 
       if (viewerCollection) {
         setViewerOwnedIds(new Set(viewerCollection.filter(r => r.owned).map(r => r.card_id)))
@@ -600,6 +600,7 @@ export default function PublicWishlist() {
           { id: 'collection', label: 'Collection ✨' },
           { id: 'wishlist',   label: 'Wishlist 💜' },
           { id: 'binder',     label: 'Binder 📒' },
+          { id: 'fortrade',   label: 'For Trade/Sale 💰' },
         ].map(tab => (
           <motion.button
             key={tab.id}
@@ -782,6 +783,96 @@ export default function PublicWishlist() {
           )}
         </main>
       )}
+      {/* ── For Trade / Sale tab ───────────────────────────────────────────── */}
+      {activeTab === 'fortrade' && (() => {
+        const forTradeItems = items.filter(i => i.category === 'for_sale' || i.category === 'for_trade')
+        return (
+          <main className="max-w-6xl mx-auto pb-16">
+            {forTradeItems.length === 0 ? (
+              <p className="text-center text-amber-300 font-semibold mt-16 text-lg">
+                {profile.username ?? 'This trainer'} has no cards listed for trade or sale yet 💰
+              </p>
+            ) : (
+              <>
+                <div className="px-4 pt-3 pb-2 flex gap-3 flex-wrap">
+                  {['for_sale', 'for_trade'].map(cat => {
+                    const count = forTradeItems.filter(i => i.category === cat).length
+                    if (!count) return null
+                    return (
+                      <span key={cat} className={`text-xs font-semibold px-3 py-1 rounded-full
+                        ${cat === 'for_sale' ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-100 text-blue-700'}`}>
+                        {cat === 'for_sale' ? '💰 For Sale' : '🔄 For Trade'} · {count}
+                      </span>
+                    )
+                  })}
+                </div>
+                <AnimatePresence mode="wait">
+                  <motion.div
+                    key="fortrade"
+                    initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                    transition={{ duration: 0.15 }}
+                    className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 p-4"
+                  >
+                    {forTradeItems.map(item => (
+                      <motion.div
+                        key={item.card_id}
+                        initial={{ opacity: 0, y: 16 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className={`rounded-2xl overflow-hidden shadow-md flex flex-col border cursor-pointer
+                          ${themeMode === 'dark' ? 'bg-amber-900/40 border-amber-700/50' : 'bg-amber-50/95 border-amber-200'}`}
+                        onClick={() => setSelectedShowcaseItem(item)}
+                      >
+                        <div className="relative">
+                          <img src={item.image} alt={item.name} className="w-full" loading="lazy"
+                               onError={e => { e.currentTarget.src = CARD_BACK }} />
+                          <span className={`absolute top-1.5 left-1.5 text-[9px] font-bold px-1.5 py-0.5 rounded-full shadow-sm leading-none
+                            ${item.category === 'for_sale' ? 'bg-emerald-500 text-white' : 'bg-blue-500 text-white'}`}>
+                            {item.category === 'for_sale' ? '💰 For Sale' : '🔄 For Trade'}
+                          </span>
+                        </div>
+                        <div className="p-2 text-center flex flex-col flex-1">
+                          <p className="text-sm font-bold text-gray-700 truncate">{item.name}</p>
+                          {(() => {
+                            const { value: p, label } = getPriceInfo(item)
+                            return p > 0 ? (
+                              <span className="text-xs font-semibold text-pink-600 bg-pink-100 px-2 py-0.5 rounded-full">
+                                ${p.toFixed(2)}{label ? ` (${label})` : ''}
+                              </span>
+                            ) : (
+                              <span className="text-xs font-medium text-gray-300 bg-gray-100 px-2 py-0.5 rounded-full">---</span>
+                            )
+                          })()}
+                          {viewer && !isOwnProfile && !viewerOwnedIds.has(item.card_id) && (
+                            <div className="mt-auto pt-2 flex gap-1" onClick={e => e.stopPropagation()}>
+                              <button
+                                onClick={() => addToMyWishlist(item, false)}
+                                disabled={savingCardId === item.card_id}
+                                className="flex-1 text-[10px] font-semibold py-1 rounded-xl
+                                           bg-violet-100 hover:bg-violet-200 text-violet-700 transition-colors disabled:opacity-50"
+                              >
+                                {savingCardId === item.card_id ? '…' : '💖 Want'}
+                              </button>
+                              <button
+                                onClick={() => addToMyWishlist(item, true)}
+                                disabled={savingCardId === item.card_id}
+                                className="flex-1 text-[10px] font-semibold py-1 rounded-xl
+                                           bg-emerald-100 hover:bg-emerald-200 text-emerald-700 transition-colors disabled:opacity-50"
+                              >
+                                {savingCardId === item.card_id ? '…' : '✅ Have'}
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </motion.div>
+                    ))}
+                  </motion.div>
+                </AnimatePresence>
+              </>
+            )}
+          </main>
+        )
+      })()}
+
       {/* ── Showcase card detail modal ──────────────────────────────────────── */}
       <AnimatePresence>
         {selectedShowcaseItem && (

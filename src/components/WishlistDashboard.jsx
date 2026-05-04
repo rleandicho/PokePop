@@ -9,6 +9,18 @@ import PackLogModal from './PackLogModal'
 // ─── Pagination ───────────────────────────────────────────────────────────────
 const ITEMS_PER_PAGE = 20
 
+// ─── Relative time helper ─────────────────────────────────────────────────────
+function timeAgo(dateStr) {
+  if (!dateStr) return ''
+  const mins = Math.floor((Date.now() - new Date(dateStr)) / 60000)
+  if (mins < 1)   return 'just now'
+  if (mins < 60)  return `${mins}m ago`
+  const hrs = Math.floor(mins / 60)
+  if (hrs < 24)   return `${hrs}h ago`
+  const days = Math.floor(hrs / 24)
+  return `${days}d ago`
+}
+
 // ─── Card back fallback (inline SVG, never 404s) ─────────────────────────────
 const CARD_BACK = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="250" height="350" viewBox="0 0 250 350"><rect width="250" height="350" fill="#1a56cc" rx="14"/><rect x="8" y="8" width="234" height="334" fill="none" stroke="rgba(255,255,255,0.28)" stroke-width="2" rx="10"/><circle cx="125" cy="175" r="78" fill="none" stroke="rgba(255,255,255,0.22)" stroke-width="5"/><circle cx="125" cy="175" r="50" fill="rgba(255,255,255,0.06)" stroke="rgba(255,255,255,0.16)" stroke-width="3"/><line x1="47" y1="175" x2="203" y2="175" stroke="rgba(255,255,255,0.22)" stroke-width="4"/><circle cx="125" cy="175" r="15" fill="rgba(255,255,255,0.88)" stroke="rgba(0,0,0,0.18)" stroke-width="2"/><circle cx="125" cy="175" r="9" fill="#1a56cc"/></svg>')}`
 
@@ -642,6 +654,19 @@ function AccountSettingsModal({ user, onToast, onClose, isPublic, toggling, onTo
             ) : (
               '↻ Refresh All Prices'
             )}
+          </motion.button>
+        </div>
+
+        {/* Sign Out */}
+        <div className="mb-4">
+          <motion.button
+            whileTap={{ scale: 0.96 }}
+            onClick={() => supabase.auth.signOut()}
+            className="w-full flex items-center justify-center gap-2 bg-gray-50 hover:bg-gray-100
+                       text-gray-500 border border-gray-200 font-semibold text-sm
+                       py-2 rounded-xl transition-colors"
+          >
+            ← Sign Out
           </motion.button>
         </div>
 
@@ -1279,12 +1304,47 @@ export default function WishlistDashboard({ user, profile, onToast, onGoExplore,
   const [packLogOpen,    setPackLogOpen]    = useState(false)  // history modal open
   const [packModalOpen,  setPackModalOpen]  = useState(false)  // log-a-pack modal open
   const [historyCard,    setHistoryCard]    = useState(null)   // card preview from pack history
+  const [tradeDropdownId, setTradeDropdownId] = useState(null) // rowId with trade/sale dropdown open
+  const [showSocialsMenu, setShowSocialsMenu] = useState(false) // mobile Socials dropdown open
+  const [feedItems,       setFeedItems]       = useState([])    // social feed activity
+  const [feedLoading,     setFeedLoading]     = useState(false)
+
+  // Close trade dropdown when clicking outside
+  useEffect(() => {
+    if (!tradeDropdownId) return
+    const close = () => setTradeDropdownId(null)
+    document.addEventListener('click', close)
+    return () => document.removeEventListener('click', close)
+  }, [tradeDropdownId])
+
+  // Close Socials menu when clicking outside
+  useEffect(() => {
+    if (!showSocialsMenu) return
+    const close = () => setShowSocialsMenu(false)
+    document.addEventListener('click', close)
+    return () => document.removeEventListener('click', close)
+  }, [showSocialsMenu])
 
   // Notify App whenever the active binder changes (so CardGrid can route new cards here)
   useEffect(() => { onBinderChange?.(selectedBinder?.id ?? null) }, [selectedBinder])
 
-  // Reset virtual slot positions whenever the binder or dupes mode changes
-  useEffect(() => { setVirtualSlots({}) }, [selectedBinder?.id, showDupes])
+  // Persist virtual slot positions to localStorage so they survive page refreshes and
+  // binder switches. Key includes userId + binderId so each binder has its own map.
+  // Reset to {} when showDupes toggles (virtual IDs are mode-specific).
+  useEffect(() => { setVirtualSlots({}) }, [showDupes])
+  useEffect(() => {
+    if (!user?.id || !selectedBinder?.id) { setVirtualSlots({}); return }
+    const key = `pokepop_vslots_${user.id}_${selectedBinder.id}`
+    try {
+      const stored = localStorage.getItem(key)
+      setVirtualSlots(stored ? JSON.parse(stored) : {})
+    } catch { setVirtualSlots({}) }
+  }, [user?.id, selectedBinder?.id])
+  useEffect(() => {
+    if (!user?.id || !selectedBinder?.id) return
+    const key = `pokepop_vslots_${user.id}_${selectedBinder.id}`
+    try { localStorage.setItem(key, JSON.stringify(virtualSlots)) } catch {}
+  }, [virtualSlots, user?.id, selectedBinder?.id])
 
   const shareUrl = `${window.location.origin}/share/${user?.id}`
 
@@ -1456,6 +1516,62 @@ export default function WishlistDashboard({ user, profile, onToast, onGoExplore,
   }
 
   useEffect(() => { fetchWishlist() }, [user])
+
+  // Fetch social feed when tab is opened
+  useEffect(() => {
+    if (activeTab !== 'socialfeed' || !user) return
+    if (feedItems.length) return // already loaded
+    let cancelled = false
+    setFeedLoading(true)
+    async function loadFeed() {
+      const { data: followRows } = await supabase
+        .from('follows')
+        .select('following_id')
+        .eq('follower_id', user.id)
+      if (cancelled) return
+      const ids = (followRows ?? []).map(f => f.following_id)
+      if (!ids.length) { setFeedLoading(false); return }
+      const { data: profs } = await supabase.from('profiles').select('id, username').in('id', ids)
+      const profileMap = Object.fromEntries((profs ?? []).map(p => [p.id, p]))
+      const [{ data: cards }, { data: packs }] = await Promise.all([
+        supabase.from('wishlists')
+          .select('card_id, name, image, owned, created_at, user_id')
+          .in('user_id', ids)
+          .order('created_at', { ascending: false })
+          .limit(40),
+        supabase.from('pack_logs')
+          .select('id, user_id, pack_name, opened_at, cards')
+          .in('user_id', ids)
+          .order('opened_at', { ascending: false })
+          .limit(20),
+      ])
+      if (cancelled) return
+      const cardItems = (cards ?? []).map(w => ({
+        id: `${w.user_id}-${w.card_id}-${w.created_at}`,
+        type: 'card',
+        username: profileMap[w.user_id]?.username ?? 'Trainer',
+        action: w.owned ? 'added to collection' : 'wishlisted',
+        cardName: w.name ?? w.card_id,
+        cardImage: w.image,
+        time: w.created_at,
+      }))
+      const packItems = (packs ?? []).map(log => ({
+        id: `pack-${log.id}`,
+        type: 'pack',
+        username: profileMap[log.user_id]?.username ?? 'Trainer',
+        packName: log.pack_name,
+        hasHit: (log.cards ?? []).some(c => (c.market_price || 0) >= 5),
+        time: log.opened_at,
+      }))
+      const merged = [...cardItems, ...packItems]
+        .sort((a, b) => new Date(b.time) - new Date(a.time))
+        .slice(0, 50)
+      setFeedItems(merged)
+      setFeedLoading(false)
+    }
+    loadFeed()
+    return () => { cancelled = true }
+  }, [activeTab, user])
 
   // ── Derived arrays + totals — all useMemo, all before early returns (Rules of Hooks).
   const ownedItemsList    = useMemo(() => items.filter(i =>  i.owned), [items])
@@ -1964,15 +2080,73 @@ export default function WishlistDashboard({ user, profile, onToast, onGoExplore,
       .eq('id', rowId)
   }
 
-  async function toggleTradeStatus(rowId, currentCategory) {
-    const newVal =
-      currentCategory === 'for_sale'  ? 'for_trade' :
-      currentCategory === 'for_trade' ? null         : 'for_sale'
-    setItems(prev => prev.map(i => i.id === rowId ? { ...i, category: newVal } : i))
-    await supabase
+  // Toggle a specific trade/sale status (clicking the same status again clears it)
+  async function markTradeStatus(rowId, status) {
+    const item = items.find(i => i.id === rowId)
+    const finalVal = item?.category === status ? null : status
+    setItems(prev => prev.map(i => i.id === rowId ? { ...i, category: finalVal } : i))
+    await supabase.from('wishlists').update({ category: finalVal }).eq('id', rowId)
+  }
+
+  // Split one virtual copy of a multi-copy card into its own row and assign it to a binder.
+  // Called when the user changes the binder dropdown on an expanded (_isExpanded) tile.
+  async function splitCopyToBinder(copyItem, targetBinderId) {
+    const sourceId = copyItem._sourceId
+    const source   = items.find(i => i.id === sourceId)
+    if (!source) return
+
+    const currentQty = source.quantity || 1
+
+    // Only one physical copy — just move the whole row
+    if (currentQty <= 1) {
+      moveCardToBinder(sourceId, targetBinderId)
+      return
+    }
+
+    // Compute slot in the target binder for the new row
+    let nextSlot = null
+    if (targetBinderId) {
+      const ownedInTarget = items.filter(i => i.binder_id === targetBinderId && i.owned)
+      nextSlot = computeNextBinderSlot(ownedInTarget)
+    }
+
+    // Insert a new individual row for the split copy
+    const { data: newRow, error } = await supabase
       .from('wishlists')
-      .update({ category: newVal })
-      .eq('id', rowId)
+      .insert({
+        user_id:      user.id,
+        card_id:      source.card_id,
+        name:         source.name,
+        image:        source.image,
+        owned:        true,
+        edition:      source.edition      ?? 'unspecified',
+        language:     source.language     ?? 'english',
+        quantity:     1,
+        binder_id:    targetBinderId      || null,
+        slot_index:   nextSlot,
+        market_price: source.market_price ?? null,
+        mid_price:    source.mid_price    ?? null,
+        low_price:    source.low_price    ?? null,
+        manual_price: source.manual_price ?? null,
+        tags:         source.tags         ?? [],
+        condition:    source.condition    ?? null,
+        is_favorite:  false,
+        is_chase:     false,
+      })
+      .select('id, card_id, name, image, owned, market_price, mid_price, low_price, manual_price, price_source, slot_index, binder_id, edition, is_chase, is_favorite, quantity, language, tags, condition, category')
+      .single()
+
+    if (error) { onToast('Could not split copy 😿'); return }
+
+    const newQty = currentQty - 1
+    setItems(prev => [
+      ...prev.map(i => i.id === sourceId ? { ...i, quantity: newQty } : i),
+      { ...newRow, set_name: source.set_name, card_number: source.card_number },
+    ])
+    await supabase.from('wishlists').update({ quantity: newQty }).eq('id', sourceId)
+
+    const targetName = binders.find(b => b.id === targetBinderId)?.name ?? 'No binder'
+    onToast(`Copy moved to ${targetName} ✅`)
   }
 
   async function removeFollower(followerId) {
@@ -2449,8 +2623,6 @@ export default function WishlistDashboard({ user, profile, onToast, onGoExplore,
       {item.owned && (() => {
         const favCount = items.filter(i => i.is_favorite).length
         const favAtMax = !item.is_favorite && favCount >= 3
-        const tradeIcon = item.category === 'for_sale' ? '💰' : item.category === 'for_trade' ? '🔄' : '↕️'
-        const tradeTitle = item.category === 'for_sale' ? 'For Sale — click to mark For Trade' : item.category === 'for_trade' ? 'For Trade — click to clear' : 'Mark as For Sale / For Trade'
         return (
           <>
             <button
@@ -2468,20 +2640,41 @@ export default function WishlistDashboard({ user, profile, onToast, onGoExplore,
             >
               {item.is_favorite ? '★' : '☆'}
             </button>
-            <button
-              onClick={() => toggleTradeStatus(item.id, item.category)}
-              className={`absolute top-8 left-1.5 z-10 w-6 h-6 rounded-full flex items-center
-                         justify-center text-xs shadow-sm transition-all leading-none
-                         ${item.category === 'for_sale'
-                           ? 'bg-emerald-400 text-white'
-                           : item.category === 'for_trade'
-                             ? 'bg-blue-400 text-white'
-                             : 'bg-white/70 text-gray-300 hover:bg-emerald-50 hover:text-emerald-400'
-                         }`}
-              title={tradeTitle}
-            >
-              {tradeIcon}
-            </button>
+            {/* Single trade/sale button — click to open dropdown, click active status to clear */}
+            <div className="absolute top-9 left-1.5 z-10">
+              <button
+                onClick={e => {
+                  e.stopPropagation()
+                  if (item.category) {
+                    markTradeStatus(item.id, item.category) // clears it
+                  } else {
+                    setTradeDropdownId(prev => prev === item.id ? null : item.id)
+                  }
+                }}
+                className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] shadow-sm transition-all leading-none
+                  ${item.category === 'for_sale'
+                    ? 'bg-emerald-400 text-white'
+                    : item.category === 'for_trade'
+                    ? 'bg-blue-400 text-white'
+                    : 'bg-white/70 text-gray-300 hover:bg-amber-50 hover:text-amber-500'}`}
+                title={item.category === 'for_sale' ? 'For Sale — click to remove' : item.category === 'for_trade' ? 'For Trade — click to remove' : 'Mark as For Sale or Trade'}
+              >
+                {item.category === 'for_sale' ? '💰' : item.category === 'for_trade' ? '🔄' : '↕️'}
+              </button>
+              {tradeDropdownId === item.id && !item.category && (
+                <div className="absolute left-0 top-7 z-20 bg-white rounded-xl shadow-xl border border-gray-100 overflow-hidden min-w-[110px]"
+                  onClick={e => e.stopPropagation()}>
+                  <button
+                    onClick={() => { markTradeStatus(item.id, 'for_sale'); setTradeDropdownId(null) }}
+                    className="w-full flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-emerald-700 hover:bg-emerald-50 transition-colors"
+                  >💰 For Sale</button>
+                  <button
+                    onClick={() => { markTradeStatus(item.id, 'for_trade'); setTradeDropdownId(null) }}
+                    className="w-full flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-blue-700 hover:bg-blue-50 transition-colors"
+                  >🔄 For Trade</button>
+                </div>
+              )}
+            </div>
           </>
         )
       })()}
@@ -2724,7 +2917,10 @@ export default function WishlistDashboard({ user, profile, onToast, onGoExplore,
         {item.owned && binders.length > 0 ? (
           <select
             value={item.binder_id ?? ''}
-            onChange={e => moveCardToBinder(item.id, e.target.value)}
+            onChange={e => item._isExpanded && item._copyIndex > 0
+              ? splitCopyToBinder(item, e.target.value)
+              : moveCardToBinder(item._sourceId ?? item.id, e.target.value)
+            }
             className="mt-2 w-full text-sm font-bold text-white border-2 border-violet-500
                        rounded-xl px-3 py-2.5 cursor-pointer transition-all
                        focus:outline-none focus:ring-2 focus:ring-violet-400 hover:border-violet-400"
@@ -2800,34 +2996,61 @@ export default function WishlistDashboard({ user, profile, onToast, onGoExplore,
       {/* ── Tab bar ────────────────────────────────────────────────── */}
       <div className="px-4 pt-2 pb-4 space-y-2">
 
-        {/* Row 0 (mobile only): username + sign out (left) | share + settings (right) */}
+        {/* Row 0 (mobile only): username (left) | Socials menu + settings (right) */}
         <div className="flex items-center justify-between sm:hidden">
           <div className="flex items-center gap-2 min-w-0">
             {profile?.username && (
-              <span className="text-xs font-bold text-pink-500 truncate max-w-[120px]">
+              <span className="text-xs font-bold text-pink-500 truncate max-w-[140px]">
                 @{profile.username}
               </span>
             )}
-            <button
-              onClick={() => supabase.auth.signOut()}
-              className="text-xs font-semibold px-2.5 py-1 rounded-full border border-gray-200
-                         bg-white/60 hover:bg-gray-100 text-gray-500 transition-colors"
-            >
-              Sign out
-            </button>
           </div>
           <div className="flex items-center gap-2 flex-shrink-0">
-            {isPublic && (
+            {/* Socials menu button */}
+            <div className="relative">
               <motion.button
                 whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }}
-                onClick={handleShare}
-                className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5
-                           bg-violet-400 hover:bg-violet-500 text-white rounded-full
-                           shadow-sm transition-colors"
+                onClick={e => { e.stopPropagation(); setShowSocialsMenu(p => !p) }}
+                className={`flex items-center gap-1 text-xs font-semibold px-3 py-1.5
+                           border rounded-full shadow-sm transition-colors
+                           ${showSocialsMenu || ['trainers','followers','socialfeed'].includes(activeTab)
+                             ? 'bg-pink-400 text-white border-pink-400'
+                             : 'bg-white/60 border-gray-200 text-gray-500 hover:bg-white/80'}`}
               >
-                ↗ Share
+                👥 Socials
               </motion.button>
-            )}
+              {showSocialsMenu && (
+                <div
+                  className="absolute right-0 top-9 z-30 bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden min-w-[175px]"
+                  onClick={e => e.stopPropagation()}
+                >
+                  <button
+                    onClick={() => { setActiveTab('socialfeed'); setShowSocialsMenu(false) }}
+                    className={`w-full flex items-center gap-2 px-4 py-2.5 text-sm font-semibold transition-colors
+                      ${activeTab === 'socialfeed' ? 'text-pink-500 bg-pink-50' : 'text-gray-600 hover:bg-gray-50'}`}
+                  >📰 Social Feed</button>
+                  <button
+                    onClick={() => { setActiveTab('trainers'); setShowSocialsMenu(false) }}
+                    className={`w-full flex items-center gap-2 px-4 py-2.5 text-sm font-semibold transition-colors
+                      ${activeTab === 'trainers' ? 'text-pink-500 bg-pink-50' : 'text-gray-600 hover:bg-gray-50'}`}
+                  >👥 Following{followedTrainers.length > 0 && <span className="ml-auto text-xs text-gray-400">{followedTrainers.length}</span>}</button>
+                  <button
+                    onClick={() => { setActiveTab('followers'); setShowSocialsMenu(false) }}
+                    className={`w-full flex items-center gap-2 px-4 py-2.5 text-sm font-semibold transition-colors
+                      ${activeTab === 'followers' ? 'text-pink-500 bg-pink-50' : 'text-gray-600 hover:bg-gray-50'}`}
+                  >🫂 Followers{followers.length > 0 && <span className="ml-auto text-xs text-gray-400">{followers.length}</span>}</button>
+                  {isPublic && (
+                    <>
+                      <div className="border-t border-gray-100" />
+                      <button
+                        onClick={() => { handleShare(); setShowSocialsMenu(false) }}
+                        className="w-full flex items-center gap-2 px-4 py-2.5 text-sm font-semibold text-violet-600 hover:bg-violet-50 transition-colors"
+                      >↗ Share Profile</button>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
             <motion.button
               whileHover={{ scale: 1.1, rotate: 30 }} whileTap={{ scale: 0.92 }}
               onClick={() => setShowSettings(true)}
@@ -2886,30 +3109,7 @@ export default function WishlistDashboard({ user, profile, onToast, onGoExplore,
           ))}
         </div>
 
-        {/* Row 2: Following + Followers (same row) */}
-        <div className="flex gap-2 sm:hidden">
-          {[
-            { id: 'trainers',  label: `Following 👥${followedTrainers.length ? ` · ${followedTrainers.length}` : ''}`,
-              isActive: activeTab === 'trainers', action: () => { setActiveTab('trainers'); setCollectionPage(1); setWishlistPage(1) } },
-            { id: 'followers', label: `Followers 🫂${followers.length ? ` · ${followers.length}` : ''}`,
-              isActive: activeTab === 'followers', action: () => { setActiveTab('followers'); setCollectionPage(1); setWishlistPage(1) } },
-          ].map(tab => (
-            <motion.button
-              key={tab.id}
-              whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }}
-              onClick={tab.action}
-              className={`flex-1 px-3 py-2 rounded-full text-sm font-semibold transition-all border shadow-sm
-                ${tab.isActive
-                  ? 'bg-pink-400 text-white border-pink-400 shadow-pink-200'
-                  : 'bg-white/60 text-gray-500 border-gray-200 hover:bg-white/80'
-                }`}
-            >
-              {tab.label}
-            </motion.button>
-          ))}
-        </div>
-
-        {/* Row 3: Lists — full width */}
+        {/* Row 2: Lists — full width */}
         <motion.button
           whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.96 }}
           onClick={() => { setActiveTab('lists'); setCollectionPage(1); setWishlistPage(1) }}
@@ -3494,6 +3694,89 @@ export default function WishlistDashboard({ user, profile, onToast, onGoExplore,
         </div>
       )}
 
+      {/* ── Social Feed tab ────────────────────────────────────────── */}
+      {activeTab === 'socialfeed' && (
+        <div className="max-w-2xl mx-auto px-4 pb-16 pt-2">
+          {feedLoading ? (
+            <div className="flex justify-center mt-16">
+              <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1, ease: 'linear' }}
+                className="w-8 h-8 rounded-full border-2 border-pink-300 border-t-pink-500" />
+            </div>
+          ) : feedItems.length === 0 ? (
+            <div className="flex flex-col items-center text-center mt-16 gap-3">
+              <p className="text-5xl">📰</p>
+              <p className="font-bold text-lg text-pink-400">Nothing in your feed yet</p>
+              <p className="text-sm text-gray-400">
+                Follow other trainers to see their collection activity here.
+              </p>
+              <motion.button
+                whileTap={{ scale: 0.96 }}
+                onClick={() => setActiveTab('trainers')}
+                className="mt-2 px-5 py-2 rounded-full text-sm font-semibold
+                           bg-pink-400 text-white shadow-sm hover:bg-pink-500 transition-colors"
+              >
+                Find trainers to follow
+              </motion.button>
+            </div>
+          ) : (
+            <div className="space-y-3 pt-1">
+              {feedItems.map(item => (
+                <motion.div
+                  key={item.id}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="flex items-center gap-3 rounded-2xl border p-3 shadow-sm"
+                  style={{ background: 'var(--app-surface)', borderColor: 'var(--app-border)' }}
+                >
+                  {item.type === 'card' ? (
+                    <>
+                      {item.cardImage ? (
+                        <img
+                          src={item.cardImage}
+                          alt={item.cardName}
+                          className="h-14 w-auto rounded-lg flex-shrink-0 shadow-sm"
+                          onError={e => { e.currentTarget.style.display = 'none' }}
+                        />
+                      ) : (
+                        <div className="h-14 w-10 rounded-lg flex-shrink-0 bg-pink-100 flex items-center justify-center text-pink-300 text-xl">🃏</div>
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-bold truncate" style={{ color: 'var(--app-text)' }}>
+                          <span className="text-pink-500">@{item.username}</span>
+                          {' '}
+                          <span className="font-normal text-gray-500">{item.action}</span>
+                        </p>
+                        <p className="text-xs font-semibold truncate" style={{ color: 'var(--app-text)', opacity: 0.8 }}>
+                          {item.cardName}
+                        </p>
+                        <p className="text-[11px] text-gray-400 mt-0.5">{timeAgo(item.time)}</p>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="h-14 w-10 rounded-lg flex-shrink-0 bg-violet-100 flex items-center justify-center text-xl">
+                        {item.hasHit ? '✨' : '🎴'}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-bold truncate" style={{ color: 'var(--app-text)' }}>
+                          <span className="text-pink-500">@{item.username}</span>
+                          {' '}
+                          <span className="font-normal text-gray-500">opened a pack</span>
+                        </p>
+                        <p className="text-xs font-semibold truncate" style={{ color: 'var(--app-text)', opacity: 0.8 }}>
+                          {item.packName}{item.hasHit ? ' — got a hit! ✨' : ''}
+                        </p>
+                        <p className="text-[11px] text-gray-400 mt-0.5">{timeAgo(item.time)}</p>
+                      </div>
+                    </>
+                  )}
+                </motion.div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* ── Collection view ────────────────────────────────────────── */}
       {activeTab === 'collection' && (
       <>
@@ -3646,12 +3929,8 @@ export default function WishlistDashboard({ user, profile, onToast, onGoExplore,
       {/* ── Quick-add to binder slot ────────────────────────────────── */}
       <AnimatePresence>
         {quickAddSlot !== null && (() => {
-          const binderItemIds = new Set(
-            items.filter(i => i.binder_id === selectedBinder?.id).map(i => i.id)
-          )
-          const candidates = items.filter(i =>
-            i.owned && !binderItemIds.has(i.id)
-          )
+          // Only offer cards that are not already assigned to any binder
+          const candidates = items.filter(i => i.owned && !i.binder_id)
           const s = quickAddSearch.toLowerCase()
           const filtered = s
             ? candidates.filter(i =>
@@ -3697,7 +3976,7 @@ export default function WishlistDashboard({ user, profile, onToast, onGoExplore,
                 <div className="overflow-y-auto flex-1 px-4 pb-4">
                   {filtered.length === 0 ? (
                     <p className="text-center text-gray-300 text-sm py-8">
-                      {candidates.length === 0 ? 'All collection cards are already in this binder.' : 'No matches found.'}
+                      {candidates.length === 0 ? 'All collection cards are already in a binder. Use the binder dropdown on a tile to move a card here.' : 'No matches found.'}
                     </p>
                   ) : (
                     <div className="grid grid-cols-3 gap-2 pt-1">

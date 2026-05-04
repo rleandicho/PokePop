@@ -275,8 +275,10 @@ for (const setSummary of sets) {
       artist:        card.illustrator ?? null,
       rarity:        card.rarity ?? null,
       flavor_text:   card.description ?? null,
-      image_small:   card.image ? `${card.image}/low.webp`  : cdnUrl(lang, serieId, setId, localId, 'low'),
-      image_large:   card.image ? `${card.image}/high.webp` : cdnUrl(lang, serieId, setId, localId, 'high'),
+      // Only store a URL when TCGDex confirms the image exists (card.image from API).
+      // cdnUrl() fallback produces a path that may 404 for sets not yet in TCGDex CDN.
+      image_small:   card.image ? `${card.image}/low.webp`  : null,
+      image_large:   card.image ? `${card.image}/high.webp` : null,
     })
   })
 

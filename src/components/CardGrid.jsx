@@ -418,14 +418,14 @@ function CardModal({ card, user, onToast, onClose, saveCard, collectionIds, owne
     } else if (newLang === 'japanese') {
       const { data: cardRow } = await supabase
         .from('tcg_cards')
-        .select('jp_image_small, jp_image_large')
+        .select('jp_image_small, jp_image_large, image_small, image_large')
         .eq('id', card.id)
         .maybeSingle()
-      if (cardRow?.jp_image_small) {
-        langCard = {
-          ...card,
-          images: { small: cardRow.jp_image_small, large: cardRow.jp_image_large ?? cardRow.jp_image_small },
-        }
+      // jp_image_small = dedicated JP scan; image_small may hold TCGDex CDN URL for foreign cards
+      const small = cardRow?.jp_image_small || cardRow?.image_small || null
+      const large = cardRow?.jp_image_large || cardRow?.image_large || small
+      if (small) {
+        langCard = { ...card, images: { small, large } }
       }
     }
     const { error, toast } = await saveCard(langCard, true, 1, version, newLang)

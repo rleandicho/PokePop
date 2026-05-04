@@ -42,11 +42,22 @@ function isNoisyCandidate(candidate) {
     'item', 'stadium', 'energy', 'basic', 'stage', 'card', 'cards',
     'pokemon', 'pokmon', 'weakness', 'resistance', 'retreat',
     'ability', 'attack', 'damage', 'during', 'your', 'turn',
+    // attack verbs / damage words that appear in attack text
+    'place', 'discard', 'switch', 'attach', 'shuffle', 'search',
+    'flip', 'coin', 'heads', 'tails', 'apply',
   ])
 
   if (noisyWords.has(c)) return true
   if (/^tra[a-z]{0,4}$/.test(c)) return true
   if (c.length <= 4 && !['mew', 'muk', 'jynx', 'hooh', 'abra', 'onix'].includes(c)) return true
+
+  // G-Max / V-Max / Max attacks (e.g. "G-Max Pump", "Max Geist") — always attack names, not Pokémon names
+  if (/^g[\s-]?max\b/i.test(candidate)) return true
+  if (/^v[\s-]?max\b/i.test(candidate)) return true
+
+  // Lines that look purely like attack damage values ("100+", "200×", etc.)
+  if (/^\d+[+×x]?$/.test(candidate.trim())) return true
+
   return false
 }
 
@@ -59,42 +70,65 @@ function buildSearchCandidates(text) {
     .map(cleanOcrLine)
     .filter(line => line.length >= 3)
 
-  const candidates = []
+  // Priority-ordered candidates: [0]=best, appended in order of confidence
+  const tier1 = []  // promo codes + combined name+number
+  const tier2 = []  // names derived from HP-line context
+  const tier3 = []  // generic name candidates
+  const tier4 = []  // collector numbers alone (lowest confidence)
+
   const names = []
   const collectorNumbers = []
+
+  // HP line: text before "XXX HP" is almost always the Pokémon name
   const hpLine = rawLines.find(line => /\b\d{2,3}\s*HP\b/i.test(line))
-  if (hpLine) candidates.push(cleanOcrLine(hpLine.replace(/\b\d{2,3}\s*HP\b.*$/i, '')))
+  if (hpLine) {
+    const nameFromHp = cleanOcrLine(hpLine.replace(/\b\d{2,3}\s*HP\b.*$/i, ''))
+    if (nameFromHp && !isNoisyCandidate(nameFromHp)) tier2.push(nameFromHp)
+  }
 
   for (const line of lines) {
-    const promoNumber = line.match(/\b[A-Z]{2,6}\d{2,4}\b/i)?.[0]
-    if (promoNumber) candidates.push(promoNumber)
+    // Promo set codes like "SVP039", "MEP033", "PR-SW001"
+    const promoNumber = line.match(/\b[A-Z]{2,6}[-_]?\d{2,4}\b/i)?.[0]
+    if (promoNumber) tier1.push(promoNumber)
 
-    const collectorNumber = line.match(/\b(\d{1,3})\s*\/\s*\d{1,3}\b/)?.[1]
-    if (collectorNumber) collectorNumbers.push(collectorNumber)
+    // Collector number from "XX/YYY" format
+    const collectorMatch = line.match(/\b(\d{1,3})\s*\/\s*\d{1,3}\b/)
+    if (collectorMatch) collectorNumbers.push(collectorMatch[1])
+
+    // Skip lines that are clearly attack names: G-Max, V-Max, and numbered damage
+    if (/^(?:g[\s-]?max|v[\s-]?max)\b/i.test(line)) continue
+    // Skip lines that are pure ability/attack section headers
+    if (/^(?:ability|poke-?power|poke-?body|ancient\s+trait)\b/i.test(line)) continue
 
     const likelyName = line
       .replace(/\b\d{1,3}\s*\/\s*\d{1,3}\b/g, ' ')
       .replace(/\b\d{1,3}\b/g, ' ')
-      .replace(/\b(?:Basic|Stage|Trainer|Supporter|Item|Stadium|Energy|Pokemon|Pokémon|Trad|Train|Traine)\b/gi, ' ')
+      .replace(/\b(?:Basic|Stage\s*\d?|Trainer|Supporter|Item|Stadium|Energy|Pokemon|Pokémon|Trad|Train|Traine)\b/gi, ' ')
       .replace(/\s+/g, ' ')
       .trim()
 
     const wordCount = likelyName.split(/\s+/).filter(Boolean).length
     if (likelyName.length >= 3 && likelyName.length <= 32 && wordCount <= 4) {
       names.push(likelyName)
-      names.push(likelyName.replace(/\b(?:ex|EX|GX|V|VMAX|VSTAR)\b/g, '').trim())
+      // Also try without suffix (e.g. "Charizard ex" → "Charizard")
+      const baseName = likelyName.replace(/\b(?:ex|EX|GX|V|VMAX|VSTAR|GMAX)\b/g, '').trim()
+      if (baseName && baseName !== likelyName) names.push(baseName)
     }
   }
 
-  const cleanNames = [...new Set(names.map(c => cleanOcrLine(c)).filter(c => !isNoisyCandidate(c)))]
+  const cleanNames = [...new Set(names.map(c => cleanOcrLine(c)).filter(c => c && !isNoisyCandidate(c)))]
   const cleanNumbers = [...new Set(collectorNumbers.filter(Boolean))]
 
+  // Combined name + number searches are most precise → tier1
   for (const name of cleanNames) {
-    for (const number of cleanNumbers) candidates.push(`${name} ${number}`)
+    for (const number of cleanNumbers) tier1.push(`${name} ${number}`)
   }
-  candidates.push(...cleanNames, ...cleanNumbers)
 
-  return [...new Set(candidates.map(c => cleanOcrLine(c)).filter(c => !isNoisyCandidate(c)))]
+  tier3.push(...cleanNames)
+  tier4.push(...cleanNumbers)
+
+  const all = [...tier1, ...tier2, ...tier3, ...tier4]
+  return [...new Set(all.map(c => cleanOcrLine(c)).filter(c => c && !isNoisyCandidate(c)))]
 }
 
 function sortScannerResults(cards) {
@@ -119,6 +153,7 @@ export default function CardScanner({ user, isDark = false, onToast, onCardAdded
   const workerRef = useRef(null)
   const detectingRef = useRef(false)
   const lastCandidateRef = useRef('')
+  const lastRawTextRef = useRef('')  // frame stability: skip scan if text unchanged
   const [cameraOn, setCameraOn] = useState(false)
   const [cameraError, setCameraError] = useState('')
   const [query, setQuery] = useState('')
@@ -214,21 +249,46 @@ export default function CardScanner({ user, isDark = false, onToast, onCardAdded
     if (!video || !canvas || video.readyState < 2) return
 
     detectingRef.current = true
-    canvas.width = video.videoWidth || 1280
-    canvas.height = video.videoHeight || 720
+    const vw = video.videoWidth || 1280
+    const vh = video.videoHeight || 720
+    canvas.width  = vw
+    canvas.height = vh
     const ctx = canvas.getContext('2d')
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+    ctx.drawImage(video, 0, 0, vw, vh)
+
+    // Also create a cropped canvas focused on the top ~35% of the frame where the
+    // Pokémon name appears — this drastically reduces noise from attacks and rules text.
+    const cropCanvas = document.createElement('canvas')
+    cropCanvas.width  = vw
+    cropCanvas.height = Math.round(vh * 0.35)
+    cropCanvas.getContext('2d').drawImage(video, 0, 0, vw, vh, 0, 0, vw, cropCanvas.height)
 
     try {
       let rawText = ''
       if (supportsTextDetection) {
         const detector = new window.TextDetector()
-        const detections = await detector.detect(canvas)
-        rawText = detections.map(item => item.rawValue).filter(Boolean).join('\n')
+        // Try cropped first (name area), fall back to full frame
+        const cropDetections = await detector.detect(cropCanvas)
+        const fullDetections = await detector.detect(canvas)
+        const cropText = cropDetections.map(item => item.rawValue).filter(Boolean).join('\n')
+        const fullText = fullDetections.map(item => item.rawValue).filter(Boolean).join('\n')
+        // Prefer cropped text; append full text for collector numbers which appear at the bottom
+        rawText = cropText ? `${cropText}\n${fullText}` : fullText
       }
       if (!rawText.trim()) {
-        rawText = await readWithTesseract(canvas)
+        // For OCR fallback, scan the cropped canvas first since it's faster
+        rawText = await readWithTesseract(cropCanvas)
+        if (!rawText.trim()) rawText = await readWithTesseract(canvas)
       }
+
+      // Frame stability: skip processing if we just saw identical text and already have results
+      const normalised = rawText.replace(/\s+/g, ' ').trim()
+      if (normalised && normalised === lastRawTextRef.current && results.length > 0) {
+        detectingRef.current = false
+        return
+      }
+      lastRawTextRef.current = normalised
+
       const candidates = buildSearchCandidates(rawText)
       setDetectedText(rawText || 'No readable text found. Try better lighting or move closer to the card name.')
       if (candidates.length) {
@@ -243,7 +303,7 @@ export default function CardScanner({ user, isDark = false, onToast, onCardAdded
     } finally {
       detectingRef.current = false
     }
-  }, [readWithTesseract, scanLocked, searchCandidates, supportsTextDetection])
+  }, [readWithTesseract, results, scanLocked, searchCandidates, supportsTextDetection])
 
   useEffect(() => () => {
     stopCamera()
@@ -290,6 +350,7 @@ export default function CardScanner({ user, isDark = false, onToast, onCardAdded
     setMatchedCandidate('')
     setResults([])
     lastCandidateRef.current = ''
+    lastRawTextRef.current = ''
     setScanStatus(supportsTextDetection ? 'Scanning automatically...' : 'Scanning with fallback OCR...')
     captureAndDetect({ quiet: false })
   }
@@ -301,6 +362,7 @@ export default function CardScanner({ user, isDark = false, onToast, onCardAdded
     setScanLocked(false)
     setMatchedCandidate('')
     lastCandidateRef.current = ''
+    lastRawTextRef.current = ''
     setScanStatus(supportsTextDetection ? 'Ready for the next card.' : 'Ready for the next card with fallback OCR.')
   }
 
