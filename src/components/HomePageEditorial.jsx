@@ -117,6 +117,8 @@ const VIBES = [
     cardImg: 'https://images.pokemontcg.io/sv3pt5/163.png' },   // Giovanni's Charisma (trainer in 151)
   { id: 'fullart',       label: 'Full Art',        icon: 'candy',        desc: 'Rare art showcase',   bg: 'oklch(85% 0.09 320)', ink: 'oklch(32% 0.10 320)',
     cardImg: 'https://images.pokemontcg.io/sv3pt5/182.png' },   // Illustration rare (within 207 total)
+  { id: 'dragons',       label: 'Dragons',         icon: 'dragon',       desc: 'Dragon-type legends',  bg: 'oklch(82% 0.13 55)',  ink: 'oklch(30% 0.10 55)',
+    cardImg: 'https://images.pokemontcg.io/base3/4.png' },            // Dragonite (Fossil)
   { id: 'megaevolution', label: 'Mega Evolution',  icon: 'mega',         desc: 'All 4 ME sets',        bg: 'oklch(82% 0.12 40)',  ink: 'oklch(32% 0.12 40)',
     cardImg: 'https://images.pokemontcg.io/me1/60.png' },             // Mega Gardevoir ex
 ]
@@ -157,6 +159,26 @@ function MegaIcon({ color }) {
     <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
       <text x="11" y="16" textAnchor="middle" fontSize="15" fontWeight="900" fontFamily="Arial, sans-serif" fill={color} fillOpacity="0.85">M</text>
       <circle cx="11" cy="11" r="9.5" stroke={color} strokeWidth="1.5" fill="none" strokeOpacity="0.5"/>
+    </svg>
+  )
+}
+
+function DragonIcon({ color }) {
+  return (
+    <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
+      {/* Wing left */}
+      <path d="M3 14 Q1 8 5 5 Q7 10 6 14Z" fill={color} fillOpacity="0.5"/>
+      {/* Wing right */}
+      <path d="M19 14 Q21 8 17 5 Q15 10 16 14Z" fill={color} fillOpacity="0.5"/>
+      {/* Body */}
+      <ellipse cx="11" cy="13" rx="5" ry="6" fill={color} fillOpacity="0.7"/>
+      {/* Head */}
+      <circle cx="11" cy="8" r="3.5" fill={color} fillOpacity="0.85"/>
+      {/* Eyes */}
+      <circle cx="9.5" cy="7.5" r="0.9" fill="white" fillOpacity="0.9"/>
+      <circle cx="12.5" cy="7.5" r="0.9" fill="white" fillOpacity="0.9"/>
+      {/* Horn */}
+      <path d="M10 5.5 L10.5 3.5 L11.5 5.5" fill={color}/>
     </svg>
   )
 }
@@ -301,6 +323,7 @@ function VibeBall({ vibe, size = 22 }) {
   if (vibe.icon === 'pokedex') return <PokedexIcon color={vibe.ink} />
   if (vibe.icon === 'candy')   return <RareCandyIcon color={vibe.ink} />
   if (vibe.icon === 'mega')    return <MegaIcon color={vibe.ink} />
+  if (vibe.icon === 'dragon')  return <DragonIcon color={vibe.ink} />
   return null
 }
 
@@ -329,7 +352,7 @@ function VibeTile({ vibe, compact = false, onClick }) {
       <VibeBall vibe={vibe} size={compact ? 18 : 22} />
       {/* Text block — sits above gradient shield */}
       <div style={{ position: 'relative', zIndex: 2, minWidth: 0 }}>
-        <div style={{ fontWeight: 600, fontSize: compact ? 13 : 16, lineHeight: compact ? 1.08 : 1.15, marginBottom: 3, overflowWrap: 'anywhere' }}>{vibe.label}</div>
+        <div style={{ fontWeight: 600, fontSize: compact ? 13 : (vibe.label.length > 9 ? 13 : 16), lineHeight: compact ? 1.08 : 1.15, marginBottom: 3, overflowWrap: 'anywhere' }}>{vibe.label}</div>
         <div style={{ fontSize: compact ? 10.5 : 11, lineHeight: 1.2, opacity: 0.7, overflowWrap: 'anywhere' }}>{vibe.desc}</div>
       </div>
       {/* Card peek — decorative, clipped to tile */}
@@ -1381,7 +1404,39 @@ export default function HomePageEditorial({ user, profile, collectionIds, ownedI
         {VIBES.slice(0, 4).map(v => <VibeTile key={v.id} vibe={v} onClick={onNavigate} />)}
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10, padding: '0 20px 32px' }}>
-        {VIBES.slice(4).map(v => <VibeTile key={v.id} vibe={v} compact onClick={onNavigate} />)}
+        {VIBES.slice(4).map(v => <VibeTile key={v.id} vibe={v} onClick={onNavigate} />)}
+      </div>
+
+      {/* Social feed — below vibe catalog on mobile */}
+      <div style={{ padding: '0 20px 32px' }}>
+        <SectionHeader T={T} kicker="Friends & trainers" title="Social feed" />
+        {loadingFriends && (
+          <div style={{ fontSize: 12, color: T.ink3, padding: '8px 0' }}>Loading…</div>
+        )}
+        {!loadingFriends && !user && (
+          <div style={{ fontSize: 12, color: T.ink2, lineHeight: 1.5, padding: '8px 0' }}>
+            Sign in to see what your friends are collecting.
+          </div>
+        )}
+        {!loadingFriends && user && friendActivity.length === 0 && (
+          <div style={{ fontSize: 12, color: T.ink2, lineHeight: 1.6, padding: '8px 0' }}>
+            No activity yet. Follow other trainers to see their collection updates here.
+          </div>
+        )}
+        {friendActivity.length > 0 && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {friendActivity.slice(0, 8).map(item => (
+              <ActivityItem
+                key={item.id}
+                T={T}
+                item={item}
+                isOpen={previewItemId === item.id}
+                onToggle={() => setPreviewItemId(p => p === item.id ? null : item.id)}
+                onOpenCard={setSelectedCard}
+              />
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Theme toggle — above bottom nav on mobile, respects iPhone safe-area */}

@@ -241,6 +241,28 @@ export default function CardScanner({ user, isDark = false, onToast, onCardAdded
     return false
   }, [onToast, runSearch])
 
+  // Preprocess a canvas for foil/holo cards: convert to high-contrast grayscale
+  // so OCR can read text on reflective holographic surfaces
+  function preprocessCanvas(src) {
+    const dst = document.createElement('canvas')
+    dst.width  = src.width
+    dst.height = src.height
+    const ctx = dst.getContext('2d')
+    ctx.drawImage(src, 0, 0)
+    const imageData = ctx.getImageData(0, 0, dst.width, dst.height)
+    const data = imageData.data
+    for (let i = 0; i < data.length; i += 4) {
+      // Luminance-weighted grayscale
+      const gray = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2]
+      // Apply contrast stretch: push mid-tones toward black/white
+      // Factor 1.8 gives strong contrast without fully crushing shadows
+      const contrasted = Math.max(0, Math.min(255, 128 + (gray - 128) * 1.8))
+      data[i] = data[i + 1] = data[i + 2] = contrasted
+    }
+    ctx.putImageData(imageData, 0, 0)
+    return dst
+  }
+
   const captureAndDetect = useCallback(async ({ quiet = false } = {}) => {
     if (scanLocked) return
     if (detectingRef.current) return
@@ -263,21 +285,36 @@ export default function CardScanner({ user, isDark = false, onToast, onCardAdded
     cropCanvas.height = Math.round(vh * 0.35)
     cropCanvas.getContext('2d').drawImage(video, 0, 0, vw, vh, 0, 0, vw, cropCanvas.height)
 
+    // Preprocess both canvases for foil/holo resilience
+    const procCanvas = preprocessCanvas(canvas)
+    const procCropCanvas = preprocessCanvas(cropCanvas)
+
     try {
       let rawText = ''
       if (supportsTextDetection) {
         const detector = new window.TextDetector()
-        // Try cropped first (name area), fall back to full frame
-        const cropDetections = await detector.detect(cropCanvas)
-        const fullDetections = await detector.detect(canvas)
-        const cropText = cropDetections.map(item => item.rawValue).filter(Boolean).join('\n')
-        const fullText = fullDetections.map(item => item.rawValue).filter(Boolean).join('\n')
-        // Prefer cropped text; append full text for collector numbers which appear at the bottom
-        rawText = cropText ? `${cropText}\n${fullText}` : fullText
+        // Try both original and preprocessed; merge — preprocessing helps foil/holo
+        const [cropDets, fullDets, procCropDets, procFullDets] = await Promise.all([
+          detector.detect(cropCanvas),
+          detector.detect(canvas),
+          detector.detect(procCropCanvas),
+          detector.detect(procCanvas),
+        ])
+        const cropText     = cropDets.map(d => d.rawValue).filter(Boolean).join('\n')
+        const fullText     = fullDets.map(d => d.rawValue).filter(Boolean).join('\n')
+        const procCropText = procCropDets.map(d => d.rawValue).filter(Boolean).join('\n')
+        const procFullText = procFullDets.map(d => d.rawValue).filter(Boolean).join('\n')
+        // Prefer cropped; include preprocessed results for foil cards
+        const nameArea = cropText || procCropText
+        rawText = nameArea
+          ? `${nameArea}\n${fullText}\n${procFullText}`
+          : (fullText || procFullText)
       }
       if (!rawText.trim()) {
-        // For OCR fallback, scan the cropped canvas first since it's faster
-        rawText = await readWithTesseract(cropCanvas)
+        // Tesseract fallback: try preprocessed canvases first (better for foil)
+        rawText = await readWithTesseract(procCropCanvas)
+        if (!rawText.trim()) rawText = await readWithTesseract(procCanvas)
+        if (!rawText.trim()) rawText = await readWithTesseract(cropCanvas)
         if (!rawText.trim()) rawText = await readWithTesseract(canvas)
       }
 
