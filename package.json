@@ -12,6 +12,7 @@
     "upload-mep-images": "node scripts/upload-mep-images.mjs",
     "source-jp-images": "node scripts/source-jp-images.mjs",
     "seed-chinese": "node scripts/seed-chinese-exclusives.mjs",
+    "import-pokipair-simplified": "node scripts/import-pokipair-simplified.mjs",
     "seed-tcgdex": "node scripts/seed-tcgdex.mjs",
     "fix-en-names": "node scripts/fix-en-names.mjs",
     "source-artofpkm": "node scripts/source-artofpkm-images.mjs",

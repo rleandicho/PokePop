@@ -310,12 +310,19 @@ export default function CardScanner({ user, isDark = false, onToast, onCardAdded
           ? `${nameArea}\n${fullText}\n${procFullText}`
           : (fullText || procFullText)
       }
+      let candidates = []
       if (!rawText.trim()) {
-        // Tesseract fallback: try preprocessed canvases first (better for foil)
+        // Tesseract fallback: prioritize the cropped name area. Full-card OCR is
+        // much slower and adds attack/rules noise, so only use it if needed.
         rawText = await readWithTesseract(procCropCanvas)
-        if (!rawText.trim()) rawText = await readWithTesseract(procCanvas)
-        if (!rawText.trim()) rawText = await readWithTesseract(cropCanvas)
-        if (!rawText.trim()) rawText = await readWithTesseract(canvas)
+        candidates = buildSearchCandidates(rawText)
+        if (!candidates.length) {
+          const fullText = await readWithTesseract(procCanvas)
+          rawText = [rawText, fullText].filter(Boolean).join('\n')
+          candidates = buildSearchCandidates(rawText)
+        }
+      } else {
+        candidates = buildSearchCandidates(rawText)
       }
 
       // Frame stability: skip processing if we just saw identical text and already have results
@@ -326,7 +333,6 @@ export default function CardScanner({ user, isDark = false, onToast, onCardAdded
       }
       lastRawTextRef.current = normalised
 
-      const candidates = buildSearchCandidates(rawText)
       setDetectedText(rawText || 'No readable text found. Try better lighting or move closer to the card name.')
       if (candidates.length) {
         await searchCandidates(candidates, { quiet })
