@@ -48,6 +48,13 @@ const dryRun     = args.includes('--dry-run')
 
 const BASE = 'https://www.artofpkm.com'
 
+// Newer ArtOfPKM image filenames no longer encode the TCGDex set id/number.
+// These mappings let us fall back to the card detail page collector number.
+const ARTOFPKM_SET_TO_RAW_SET = {
+  565: 'SV11B', // Black Bolt
+  566: 'SV11W', // White Flare
+}
+
 // All artofpkm set IDs discovered from the /cards index page
 // (sorted ascending so we process oldest sets first)
 const ALL_SET_IDS = [
@@ -100,6 +107,22 @@ function parseFilename(filename) {
   return { rawSetId: m[1].toLowerCase(), number: m[2] }
 }
 
+async function scrapeCardNumber(cardPath) {
+  const url = cardPath.startsWith('http') ? cardPath : `${BASE}${cardPath}`
+  try {
+    const res = await fetch(url, {
+      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; PokePop-image-bot/1.0)' }
+    })
+    if (!res.ok) return null
+    const html = await res.text()
+    return html.match(/<title>\s*(\d{3})\s*\/\s*\d{3}/i)?.[1]
+      ?? html.match(/\b(\d{3})\s*\/\s*\d{3}\b/)?.[1]
+      ?? null
+  } catch {
+    return null
+  }
+}
+
 // ── Scrape a single artofpkm set page ─────────────────────────────────────────
 // setIdMap: lowercase rawSetId → actual DB rawSetId (e.g. 'pcg3' → 'PCG3')
 async function scrapeSet(setId, setIdMap = {}) {
@@ -117,11 +140,59 @@ async function scrapeSet(setId, setIdMap = {}) {
     return []
   }
 
+  const htmlPages = [html]
+  const seenBatchOffsets = new Set()
+  let nextOffset = html.match(/card_batches\?offset=(\d+)/)?.[1]
+  while (nextOffset && !seenBatchOffsets.has(nextOffset)) {
+    seenBatchOffsets.add(nextOffset)
+    try {
+      const batchRes = await fetch(`${BASE}/sets/${setId}/card_batches?offset=${nextOffset}`, {
+        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; PokePop-image-bot/1.0)' }
+      })
+      if (!batchRes.ok) break
+      const batchHtml = await batchRes.text()
+      if (!batchHtml.trim()) break
+      htmlPages.push(batchHtml)
+      nextOffset = batchHtml.match(/card_batches\?offset=(\d+)/)?.[1]
+    } catch {
+      break
+    }
+  }
+
+  const cards = []
+  const fallbackRawSetId = ARTOFPKM_SET_TO_RAW_SET[setId] ?? null
+
+  // Newer set pages expose card detail links whose pages contain collector
+  // numbers; use those when filenames are generic Pokemon CDN names.
+  const anchorRegex = /<a\b[^>]*data-lightbox-url="([^"]+)"[^>]*href="([^"]+)"[\s\S]*?<img\b[^>]*src="([^"]+)"/g
+  for (const pageHtml of htmlPages) {
+    let match
+    while ((match = anchorRegex.exec(pageHtml)) !== null) {
+      const [, cardPath, href, src] = match
+      const imageUrl = src.startsWith('http') ? src : `${BASE}${src}`
+      const largeUrl = href.startsWith('http') ? href : `${BASE}${href}`
+      const filename = decodeURIComponent(imageUrl.split('/').pop())
+      const parsed = parseFilename(filename)
+
+      if (parsed) continue // handled by the legacy filename parser below
+      if (!fallbackRawSetId) continue
+
+      const number = await scrapeCardNumber(cardPath)
+      if (!number) continue
+
+      cards.push({
+        artofpkmUrl: largeUrl,
+        rawSetId: fallbackRawSetId,
+        number,
+        dbCardId: `ja-${fallbackRawSetId}-${number}`,
+      })
+    }
+  }
+
   // Find all active storage img src attributes (absolute URLs)
   const imgRegex = /src="(https:\/\/www\.artofpkm\.com\/rails\/active_storage\/representations\/redirect\/[^"]+)"/g
-  const cards = []
-  let match
 
+  let match
   while ((match = imgRegex.exec(html)) !== null) {
     const fullUrl = match[1]
 
@@ -143,6 +214,26 @@ async function scrapeSet(setId, setIdMap = {}) {
       number: parsed.number,
       dbCardId: `ja-${actualSetId}-${parsed.number}`,
     })
+  }
+
+  for (const pageHtml of htmlPages.slice(1)) {
+    let batchMatch
+    while ((batchMatch = imgRegex.exec(pageHtml)) !== null) {
+      const fullUrl = batchMatch[1]
+      const filename = decodeURIComponent(fullUrl.split('/').pop())
+      if (filename === 'image.png' || filename === 'og.jpg') continue
+
+      const parsed = parseFilename(filename)
+      if (!parsed) continue
+
+      const actualSetId = setIdMap[parsed.rawSetId] ?? parsed.rawSetId.toUpperCase()
+      cards.push({
+        artofpkmUrl: fullUrl,
+        rawSetId: actualSetId,
+        number: parsed.number,
+        dbCardId: `ja-${actualSetId}-${parsed.number}`,
+      })
+    }
   }
 
   return cards
@@ -238,10 +329,17 @@ for (const setId of setIds) {
     if (missingIds && !missingIds.has(c.dbCardId)) return false
     return true
   })
+  const uniqueRelevant = []
+  const seenRelevantIds = new Set()
+  for (const card of relevant) {
+    if (seenRelevantIds.has(card.dbCardId)) continue
+    seenRelevantIds.add(card.dbCardId)
+    uniqueRelevant.push(card)
+  }
 
   // Verify which of these card IDs actually exist in our DB
-  if (relevant.length) {
-    const ids = relevant.map(c => c.dbCardId)
+  if (uniqueRelevant.length) {
+    const ids = uniqueRelevant.map(c => c.dbCardId)
 
     // Check existence in batches (PostgREST IN filter)
     const { data: existing } = await supabase
@@ -251,7 +349,7 @@ for (const setId of setIds) {
 
     const existingSet = new Set((existing ?? []).map(r => r.id))
 
-    for (const card of relevant) {
+    for (const card of uniqueRelevant) {
       if (!existingSet.has(card.dbCardId)) continue
       totalMatched++
       updates.push({
@@ -262,7 +360,7 @@ for (const setId of setIds) {
     }
   }
 
-  process.stdout.write(`${cards.length} scraped, ${relevant.length} relevant\n`)
+  process.stdout.write(`${cards.length} scraped, ${uniqueRelevant.length} relevant\n`)
 
   // Flush updates every 500 cards
   if (updates.length >= 500) {
