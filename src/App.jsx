@@ -309,7 +309,7 @@ export default function App() {
                   />
                 ) : (
                   <CardGrid
-                    key={`${activeVibe ?? ''}|${setQuery ?? ''}`}
+                    key={activeVibe ?? ''}
                     activeVibe={activeVibe}
                     setQuery={setQuery}
                     sortBy={sortBy}

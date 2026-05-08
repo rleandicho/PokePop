@@ -1063,12 +1063,13 @@ function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, onClearF
     return () => clearTimeout(searchTimerRef.current)
   }, [inlineSearch])
 
-  // Reset inline search when the active vibe or set filter changes
+  // Reset inline search only when the active vibe changes (not when set filter changes —
+  // preserving search when a set is picked lets the user keep their name filter active)
   useEffect(() => {
     setInlineSearch('')
     setDebouncedInline('')
     clearTimeout(searchTimerRef.current)
-  }, [activeVibe, setQuery])
+  }, [activeVibe])
 
   const effectiveSearch = debouncedInline || search
 

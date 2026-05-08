@@ -159,6 +159,9 @@ export default function PublicWishlist() {
   // Shop mode: filter collection to cards with a TCGPlayer price
   const [shopMode,       setShopMode]       = useState(false)
 
+  // Search
+  const [cardSearch,     setCardSearch]     = useState('')
+
   // Pagination
   const [collectionPage, setCollectionPage] = useState(1)
   const [wishlistPage,   setWishlistPage]   = useState(1)
@@ -395,9 +398,13 @@ export default function PublicWishlist() {
   const isOwnProfile      = viewer?.id === userId
   const canFollow         = viewer && !isOwnProfile
 
+  const searchQ = cardSearch.trim().toLowerCase()
+  const filteredCollection = searchQ ? collectionItems.filter(i => i.name?.toLowerCase().includes(searchQ)) : collectionItems
+  const filteredWishlist   = searchQ ? wishlistItems.filter(i => i.name?.toLowerCase().includes(searchQ))  : wishlistItems
+
   const visibleCollection = shopMode
-    ? collectionItems.filter(i => getDisplayPrice(i) > 0)
-    : collectionItems
+    ? filteredCollection.filter(i => getDisplayPrice(i) > 0)
+    : filteredCollection
 
   // ── Card tile ─────────────────────────────────────────────────────────────
   function CardTile({ item }) {
@@ -617,6 +624,33 @@ export default function PublicWishlist() {
         ))}
       </div>
 
+      {/* ── Search bar — shown on collection / wishlist / for-trade tabs ─────── */}
+      {(activeTab === 'collection' || activeTab === 'wishlist' || activeTab === 'fortrade') && (
+        <div className="max-w-md mx-auto px-4 pb-3">
+          <div className="relative">
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm select-none">🔍</span>
+            <input
+              type="text"
+              value={cardSearch}
+              onChange={e => { setCardSearch(e.target.value); setCollectionPage(1); setWishlistPage(1) }}
+              placeholder="Search cards by name…"
+              className="w-full pl-8 pr-8 py-2 rounded-full border border-gray-200 bg-white/70
+                         text-sm text-gray-700 placeholder-gray-400 focus:outline-none
+                         focus:ring-2 focus:ring-pink-300 focus:border-pink-300 shadow-sm"
+            />
+            {cardSearch && (
+              <button
+                onClick={() => { setCardSearch(''); setCollectionPage(1); setWishlistPage(1) }}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400
+                           hover:text-gray-600 text-xs leading-none"
+              >
+                ✕
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* ── Collection tab ─────────────────────────────────────────────────── */}
       {activeTab === 'collection' && (
         <main className="max-w-6xl mx-auto pb-16">
@@ -625,7 +659,9 @@ export default function PublicWishlist() {
               <p className="text-xs text-gray-400 font-medium">
                 {shopMode
                   ? `${visibleCollection.length} card${visibleCollection.length !== 1 ? 's' : ''} · gift registry`
-                  : `${collectionItems.length} total card${collectionItems.length !== 1 ? 's' : ''}`}
+                  : searchQ
+                    ? `${filteredCollection.length} of ${collectionItems.length} card${collectionItems.length !== 1 ? 's' : ''} matching "${cardSearch.trim()}"`
+                    : `${collectionItems.length} total card${collectionItems.length !== 1 ? 's' : ''}`}
               </p>
               <motion.button
                 whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }}
@@ -644,9 +680,11 @@ export default function PublicWishlist() {
 
           {visibleCollection.length === 0 ? (
             <p className="text-center text-pink-300 font-semibold mt-16 text-lg">
-              {shopMode
-                ? `${profile.username ?? 'This trainer'} already owns everything with a price tag! 🎉`
-                : "This trainer hasn't added any cards to their collection yet! ✨"}
+              {searchQ
+                ? `No collection cards match "${cardSearch.trim()}" ✨`
+                : shopMode
+                  ? `${profile.username ?? 'This trainer'} already owns everything with a price tag! 🎉`
+                  : "This trainer hasn't added any cards to their collection yet! ✨"}
             </p>
           ) : (() => {
             const totalColPages   = Math.ceil(visibleCollection.length / ITEMS_PER_PAGE)
@@ -686,7 +724,8 @@ export default function PublicWishlist() {
         <main className="max-w-6xl mx-auto pb-16">
           <div className="px-4 pb-3">
             <p className="text-xs text-gray-400 font-medium">
-              {wishlistItems.length} card{wishlistItems.length !== 1 ? 's' : ''} on wishlist
+              {filteredWishlist.length} card{filteredWishlist.length !== 1 ? 's' : ''} on wishlist
+              {searchQ ? ` matching "${cardSearch.trim()}"` : ''}
             </p>
           </div>
 
@@ -694,9 +733,13 @@ export default function PublicWishlist() {
             <p className="text-center text-violet-300 font-semibold mt-16 text-lg">
               This trainer hasn't added any cards to their wishlist yet! 💜
             </p>
+          ) : filteredWishlist.length === 0 ? (
+            <p className="text-center text-violet-300 font-semibold mt-16 text-lg">
+              No wishlist cards match that search 💜
+            </p>
           ) : (() => {
-            const totalWishPages = Math.ceil(wishlistItems.length / ITEMS_PER_PAGE)
-            const wishlistSlice  = wishlistItems.slice(
+            const totalWishPages = Math.ceil(filteredWishlist.length / ITEMS_PER_PAGE)
+            const wishlistSlice  = filteredWishlist.slice(
               (wishlistPage - 1) * ITEMS_PER_PAGE,
               wishlistPage * ITEMS_PER_PAGE
             )
@@ -785,7 +828,8 @@ export default function PublicWishlist() {
       )}
       {/* ── For Trade / Sale tab ───────────────────────────────────────────── */}
       {activeTab === 'fortrade' && (() => {
-        const forTradeItems = items.filter(i => i.category === 'for_sale' || i.category === 'for_trade')
+        const allForTradeItems = items.filter(i => i.category === 'for_sale' || i.category === 'for_trade')
+        const forTradeItems = searchQ ? allForTradeItems.filter(i => i.name?.toLowerCase().includes(searchQ)) : allForTradeItems
         return (
           <main className="max-w-6xl mx-auto pb-16">
             {forTradeItems.length === 0 ? (

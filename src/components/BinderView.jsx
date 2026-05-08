@@ -366,8 +366,7 @@ function BinderPage({ slots, cols, pageNumber, theme, selectedIdx, pageOffset, o
   const pageNumColor    = dark ? 'rgba(255,255,255,0.2)' : 'rgba(156,163,175,0.8)'
 
   const insertBtn = (dir) => {
-    // "Insert below" on the last page has no cards to shift — hide it
-    if (!readOnly && onInsertPage && !(dir === 'after' && isLast)) {
+    if (!readOnly && onInsertPage) {
       return (
         <button
           onClick={() => onInsertPage(pageNumber, dir)}

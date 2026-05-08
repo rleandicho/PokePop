@@ -2478,13 +2478,20 @@ export default function WishlistDashboard({ user, profile, onToast, onGoExplore,
   function computeNextBinderSlot(ownedBinderItems) {
     const spp    = binderSlotsPerPage.current  // synced from BinderView via onSlotsPerPageChange
     const n      = ownedBinderItems.length
-    if (n === 0) return 0
 
-    // Use the same totalSlots logic as buildSlotArray in BinderView
-    const maxSlot    = ownedBinderItems.reduce((m, i) => Math.max(m, i.slot_index ?? 0), 0)
-    const minNeeded  = Math.max(n, maxSlot + 1)
-    const totalPages = Math.max(1, Math.ceil(minNeeded / spp))
-    const totalSlots = totalPages * spp
+    // Include virtual copy slots so we don't land on a slot already claimed by a duplicate
+    const virtualSlotValues = Object.values(virtualSlots).filter(s => s != null)
+
+    if (n === 0 && !virtualSlotValues.length) return 0
+
+    // Use the same totalSlots logic as buildSlotArray in BinderView,
+    // but also extend to cover any virtual copy positions beyond real items
+    const maxRealSlot    = ownedBinderItems.reduce((m, i) => Math.max(m, i.slot_index ?? 0), 0)
+    const maxVirtualSlot = virtualSlotValues.reduce((m, s) => Math.max(m, s), 0)
+    const maxSlot        = Math.max(maxRealSlot, maxVirtualSlot)
+    const minNeeded      = Math.max(n, maxSlot + 1)
+    const totalPages     = Math.max(1, Math.ceil(minNeeded / spp))
+    const totalSlots     = totalPages * spp
 
     const occupied = new Array(totalSlots).fill(false)
     const unplaced = []
@@ -2496,6 +2503,11 @@ export default function WishlistDashboard({ user, profile, onToast, onGoExplore,
       } else {
         unplaced.push(item)
       }
+    }
+
+    // Mark virtual copy positions as occupied so new cards don't collide with them
+    for (const slotIdx of virtualSlotValues) {
+      if (slotIdx >= 0 && slotIdx < totalSlots) occupied[slotIdx] = true
     }
 
     let cursor = 0
