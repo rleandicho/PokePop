@@ -32,10 +32,10 @@ async function loadSets() {
 }
 
 function blankRow() {
-  return { _id: `${Date.now()}-${Math.random()}`, name: '', setId: null }
+  return { _id: `${Date.now()}-${Math.random()}`, name: '', setId: null, qty: 1 }
 }
 
-// ── Single pack name row — name input with set autocomplete ──────────────────
+// ── Single pack name row — name input + qty stepper + set autocomplete ────────
 function PackNameRow({ row, index, total, allSets, onUpdate, onRemove }) {
   const [showSugg, setShowSugg] = useState(false)
   const [sugg,     setSugg]     = useState([])
@@ -57,9 +57,12 @@ function PackNameRow({ row, index, total, allSets, onUpdate, onRemove }) {
     setShowSugg(false)
   }
 
+  const qty = row.qty ?? 1
+
   return (
     <div className="relative">
       <div className="flex items-center gap-1.5">
+        {/* Set name autocomplete */}
         <div className="relative flex-1">
           <input
             type="text"
@@ -88,6 +91,21 @@ function PackNameRow({ row, index, total, allSets, onUpdate, onRemove }) {
               ))}
             </div>
           )}
+        </div>
+
+        {/* Pack quantity stepper */}
+        <div className="flex items-center gap-0.5 flex-shrink-0 border border-gray-200 rounded-lg overflow-hidden">
+          <button
+            type="button"
+            onClick={() => onUpdate({ qty: Math.max(1, qty - 1) })}
+            className="w-6 h-7 flex items-center justify-center text-gray-400 hover:bg-gray-50 text-sm leading-none transition"
+          >−</button>
+          <span className="w-6 text-center text-xs font-semibold text-gray-600 tabular-nums">{qty}</span>
+          <button
+            type="button"
+            onClick={() => onUpdate({ qty: qty + 1 })}
+            className="w-6 h-7 flex items-center justify-center text-gray-400 hover:bg-gray-50 text-sm leading-none transition"
+          >+</button>
         </div>
 
         {/* Remove row — only when there are multiple rows */}
@@ -126,9 +144,9 @@ export default function PackLogModal({ user, onClose, onSaved, onCardsSaved }) {
 
   useEffect(() => { loadSets().then(setAllSets) }, [])
 
-  // All set IDs currently selected across pack rows — drives card search filter
-  const activeSetIds   = packRows.filter(r => r.setId).map(r => r.setId)
-  const activeSetNames = packRows.filter(r => r.setId && r.name).map(r => r.name)
+  // Deduplicated set IDs — prevents duplicate .in() entries and unstable dep strings
+  const activeSetIds   = [...new Set(packRows.filter(r => r.setId).map(r => r.setId))]
+  const activeSetNames = [...new Set(packRows.filter(r => r.setId && r.name).map(r => r.name))]
 
   // ── Pack row management ───────────────────────────────────────────────────
   function updateRow(id, changes) {
@@ -158,11 +176,12 @@ export default function PackLogModal({ user, onClose, onSaved, onCardsSaved }) {
           q = q.or(`name.ilike.%${word}%,english_name.ilike.%${word}%`)
         }
 
-        // Set filter — single eq or multi-value in()
-        if (activeSetIds.length === 1) {
-          q = q.eq('set_id', activeSetIds[0])
-        } else if (activeSetIds.length > 1) {
-          q = q.in('set_id', activeSetIds)
+        // Set filter — include selected sets OR any Promo card (promo variants often ship with boxes)
+        if (activeSetIds.length > 0) {
+          const setClause = activeSetIds.length === 1
+            ? `set_id.eq.${activeSetIds[0]}`
+            : `set_id.in.(${activeSetIds.join(',')})`
+          q = q.or(`${setClause},subtypes.cs.{"Promo"}`)
         }
 
         q = q.order('release_date', { ascending: false }).limit(20)
@@ -217,13 +236,18 @@ export default function PackLogModal({ user, onClose, onSaved, onCardsSaved }) {
       const cardIds = [...cardMap.keys()]
       const { data: existing } = await supabase
         .from('wishlists')
-        .select('card_id, quantity')
+        .select('card_id, quantity, edition, language')
         .eq('user_id', user.id)
         .in('card_id', cardIds)
         .eq('owned', true)
-        .eq('edition', 'unspecified')
-        .eq('language', 'english')
-      const existingQty = new Map((existing ?? []).map(r => [r.card_id, r.quantity ?? 1]))
+      // Build qty map: prefer the 'unspecified'/'english' row; fall back to any owned row
+      const existingQty = new Map()
+      for (const r of existing ?? []) {
+        const prev = existingQty.get(r.card_id)
+        if (!prev || (r.edition === 'unspecified' && r.language === 'english')) {
+          existingQty.set(r.card_id, r.quantity ?? 1)
+        }
+      }
 
       const rows = [...cardMap.values()].map(c => ({
         user_id:      user.id,
@@ -244,13 +268,13 @@ export default function PackLogModal({ user, onClose, onSaved, onCardsSaved }) {
       onCardsSaved?.([...cardMap.values()])
     }
 
-    const packsPayload = filledRows.map(r => ({ name: r.name.trim(), type: purchaseType }))
+    const packsPayload = filledRows.map(r => ({ name: r.name.trim(), type: purchaseType, qty: r.qty ?? 1 }))
 
     const { data, error: insertErr } = await supabase
       .from('pack_logs')
       .insert({
         user_id:     user.id,
-        pack_name:   packsPayload.map(p => p.name).join(' + '),
+        pack_name:   packsPayload.map(p => p.qty > 1 ? `${p.name} ×${p.qty}` : p.name).join(' + '),
         pack_type:   purchaseType,
         pack_price:  price,
         total_value: totalValue,
@@ -267,7 +291,8 @@ export default function PackLogModal({ user, onClose, onSaved, onCardsSaved }) {
     onClose()
   }
 
-  const countLabel = packRows.length === 1 ? '1 pack' : `${packRows.length} packs`
+  const totalPacks = packRows.reduce((sum, r) => sum + (r.qty ?? 1), 0)
+  const countLabel = totalPacks === 1 ? '1 pack' : `${totalPacks} packs`
 
   return (
     <motion.div

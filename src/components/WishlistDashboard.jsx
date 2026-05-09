@@ -1763,13 +1763,17 @@ export default function WishlistDashboard({ user, profile, onToast, onGoExplore,
     filteredOwnedItems.flatMap(item => {
       const qty = item.quantity || 1
       if (qty <= 1) return [{ ...item, _key: item.id, _copyIndex: 1, _totalCopies: 1, _isExpanded: false }]
-      return Array.from({ length: qty }, (_, i) => ({
-        ...item,
-        _key:         `${item.id}-copy-${i}`,
-        _copyIndex:   i + 1,
-        _totalCopies: qty,
-        _isExpanded:  true,
-      }))
+      return Array.from({ length: qty }, (_, i) => {
+        const copyId = i === 0 ? item.id : `${item.id}-copy-${i}`
+        return {
+          ...item,
+          id:           copyId,
+          _key:         copyId,
+          _copyIndex:   i + 1,
+          _totalCopies: qty,
+          _isExpanded:  i > 0,
+        }
+      })
     }),
   [filteredOwnedItems])
 
@@ -1823,6 +1827,39 @@ export default function WishlistDashboard({ user, profile, onToast, onGoExplore,
   }, [wishlistItemsList, cardSearch, cardSort, tagFilter])
 
   async function saveTags(rowId, tags) {
+    // Virtual copy IDs look like "{realId}-copy-{N}" — split into a new DB row
+    const virtualMatch = /^(.+)-copy-(\d+)$/.exec(rowId)
+    if (virtualMatch) {
+      const realId = virtualMatch[1]
+      const source = items.find(i => i.id === realId)
+      if (source && (source.quantity ?? 1) > 1) {
+        // Decrement the source row quantity
+        const newQty = (source.quantity ?? 1) - 1
+        setItems(prev => prev.map(i => i.id === realId ? { ...i, quantity: newQty } : i))
+        await supabase.from('wishlists').update({ quantity: newQty }).eq('id', realId)
+        // Insert a new row with quantity=1 and the new tags
+        const { data: newRow } = await supabase.from('wishlists').insert({
+          user_id:      source.user_id,
+          card_id:      source.card_id,
+          name:         source.name,
+          image:        source.image,
+          owned:        source.owned,
+          edition:      source.edition,
+          language:     source.language,
+          market_price: source.market_price,
+          mid_price:    source.mid_price,
+          low_price:    source.low_price,
+          quantity:     1,
+          tags,
+          condition:    source.condition ?? null,
+          binder_id:    source.binder_id ?? null,
+        }).select().single()
+        if (newRow) setItems(prev => [...prev, newRow])
+        return
+      }
+      // If source has qty=1, just fall through and update the real row
+      return saveTags(realId, tags)
+    }
     setItems(prev => prev.map(i => i.id === rowId ? { ...i, tags } : i))
     await supabase.from('wishlists').update({ tags }).eq('id', rowId)
   }
@@ -2237,7 +2274,9 @@ export default function WishlistDashboard({ user, profile, onToast, onGoExplore,
   // Split one virtual copy of a multi-copy card into its own row and assign it to a binder.
   // Called when the user changes the binder dropdown on an expanded (_isExpanded) tile.
   async function splitCopyToBinder(copyItem, targetBinderId) {
-    const sourceId = copyItem._sourceId
+    // _sourceId is set by binderDisplayItems; for collection view virtual copies, parse from ID
+    const virtualMatch = /^(.+)-copy-\d+$/.exec(copyItem.id)
+    const sourceId = copyItem._sourceId ?? (virtualMatch ? virtualMatch[1] : copyItem.id)
     const source   = items.find(i => i.id === sourceId)
     if (!source) return
 

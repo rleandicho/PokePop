@@ -357,6 +357,7 @@ function CardModal({ card, user, onToast, onClose, saveCard, collectionIds, owne
   const [saving,           setSaving]           = useState(false)
   const [removing,         setRemoving]         = useState(false)
   const [quantity,         setQuantity]         = useState(1)
+  const [ownedQty,         setOwnedQty]         = useState(null)
   const [imgSrc,           setImgSrc]           = useState(card.images?.small || CARD_BACK)
   const [addLangMode,      setAddLangMode]      = useState(false)
   const [newLang,          setNewLang]          = useState('')
@@ -384,6 +385,23 @@ function CardModal({ card, user, onToast, onClose, saveCard, collectionIds, owne
     img.src = card.images.large
   }, [card.images?.large]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Fetch current owned quantity so the stepper shows "total on hand"
+  useEffect(() => {
+    if (!user || !ownedIds?.has(card.id)) return
+    supabase
+      .from('wishlists')
+      .select('quantity')
+      .eq('user_id', user.id)
+      .eq('card_id', card.id)
+      .eq('owned', true)
+      .maybeSingle()
+      .then(({ data }) => {
+        const qty = data?.quantity ?? 1
+        setOwnedQty(qty)
+        setQuantity(qty)
+      })
+  }, [card.id, user?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
   const prices     = card.tcgplayer?.prices ?? {}
   // All tiers that have a market price — shown in the breakdown and drive the version picker
   const priceRows  = Object.entries(prices).filter(([, v]) => v?.market != null)
@@ -398,11 +416,14 @@ function CardModal({ card, user, onToast, onClose, saveCard, collectionIds, owne
   async function addCard(owned, qty = 1, language = 'english') {
     if (!user) return
     setSaving(true)
-    const { error, toast } = await saveCard(card, owned, qty, version, language)
+    // When the card is already owned, qty is the new total (set absolute); otherwise add
+    const setAbsolute = owned && isOwned
+    const { error, toast } = await saveCard(card, owned, qty, version, language, setAbsolute)
     setSaving(false)
     if (!error) {
       onCardAdded?.(card.id, owned, language)
-      onToast(owned ? 'Added to Collection! ✨📦' : 'Added to Wishlist! 💖')
+      onToast(toast)
+      if (owned) setOwnedQty(qty)
     }
   }
 
@@ -727,6 +748,11 @@ function CardModal({ card, user, onToast, onClose, saveCard, collectionIds, owne
                 </div>
               ) : (
                 <>
+                  {isOwned && (
+                    <p className="text-center text-xs text-emerald-600 font-semibold -mb-1">
+                      Total on hand: {ownedQty ?? '…'}
+                    </p>
+                  )}
                   <QuantityStepper value={quantity} onChange={setQuantity} />
                   <div className="flex gap-2">
                     {!inList && (
@@ -745,7 +771,7 @@ function CardModal({ card, user, onToast, onClose, saveCard, collectionIds, owne
                       className="flex-1 bg-emerald-400 hover:bg-emerald-500 text-white
                                  font-semibold py-2 rounded-2xl transition-colors disabled:opacity-60"
                     >
-                      {saving ? 'Saving…' : inList && isOwned ? `+ Add ${quantity} Cop${quantity === 1 ? 'y' : 'ies'}` : inList ? `Move to Collection ×${quantity}` : '✨ Collection'}
+                      {saving ? 'Saving…' : inList && isOwned ? `Set Total: ${quantity}` : inList ? `Move to Collection ×${quantity}` : '✨ Collection'}
                     </button>
                   </div>
                   {inList && !isOwned && (
@@ -1197,7 +1223,7 @@ function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, onClearF
   }, [activeVibe, effectiveSearch, setQuery, sortBy, langFilter, fetchCards]) // eslint-disable-line react-hooks/exhaustive-deps
 
 
-  const saveCard = useCallback(async (card, owned, quantity = 1, edition = '', language = 'english') => {
+  const saveCard = useCallback(async (card, owned, quantity = 1, edition = '', language = 'english', setAbsolute = false) => {
     if (!user) return { error: new Error('Not signed in'), toast: '' }
 
     const normalizedQty = Math.max(1, quantity)
@@ -1217,7 +1243,7 @@ function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, onClearF
 
     let toast = owned ? 'Added to Collection! ✨📦' : 'Added to Wishlist! 💖'
 
-    if (owned) {
+    if (owned && !setAbsolute) {
       const { data: existing, error: existingError } = await supabase
         .from('wishlists')
         .select('owned, quantity')
@@ -1242,6 +1268,8 @@ function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, onClearF
       } else if (normalizedQty > 1) {
         toast = `Added ${normalizedQty} copies to Collection! ✨📦`
       }
+    } else if (owned && setAbsolute) {
+      toast = `Updated — ${normalizedQty} on hand ✨`
     }
 
     const { error } = await supabase
