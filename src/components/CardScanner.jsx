@@ -176,22 +176,24 @@ export default function CardScanner({ user, isDark = false, onToast, onCardAdded
     setCameraOn(false)
   }, [])
 
+  // Pre-warm the Tesseract worker in the background so it's ready when needed.
+  // Called right after the camera opens to avoid a 5-10s delay on first scan.
+  const warmTesseract = useCallback(async () => {
+    if (workerRef.current) return
+    try {
+      const { createWorker, PSM } = await import('tesseract.js')
+      workerRef.current = await createWorker('eng', 1, { logger: () => {} })
+      await workerRef.current.setParameters({ tessedit_pageseg_mode: PSM.SPARSE_TEXT })
+    } catch {}
+  }, [])
+
   const readWithTesseract = useCallback(async (canvas) => {
-    setScanStatus(workerRef.current ? 'Reading text with fallback OCR...' : 'Loading fallback OCR...')
     const { createWorker, PSM } = await import('tesseract.js')
     if (!workerRef.current) {
-      workerRef.current = await createWorker('eng', 1, {
-        logger: message => {
-          if (message.status === 'recognizing text') {
-            setScanStatus(`Reading text ${Math.round((message.progress || 0) * 100)}%...`)
-          }
-        },
-      })
-      await workerRef.current.setParameters({
-        tessedit_pageseg_mode: PSM.SPARSE_TEXT,
-      })
+      setScanStatus('Loading OCR engine...')
+      workerRef.current = await createWorker('eng', 1, { logger: () => {} })
+      await workerRef.current.setParameters({ tessedit_pageseg_mode: PSM.SPARSE_TEXT })
     }
-
     const { data } = await workerRef.current.recognize(canvas)
     return data?.text ?? ''
   }, [])
@@ -219,16 +221,57 @@ export default function CardScanner({ user, isDark = false, onToast, onCardAdded
     return sortedCards
   }, [onToast, query])
 
+  // Pure data fetch — does not touch component state. Used by parallel candidate search.
+  const rawSearch = useCallback(async (candidate) => {
+    const trimmed = candidate?.trim()
+    if (!trimmed) return []
+    try {
+      const { cards } = await fetchCardsFromDb({ search: trimmed, sort: 'newest', page: 1, pageSize: 8 })
+      return sortScannerResults(cards ?? [])
+    } catch {
+      return []
+    }
+  }, [])
+
   const searchCandidates = useCallback(async (candidates, { quiet = false } = {}) => {
     if (!candidates.length) return false
 
-    for (const candidate of candidates.slice(0, 8)) {
-      if (!candidate || candidate === lastCandidateRef.current) continue
-      lastCandidateRef.current = candidate
-      setQuery(candidate)
+    const fresh = candidates.filter(c => c && c !== lastCandidateRef.current)
+    if (!fresh.length) return false
+
+    // Fire the top 3 candidates in parallel — network round-trips dominate,
+    // so parallel requests are ~3x faster than sequential when name+number
+    // combos are available.
+    const top = fresh.slice(0, 3)
+    setScanStatus(`Checking "${top[0]}"${top.length > 1 ? ` + ${top.length - 1} more` : ''}...`)
+    setSearching(true)
+    const parallelResults = await Promise.all(top.map(c => rawSearch(c)))
+    setSearching(false)
+
+    const winnerIdx = parallelResults.findIndex(r => r.length > 0)
+    if (winnerIdx >= 0) {
+      const winner = top[winnerIdx]
+      lastCandidateRef.current = winner
+      setQuery(winner)
+      setResults(parallelResults[winnerIdx])
+      setMatchedCandidate(winner)
+      setScanLocked(true)
+      setScanStatus(`Matched "${winner}". Scan paused so results stay stable.`)
+      return true
+    }
+    // Update ref so we don't retry these exact candidates next frame
+    lastCandidateRef.current = top[top.length - 1]
+
+    // Fall back to remaining candidates sequentially
+    for (const candidate of fresh.slice(3, 8)) {
       setScanStatus(`Checking "${candidate}"...`)
-      const cards = await runSearch(candidate, { quiet: true })
+      setSearching(true)
+      const cards = await rawSearch(candidate)
+      setSearching(false)
       if (cards.length) {
+        lastCandidateRef.current = candidate
+        setQuery(candidate)
+        setResults(cards)
         setMatchedCandidate(candidate)
         setScanLocked(true)
         setScanStatus(`Matched "${candidate}". Scan paused so results stay stable.`)
@@ -239,7 +282,7 @@ export default function CardScanner({ user, isDark = false, onToast, onCardAdded
     setScanStatus('Text found, but no card match yet. Move closer to the card name or number.')
     if (!quiet) onToast?.('Text found, but no card match yet.')
     return false
-  }, [onToast, runSearch])
+  }, [onToast, rawSearch])
 
   // Preprocess a canvas for foil/holo cards: convert to high-contrast grayscale
   // so OCR can read text on reflective holographic surfaces
@@ -278,46 +321,52 @@ export default function CardScanner({ user, isDark = false, onToast, onCardAdded
     const ctx = canvas.getContext('2d')
     ctx.drawImage(video, 0, 0, vw, vh)
 
-    // Also create a cropped canvas focused on the top ~35% of the frame where the
-    // Pokémon name appears — this drastically reduces noise from attacks and rules text.
-    const cropCanvas = document.createElement('canvas')
-    cropCanvas.width  = vw
-    cropCanvas.height = Math.round(vh * 0.35)
-    cropCanvas.getContext('2d').drawImage(video, 0, 0, vw, vh, 0, 0, vw, cropCanvas.height)
+    // Focused crops: top 20% for the Pokémon name (name + HP line lives here),
+    // bottom 12% for the collector number (nn/NNN printed at the bottom of the card).
+    // Tighter regions = less noise from attack text, faster Tesseract passes.
+    const nameCanvas = document.createElement('canvas')
+    nameCanvas.width  = vw
+    nameCanvas.height = Math.round(vh * 0.20)
+    nameCanvas.getContext('2d').drawImage(video, 0, 0, vw, vh, 0, 0, vw, nameCanvas.height)
 
-    // Preprocess both canvases for foil/holo resilience
-    const procCanvas = preprocessCanvas(canvas)
-    const procCropCanvas = preprocessCanvas(cropCanvas)
+    const numCanvas = document.createElement('canvas')
+    numCanvas.width  = vw
+    numCanvas.height = Math.round(vh * 0.12)
+    numCanvas.getContext('2d').drawImage(video, 0, vh - numCanvas.height, vw, numCanvas.height, 0, 0, vw, numCanvas.height)
+
+    // Preprocess the name crop for foil/holo resilience (grayscale + contrast boost).
+    // The full canvas and number strip are left as-is — TextDetector handles
+    // standard contrast well, and number text is typically printed clearly.
+    const procNameCanvas = preprocessCanvas(nameCanvas)
 
     try {
       let rawText = ''
       if (supportsTextDetection) {
         const detector = new window.TextDetector()
-        // Try both original and preprocessed; merge — preprocessing helps foil/holo
-        const [cropDets, fullDets, procCropDets, procFullDets] = await Promise.all([
-          detector.detect(cropCanvas),
+        // 2 calls: preprocessed name crop (foil-safe) + original full frame (catches set/number info).
+        // Reduced from 4 parallel calls — each detect() is a native GPU pass, so halving the count
+        // meaningfully cuts frame processing time.
+        const [nameDets, fullDets] = await Promise.all([
+          detector.detect(procNameCanvas),
           detector.detect(canvas),
-          detector.detect(procCropCanvas),
-          detector.detect(procCanvas),
         ])
-        const cropText     = cropDets.map(d => d.rawValue).filter(Boolean).join('\n')
-        const fullText     = fullDets.map(d => d.rawValue).filter(Boolean).join('\n')
-        const procCropText = procCropDets.map(d => d.rawValue).filter(Boolean).join('\n')
-        const procFullText = procFullDets.map(d => d.rawValue).filter(Boolean).join('\n')
-        // Prefer cropped; include preprocessed results for foil cards
-        const nameArea = cropText || procCropText
-        rawText = nameArea
-          ? `${nameArea}\n${fullText}\n${procFullText}`
-          : (fullText || procFullText)
+        const nameText = nameDets.map(d => d.rawValue).filter(Boolean).join('\n')
+        const fullText = fullDets.map(d => d.rawValue).filter(Boolean).join('\n')
+        rawText = nameText ? `${nameText}\n${fullText}` : fullText
       }
       let candidates = []
       if (!rawText.trim()) {
-        // Tesseract fallback: prioritize the cropped name area. Full-card OCR is
-        // much slower and adds attack/rules noise, so only use it if needed.
-        rawText = await readWithTesseract(procCropCanvas)
+        // Tesseract fallback: name crop first (fast — small area), then the number
+        // strip (also fast), then full card only if still nothing found.
+        setScanStatus('Reading card name...')
+        const nameText = await readWithTesseract(procNameCanvas)
+        setScanStatus('Reading collector number...')
+        const numText  = await readWithTesseract(numCanvas)
+        rawText = [nameText, numText].filter(Boolean).join('\n')
         candidates = buildSearchCandidates(rawText)
         if (!candidates.length) {
-          const fullText = await readWithTesseract(procCanvas)
+          setScanStatus('Reading full card...')
+          const fullText = await readWithTesseract(preprocessCanvas(canvas))
           rawText = [rawText, fullText].filter(Boolean).join('\n')
           candidates = buildSearchCandidates(rawText)
         }
@@ -358,7 +407,7 @@ export default function CardScanner({ user, isDark = false, onToast, onCardAdded
     setScanStatus(supportsTextDetection ? 'Scanning automatically...' : 'Scanning with fallback OCR...')
     const id = window.setInterval(() => {
       captureAndDetect({ quiet: true })
-    }, supportsTextDetection ? 1800 : 6500)
+    }, supportsTextDetection ? 1200 : 4500)
     return () => window.clearInterval(id)
   }, [cameraOn, captureAndDetect, supportsTextDetection])
 
@@ -376,13 +425,22 @@ export default function CardScanner({ user, isDark = false, onToast, onCardAdded
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: 'environment' } },
+        video: {
+          facingMode: { ideal: 'environment' },
+          width:  { ideal: 1920 },
+          height: { ideal: 1080 },
+        },
         audio: false,
       })
       streamRef.current = stream
       if (videoRef.current) videoRef.current.srcObject = stream
       setCameraOn(true)
-      setScanStatus(supportsTextDetection ? 'Scanning automatically...' : 'Scanning with fallback OCR...')
+      setScanStatus('Camera ready — point at the card name...')
+      // Pre-warm Tesseract in the background so it's ready if TextDetector fails.
+      // This avoids the 5-10 second cold-start delay on the first Tesseract scan.
+      warmTesseract()
+      // Fire the first scan after the video stream has a chance to render a frame.
+      setTimeout(() => captureAndDetect({ quiet: true }), 900)
     } catch (err) {
       setCameraError(err?.message || 'Camera permission was blocked.')
     }

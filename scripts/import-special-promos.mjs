@@ -89,6 +89,7 @@ const BUILD_A_BEAR = [
   ['Snubbull', '90/149', 'sm1', '90'],
   ['Squirtle', '14/101', 'sm75', '14'],
   ['Pikachu', 'SM86', 'smp', 'SM86'],
+  ['Piplup', '32/156', 'sm5', '32'],
 ]
 
 function sleep(ms) {

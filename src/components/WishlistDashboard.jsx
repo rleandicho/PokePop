@@ -731,19 +731,66 @@ const BINDER_COLOR_PRESETS = [
   '#f9a8d4', '#a78bfa', '#6ee7b7', '#7dd3fc', '#fb7185', '#fbbf24', '#1e1b4b',
 ]
 
+const GRID_OPTIONS = [
+  { id: '2x2', label: '2×2', desc: '4 cards/page' },
+  { id: '3x3', label: '3×3', desc: '9 cards/page' },
+  { id: '4x4', label: '4×4', desc: '16 cards/page' },
+]
+
+// Only capacities that divide evenly into the grid's slots-per-page.
+// Each option shows the card count and the resulting page count.
+const CAPACITY_BY_GRID = {
+  '2x2': [  // 4 slots/page
+    { value: 40,  pages: 10 },
+    { value: 80,  pages: 20 },
+    { value: 120, pages: 30 },
+    { value: 160, pages: 40 },
+    { value: 200, pages: 50 },
+  ],
+  '3x3': [  // 9 slots/page
+    { value: 90,  pages: 10 },
+    { value: 180, pages: 20 },
+    { value: 270, pages: 30 },
+    { value: 360, pages: 40 },
+  ],
+  '4x4': [  // 16 slots/page
+    { value: 80,  pages: 5  },
+    { value: 160, pages: 10 },
+    { value: 240, pages: 15 },
+    { value: 320, pages: 20 },
+    { value: 480, pages: 30 },
+  ],
+}
+
 function NewBinderModal({ onSave, onClose }) {
-  const [name,   setName]   = useState('')
-  const [color,  setColor]  = useState('#a78bfa')
-  const [saving, setSaving] = useState(false)
-  const colorRef           = useRef(null)
+  const [name,     setName]     = useState('')
+  const [color,    setColor]    = useState('#a78bfa')
+  const [gridSize, setGridSize] = useState('3x3')
+  const [capacity, setCapacity] = useState(null)
+  const [saving,   setSaving]   = useState(false)
+  const colorRef                = useRef(null)
+
+  const capacityOptions = CAPACITY_BY_GRID[gridSize] ?? []
+
+  function handleGridChange(newGrid) {
+    setGridSize(newGrid)
+    // Clear capacity if it's no longer valid for the new grid
+    const valid = CAPACITY_BY_GRID[newGrid] ?? []
+    if (capacity !== null && !valid.some(o => o.value === capacity)) {
+      setCapacity(null)
+    }
+  }
+
+  const selectedOpt = capacityOptions.find(o => o.value === capacity)
+  const pageCount   = selectedOpt?.pages ?? null
 
   async function handleSave() {
     const trimmed = name.trim()
     if (!trimmed || saving) return
     setSaving(true)
-    const ok = await onSave(trimmed, color)   // waits for Supabase insert
+    const ok = await onSave(trimmed, color, gridSize, capacity)
     setSaving(false)
-    if (ok) onClose()                          // only close on success
+    if (ok) onClose()
   }
 
   return (
@@ -754,7 +801,7 @@ function NewBinderModal({ onSave, onClose }) {
       onClick={onClose}
     >
       <motion.div
-        className="bg-white rounded-3xl shadow-2xl p-6 max-w-xs w-full"
+        className="bg-white rounded-3xl shadow-2xl p-6 max-w-sm w-full max-h-[90vh] overflow-y-auto"
         initial={{ scale: 0.88, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.88, opacity: 0 }}
         onClick={e => e.stopPropagation()}
       >
@@ -763,6 +810,7 @@ function NewBinderModal({ onSave, onClose }) {
           <button onClick={onClose} className="text-gray-300 hover:text-gray-500 text-xl leading-none">✕</button>
         </div>
 
+        {/* Name */}
         <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1.5">
           Binder Name
         </label>
@@ -779,10 +827,71 @@ function NewBinderModal({ onSave, onClose }) {
                      focus:outline-none focus:ring-2 focus:ring-pink-300"
         />
 
+        {/* Grid size */}
+        <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">
+          Cards per Page
+        </label>
+        <div className="flex gap-2 mb-4">
+          {GRID_OPTIONS.map(g => (
+            <button
+              key={g.id}
+              type="button"
+              onClick={() => handleGridChange(g.id)}
+              className={`flex-1 flex flex-col items-center py-2 rounded-xl border text-xs font-semibold transition
+                ${gridSize === g.id
+                  ? 'border-pink-400 bg-pink-50 text-pink-500'
+                  : 'border-gray-200 text-gray-400 hover:border-pink-300 hover:text-pink-400'}`}
+            >
+              <span className="text-sm font-bold">{g.label}</span>
+              <span className="text-[10px] font-normal text-gray-400 mt-0.5">{g.desc}</span>
+            </button>
+          ))}
+        </div>
+
+        {/* Capacity */}
+        <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">
+          Binder Capacity
+        </label>
+        <div className="flex flex-wrap gap-1.5 mb-1.5">
+          {capacityOptions.map(opt => (
+            <button
+              key={opt.value}
+              type="button"
+              onClick={() => setCapacity(opt.value)}
+              className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition flex flex-col items-center leading-tight
+                ${capacity === opt.value
+                  ? 'border-pink-400 bg-pink-50 text-pink-500'
+                  : 'border-gray-200 text-gray-400 hover:border-pink-300 hover:text-pink-400'}`}
+            >
+              <span>{opt.value} cards</span>
+              <span className="text-[10px] font-normal opacity-70">{opt.pages} pages</span>
+            </button>
+          ))}
+          <button
+            type="button"
+            onClick={() => setCapacity(null)}
+            className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition
+              ${capacity === null
+                ? 'border-pink-400 bg-pink-50 text-pink-500'
+                : 'border-gray-200 text-gray-400 hover:border-pink-300 hover:text-pink-400'}`}
+          >
+            Unlimited
+          </button>
+        </div>
+
+        {/* Pages preview */}
+        {pageCount && (
+          <p className="text-xs text-emerald-600 font-semibold mb-4">
+            ✓ {pageCount} blank pages will be pre-filled
+          </p>
+        )}
+        {!pageCount && <div className="mb-4" />}
+
+        {/* Cover Color */}
         <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">
           Cover Color
         </label>
-        <div className="flex items-center gap-2 flex-wrap mb-5">
+        <div className="flex items-center gap-2 flex-wrap mb-4">
           {BINDER_COLOR_PRESETS.map(hex => (
             <button
               key={hex}
@@ -931,7 +1040,13 @@ function WishlistCardModal({
       card_image: item.image,
       sale_price: price,
     })
-    await supabase.from('wishlists').delete().eq('id', item.id)
+    // If there are multiple copies, decrement quantity rather than removing the row entirely.
+    const qty = item.quantity ?? 1
+    if (qty > 1) {
+      await supabase.from('wishlists').update({ quantity: qty - 1 }).eq('id', item.id)
+    } else {
+      await supabase.from('wishlists').delete().eq('id', item.id)
+    }
     setSellSaving(false)
     onSold?.(item, price)
     onToast?.('Card sold! 💰')
@@ -946,7 +1061,13 @@ function WishlistCardModal({
       card_name:  item.name,
       card_image: item.image,
     })
-    await supabase.from('wishlists').delete().eq('id', item.id)
+    // If there are multiple copies, decrement quantity rather than removing the row entirely.
+    const qty = item.quantity ?? 1
+    if (qty > 1) {
+      await supabase.from('wishlists').update({ quantity: qty - 1 }).eq('id', item.id)
+    } else {
+      await supabase.from('wishlists').delete().eq('id', item.id)
+    }
     setTradeSaving(false)
     onTraded?.(item)
     onToast?.('Card traded! 🤝')
@@ -1251,6 +1372,7 @@ export default function WishlistDashboard({ user, profile, onToast, onGoExplore,
   const [binders,         setBinders]         = useState([])
   const [selectedBinder,  setSelectedBinder]  = useState(null)  // { id, name, color, coverColor, pageStyle }
   const [showNewBinder,   setShowNewBinder]   = useState(false)
+  const [confirmDeleteBinderId, setConfirmDeleteBinderId] = useState(null)
   const [renamingId,      setRenamingId]      = useState(null)  // binder id currently being renamed
   const [renameInput,     setRenameInput]     = useState('')
   const [showSettings,    setShowSettings]    = useState(false)
@@ -1273,7 +1395,20 @@ export default function WishlistDashboard({ user, profile, onToast, onGoExplore,
 
   // Tracks the current slotsPerPage of the active BinderView (reported via callback).
   // Used by computeNextBinderSlot and handleInsertPage to stay consistent with the display.
-  const binderSlotsPerPage = useRef(9)
+  const binderSlotsPerPage  = useRef(9)
+  // Tracks the current totalPages BinderView is rendering — used to correctly bump minPages
+  // when inserting a blank page after the last page.
+  const binderCurrentPages  = useRef(1)
+  // Minimum number of pages BinderView should render — set from capacity on binder switch,
+  // then bumped when the user inserts a blank page after the last page.
+  const [binderMinPages, setBinderMinPages] = useState(1)
+
+  // Helper: derive slots-per-page from a grid_size string like '3x3'
+  function slotsPerPageFromGrid(gridSize) {
+    const match = (gridSize ?? '3x3').match(/^(\d+)x\d+$/)
+    const cols  = match ? parseInt(match[1], 10) : 3
+    return cols * cols
+  }
 
   // ── Pagination ────────────────────────────────────────────────────────────
   const [collectionPage, setCollectionPage] = useState(1)
@@ -1327,6 +1462,16 @@ export default function WishlistDashboard({ user, profile, onToast, onGoExplore,
 
   // Notify App whenever the active binder changes (so CardGrid can route new cards here)
   useEffect(() => { onBinderChange?.(selectedBinder?.id ?? null) }, [selectedBinder])
+  // Reset blank-page counter whenever the user switches binders
+  useEffect(() => {
+    const cap = selectedBinder?.capacity
+    if (cap) {
+      const spp = slotsPerPageFromGrid(selectedBinder?.grid_size)
+      setBinderMinPages(Math.ceil(cap / spp))
+    } else {
+      setBinderMinPages(1)
+    }
+  }, [selectedBinder?.id])
 
   // Persist virtual slot positions to localStorage so they survive page refreshes and
   // binder switches. Key includes userId + binderId so each binder has its own map.
@@ -1376,7 +1521,7 @@ export default function WishlistDashboard({ user, profile, onToast, onGoExplore,
       ),
       supabase
         .from('binders')
-        .select('id, name, color, cover_color, page_style')
+        .select('id, name, color, cover_color, page_style, grid_size, capacity')
         .eq('user_id', user.id)
         .order('created_at', { ascending: true }),
       fetchAllRows(() =>
@@ -1430,8 +1575,9 @@ export default function WishlistDashboard({ user, profile, onToast, onGoExplore,
           color:      '#a78bfa',
           cover_color: '#a78bfa',
           page_style:  'white',
+          grid_size:   '3x3',
         })
-        .select('id, name, color, cover_color, page_style')
+        .select('id, name, color, cover_color, page_style, grid_size, capacity')
         .single()
       if (binderErr) console.error('Auto-create Main Binder failed:', binderErr)
       if (newBinder) loadedBinders = [newBinder]
@@ -1505,7 +1651,7 @@ export default function WishlistDashboard({ user, profile, onToast, onGoExplore,
     // Pack investment total
     const { data: packData } = await supabase
       .from('pack_logs')
-      .select('id, pack_name, opened_at, pack_price, total_value, cards, store')
+      .select('id, pack_name, packs, opened_at, pack_price, total_value, cards, store')
       .eq('user_id', user.id)
       .order('opened_at', { ascending: false })
     const logs = packData ?? []
@@ -1540,7 +1686,7 @@ export default function WishlistDashboard({ user, profile, onToast, onGoExplore,
           .order('created_at', { ascending: false })
           .limit(40),
         supabase.from('pack_logs')
-          .select('id, user_id, pack_name, opened_at, cards')
+          .select('id, user_id, pack_name, packs, opened_at, cards')
           .in('user_id', ids)
           .order('opened_at', { ascending: false })
           .limit(20),
@@ -2238,19 +2384,21 @@ export default function WishlistDashboard({ user, profile, onToast, onGoExplore,
     }
   }
 
-  async function createBinder(name, color) {
+  async function createBinder(name, color, gridSize = '3x3', capacity = null) {
     const payload = {
       user_id:    user.id,   // required by RLS policy: auth.uid() = user_id
       name,
       color,
       cover_color: color,    // explicit so NOT NULL columns never fail
       page_style:  'white',  // explicit default — avoids NULL constraint errors
+      grid_size:   gridSize,
+      capacity:    capacity,
     }
 
     const { data, error } = await supabase
       .from('binders')
       .insert(payload)
-      .select('id, name, color, cover_color, page_style')
+      .select('id, name, color, cover_color, page_style, grid_size, capacity')
       .single()
 
     if (error || !data) {
@@ -2262,6 +2410,13 @@ export default function WishlistDashboard({ user, profile, onToast, onGoExplore,
 
     setBinders(prev => [...prev, data])
     setSelectedBinder(data)
+    // Apply capacity-based minimum pages immediately
+    if (data.capacity) {
+      const spp = slotsPerPageFromGrid(data.grid_size)
+      setBinderMinPages(Math.ceil(data.capacity / spp))
+    } else {
+      setBinderMinPages(1)
+    }
     onToast(`Binder "${name}" created! 📒`)
     return true
   }
@@ -2386,7 +2541,12 @@ export default function WishlistDashboard({ user, profile, onToast, onGoExplore,
       i => i.binder_id === binderId && i.owned && (i.slot_index ?? 0) >= threshold
     )
     if (!affected.length) {
-      onToast('No cards to shift — all cards are before this point')
+      if (direction === 'after') {
+        setBinderMinPages(binderCurrentPages.current + 1)
+        onToast(`Blank page added after page ${pageNumber} 📄`)
+      } else {
+        onToast('No cards to shift — all cards are before this point')
+      }
       return
     }
 
@@ -2601,6 +2761,15 @@ export default function WishlistDashboard({ user, profile, onToast, onGoExplore,
       ? { ...prev, cover_color: theme.coverColor, page_style: theme.pageStyle }
       : prev
     )
+  }
+
+  async function updateBinderGridSize(binderId, gridSize) {
+    await supabase
+      .from('binders')
+      .update({ grid_size: gridSize })
+      .eq('id', binderId)
+    setBinders(prev => prev.map(b => b.id === binderId ? { ...b, grid_size: gridSize } : b))
+    setSelectedBinder(prev => prev?.id === binderId ? { ...prev, grid_size: gridSize } : prev)
   }
 
   if (!user) {
@@ -3443,7 +3612,7 @@ export default function WishlistDashboard({ user, profile, onToast, onGoExplore,
                     {/* Delete × */}
                     {binders.length > 1 && renamingId !== b.id && (
                       <button
-                        onClick={() => deleteBinder(b.id)}
+                        onClick={() => setConfirmDeleteBinderId(b.id)}
                         className={`w-8 h-8 rounded-full flex items-center justify-center
                                    text-lg font-bold leading-none transition-all
                                    ${isActive
@@ -3508,7 +3677,11 @@ export default function WishlistDashboard({ user, profile, onToast, onGoExplore,
               onMovePage={handleMovePage}
               onDeletePage={handleDeletePage}
               onSlotsPerPageChange={spp => { binderSlotsPerPage.current = spp }}
+              onTotalPagesChange={n => { binderCurrentPages.current = n }}
+              onGridSizeChange={gs => updateBinderGridSize(selectedBinder.id, gs)}
               onEmptySlotClick={handleEmptySlotClick}
+              initialGridSize={selectedBinder.grid_size ?? '3x3'}
+              minPages={binderMinPages}
             />
           ) : (
             <p className="text-center text-pink-300 font-semibold mt-16 text-sm">
@@ -4042,6 +4215,58 @@ export default function WishlistDashboard({ user, profile, onToast, onGoExplore,
         )}
       </AnimatePresence>
 
+      {/* ── Binder delete confirmation ──────────────────────────────────────── */}
+      <AnimatePresence>
+        {confirmDeleteBinderId && (() => {
+          const binderName = binders.find(b => b.id === confirmDeleteBinderId)?.name ?? 'this binder'
+          return (
+            <motion.div
+              key="binder-delete-confirm"
+              className="fixed inset-0 z-[9000] flex items-center justify-center p-4"
+              style={{ background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(4px)' }}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setConfirmDeleteBinderId(null)}
+            >
+              <motion.div
+                className="bg-white dark:bg-gray-900 rounded-3xl shadow-2xl p-7 max-w-xs w-full text-center"
+                initial={{ scale: 0.9, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.9, opacity: 0 }}
+                transition={{ type: 'spring', stiffness: 300, damping: 25 }}
+                onClick={e => e.stopPropagation()}
+              >
+                <div className="text-4xl mb-3">🗑️</div>
+                <h2 className="text-base font-bold text-gray-800 dark:text-gray-100 mb-2">
+                  Delete "{binderName}"?
+                </h2>
+                <p className="text-sm text-gray-500 dark:text-gray-400 mb-6 leading-relaxed">
+                  Cards will be moved back to your inbox. This cannot be undone.
+                </p>
+                <div className="flex gap-2.5">
+                  <button
+                    onClick={() => setConfirmDeleteBinderId(null)}
+                    className="flex-1 py-2.5 rounded-xl text-sm font-semibold border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => {
+                      deleteBinder(confirmDeleteBinderId)
+                      setConfirmDeleteBinderId(null)
+                    }}
+                    className="flex-1 py-2.5 rounded-xl text-sm font-semibold bg-red-500 hover:bg-red-600 text-white transition-colors"
+                  >
+                    Delete
+                  </button>
+                </div>
+              </motion.div>
+            </motion.div>
+          )
+        })()}
+      </AnimatePresence>
+
       <AnimatePresence>
         {selectedItem && (
           <WishlistCardModal
@@ -4065,14 +4290,24 @@ export default function WishlistDashboard({ user, profile, onToast, onGoExplore,
               }
             }}
             onSold={(item, price) => {
-              setItems(prev => prev.filter(i => i.id !== item.id))
+              const qty = item.quantity ?? 1
+              if (qty > 1) {
+                setItems(prev => prev.map(i => i.id === item.id ? { ...i, quantity: qty - 1 } : i))
+              } else {
+                setItems(prev => prev.filter(i => i.id !== item.id))
+                onCardRemoved?.(item.card_id)
+              }
               setSalesTotal(prev => prev + price)
-              onCardRemoved?.(item.card_id)
             }}
             onTraded={(item) => {
-              setItems(prev => prev.filter(i => i.id !== item.id))
+              const qty = item.quantity ?? 1
+              if (qty > 1) {
+                setItems(prev => prev.map(i => i.id === item.id ? { ...i, quantity: qty - 1 } : i))
+              } else {
+                setItems(prev => prev.filter(i => i.id !== item.id))
+                onCardRemoved?.(item.card_id)
+              }
               setTradeCount(prev => prev + 1)
-              onCardRemoved?.(item.card_id)
             }}
           />
         )}
@@ -4281,7 +4516,11 @@ export default function WishlistDashboard({ user, profile, onToast, onGoExplore,
                     <div key={log.id} className="border border-gray-100 rounded-xl p-3 flex items-start gap-3 group relative">
                       <div className="text-2xl">🎴</div>
                       <div className="flex-1 min-w-0">
-                        <div className="font-semibold text-gray-700 text-sm truncate">{log.pack_name}</div>
+                        <div className="font-semibold text-gray-700 text-sm">
+                        {(log.packs?.length > 0
+                          ? log.packs.map(p => p.name).filter(Boolean).join(' + ')
+                          : log.pack_name) || '—'}
+                      </div>
                         <div className="text-xs text-gray-400 flex gap-2 flex-wrap">
                           <span>{new Date(log.opened_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</span>
                           {log.store && <span>· 📍 {log.store}</span>}

@@ -4,9 +4,13 @@ import { supabase } from '../lib/supabase'
 
 const CARD_BACK = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="250" height="350" viewBox="0 0 250 350"><rect width="250" height="350" fill="#1a56cc" rx="14"/><rect x="8" y="8" width="234" height="334" fill="none" stroke="rgba(255,255,255,0.28)" stroke-width="2" rx="10"/><circle cx="125" cy="175" r="78" fill="none" stroke="rgba(255,255,255,0.22)" stroke-width="5"/><circle cx="125" cy="175" r="50" fill="rgba(255,255,255,0.06)" stroke="rgba(255,255,255,0.16)" stroke-width="3"/><line x1="47" y1="175" x2="203" y2="175" stroke="rgba(255,255,255,0.22)" stroke-width="4"/><circle cx="125" cy="175" r="15" fill="rgba(255,255,255,0.88)" stroke="rgba(0,0,0,0.18)" stroke-width="2"/><circle cx="125" cy="175" r="9" fill="#1a56cc"/></svg>')}`
 
-// ── Cached set list (reuse AestheticFilter's localStorage cache key)
 const SETS_CACHE_KEY = 'pokepop_sets_v1'
 const SETS_TTL       = 24 * 60 * 60 * 1000
+
+const PURCHASE_TYPES = [
+  'Booster Pack', 'Blister Pack', 'Booster Bundle', 'ETB',
+  'Mini-Tin', 'Tin', 'Collection Box', 'Promo Pack',
+]
 
 async function loadSets() {
   try {
@@ -27,10 +31,89 @@ async function loadSets() {
   }
 }
 
+function blankRow() {
+  return { _id: `${Date.now()}-${Math.random()}`, name: '', setId: null }
+}
+
+// ── Single pack name row — name input with set autocomplete ──────────────────
+function PackNameRow({ row, index, total, allSets, onUpdate, onRemove }) {
+  const [showSugg, setShowSugg] = useState(false)
+  const [sugg,     setSugg]     = useState([])
+
+  function handleChange(val) {
+    onUpdate({ name: val, setId: null })
+    const q = val.trim().toLowerCase()
+    if (!q || !allSets.length) { setSugg([]); setShowSugg(false); return }
+    const matches = allSets
+      .filter(s => s.name.toLowerCase().includes(q) || s.series?.toLowerCase().includes(q))
+      .slice(0, 6)
+    setSugg(matches)
+    setShowSugg(matches.length > 0)
+  }
+
+  function pickSet(set) {
+    onUpdate({ name: set.name, setId: set.id })
+    setSugg([])
+    setShowSugg(false)
+  }
+
+  return (
+    <div className="relative">
+      <div className="flex items-center gap-1.5">
+        <div className="relative flex-1">
+          <input
+            type="text"
+            value={row.name}
+            onChange={e => handleChange(e.target.value)}
+            onFocus={() => sugg.length && setShowSugg(true)}
+            onBlur={() => setTimeout(() => setShowSugg(false), 150)}
+            placeholder={index === 0 ? 'Set name (e.g. Stellar Crown…)' : 'Another set…'}
+            autoFocus={index === 0}
+            autoComplete="off"
+            className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-pink-300"
+          />
+          {showSugg && sugg.length > 0 && (
+            <div className="absolute z-20 w-full mt-1 bg-white border border-gray-100 rounded-xl shadow-lg overflow-hidden">
+              {sugg.map(s => (
+                <button
+                  key={s.id}
+                  onMouseDown={() => pickSet(s)}
+                  className="w-full flex items-center gap-2 px-3 py-2 hover:bg-pink-50 transition text-left"
+                >
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-medium text-gray-700 truncate">{s.name}</div>
+                    <div className="text-xs text-gray-400">{s.series} · {s.releaseDate?.slice(0, 4)}</div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Remove row — only when there are multiple rows */}
+        {total > 1 && (
+          <button
+            type="button"
+            onClick={onRemove}
+            className="flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center
+                       text-gray-300 hover:text-rose-400 hover:bg-rose-50 transition"
+            title="Remove this pack"
+          >×</button>
+        )}
+      </div>
+
+      {/* Set-selected confirmation */}
+      {row.setId && (
+        <p className="text-[11px] text-emerald-600 font-medium mt-0.5 pl-1">✓ Set locked in</p>
+      )}
+    </div>
+  )
+}
+
 export default function PackLogModal({ user, onClose, onSaved, onCardsSaved }) {
-  const [packName,     setPackName]     = useState('')
+  const [purchaseType, setPurchaseType] = useState('Booster Pack')
+  const [packRows,     setPackRows]     = useState([blankRow()])
   const [packPrice,    setPackPrice]    = useState('')
-  const [packType,     setPackType]     = useState('')
   const [store,        setStore]        = useState('')
   const [cardSearch,   setCardSearch]   = useState('')
   const [cardResults,  setCardResults]  = useState([])
@@ -38,60 +121,53 @@ export default function PackLogModal({ user, onClose, onSaved, onCardsSaved }) {
   const [addedCards,   setAddedCards]   = useState([])
   const [saving,       setSaving]       = useState(false)
   const [error,        setError]        = useState('')
-  // Set name suggestions + selected set
-  const [allSets,        setAllSets]        = useState([])
-  const [setSuggestions, setSetSuggestions] = useState([])
-  const [showSuggestions, setShowSuggestions] = useState(false)
-  const [selectedSetId,  setSelectedSetId]  = useState(null) // restrict card search to this set
-  const nameRef    = useRef(null)
+  const [allSets,      setAllSets]      = useState([])
   const debounceRef = useRef(null)
 
-  // Load set list on mount
-  useEffect(() => {
-    loadSets().then(sets => setAllSets(sets))
-  }, [])
+  useEffect(() => { loadSets().then(setAllSets) }, [])
 
-  // Filter set suggestions as user types
-  useEffect(() => {
-    const q = packName.trim().toLowerCase()
-    if (!q || allSets.length === 0) { setSetSuggestions([]); return }
-    const matches = allSets
-      .filter(s => s.name.toLowerCase().includes(q) || s.series?.toLowerCase().includes(q))
-      .slice(0, 6)
-    setSetSuggestions(matches)
-    setShowSuggestions(matches.length > 0)
-  }, [packName, allSets])
+  // All set IDs currently selected across pack rows — drives card search filter
+  const activeSetIds   = packRows.filter(r => r.setId).map(r => r.setId)
+  const activeSetNames = packRows.filter(r => r.setId && r.name).map(r => r.name)
 
-  function pickSet(set) {
-    setPackName(set.name)
-    setSelectedSetId(set.id)
-    setShowSuggestions(false)
-    setCardSearch('')
-    setCardResults([])
+  // ── Pack row management ───────────────────────────────────────────────────
+  function updateRow(id, changes) {
+    setPackRows(prev => prev.map(r => r._id === id ? { ...r, ...changes } : r))
+  }
+  function addRow() {
+    setPackRows(prev => [...prev, blankRow()])
+  }
+  function removeRow(id) {
+    setPackRows(prev => prev.filter(r => r._id !== id))
   }
 
-  // Clear set restriction if user edits the pack name manually
-  function handlePackNameChange(val) {
-    setPackName(val)
-    setSelectedSetId(null) // clear set filter until they pick from suggestions again
-    setShowSuggestions(true)
-  }
-
-  // Search cards via TCG API — restricted to selected set if available
+  // ── Card search — Supabase query, OR across all selected sets ───────────────
   useEffect(() => {
     if (!cardSearch.trim()) { setCardResults([]); return }
     clearTimeout(debounceRef.current)
     debounceRef.current = setTimeout(async () => {
       setSearching(true)
       try {
-        const apiKey = import.meta.env.VITE_TCG_API_KEY
-        const headers = apiKey ? { 'X-Api-Key': apiKey } : {}
-        const parts = [`name:*${cardSearch.trim()}*`]
-        if (selectedSetId) parts.push(`set.id:${selectedSetId}`)
-        const q = encodeURIComponent(parts.join(' '))
-        const res = await fetch(`https://api.pokemontcg.io/v2/cards?q=${q}&pageSize=12&select=id,name,images,tcgplayer`, { headers })
-        const json = await res.json()
-        setCardResults(json.data ?? [])
+        let q = supabase
+          .from('tcg_cards_with_price')
+          .select('id, name, image_small, set_id, set_name, best_market_price')
+
+        // Name filter — AND across words for precision
+        const words = cardSearch.trim().split(/\s+/).filter(Boolean)
+        for (const word of words) {
+          q = q.or(`name.ilike.%${word}%,english_name.ilike.%${word}%`)
+        }
+
+        // Set filter — single eq or multi-value in()
+        if (activeSetIds.length === 1) {
+          q = q.eq('set_id', activeSetIds[0])
+        } else if (activeSetIds.length > 1) {
+          q = q.in('set_id', activeSetIds)
+        }
+
+        q = q.order('release_date', { ascending: false }).limit(20)
+        const { data } = await q
+        setCardResults(data ?? [])
       } catch {
         setCardResults([])
       } finally {
@@ -99,47 +175,57 @@ export default function PackLogModal({ user, onClose, onSaved, onCardsSaved }) {
       }
     }, 380)
     return () => clearTimeout(debounceRef.current)
-  }, [cardSearch])
-
-  function getBestPrice(card) {
-    const prices = card.tcgplayer?.prices ?? {}
-    const tiers  = ['holofoil', 'reverseHolofoil', 'normal', 'unlimited']
-    for (const tier of tiers) {
-      const t = prices[tier]
-      if (t?.market) return t.market
-      if (t?.mid)    return t.mid
-      if (t?.low)    return t.low
-    }
-    return 0
-  }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cardSearch, activeSetIds.join(',')])
 
   function addCard(card) {
-    if (addedCards.find(c => c.id === card.id)) return
-    const price = getBestPrice(card)
     setAddedCards(prev => [...prev, {
-      id: card.id,
-      name: card.name,
-      image: card.images?.small ?? '',
-      market_price: price,
+      id:           card.id,
+      name:         card.name,
+      image:        card.image_small ?? '',
+      market_price: card.best_market_price ?? 0,
+      _key:         `${card.id}-${Date.now()}-${Math.random()}`,
     }])
     setCardSearch('')
     setCardResults([])
   }
 
-  function removeCard(id) {
-    setAddedCards(prev => prev.filter(c => c.id !== id))
+  function removeCard(key) {
+    setAddedCards(prev => {
+      const idx = prev.findIndex(c => c._key === key)
+      if (idx === -1) return prev
+      return [...prev.slice(0, idx), ...prev.slice(idx + 1)]
+    })
   }
 
   const totalValue = addedCards.reduce((s, c) => s + (c.market_price || 0), 0)
 
+  // ── Save ──────────────────────────────────────────────────────────────────
   async function handleSave() {
-    if (!packName.trim()) { setError('Pack name is required.'); return }
+    const filledRows = packRows.filter(r => r.name.trim())
+    if (!filledRows.length) { setError('Enter at least one set or pack name.'); return }
     const price = parseFloat(packPrice) || 0
     setSaving(true)
     setError('')
 
     if (addedCards.length > 0) {
-      const rows = addedCards.map(c => ({
+      const cardMap = new Map()
+      for (const c of addedCards) {
+        if (!cardMap.has(c.id)) cardMap.set(c.id, { ...c, count: 0 })
+        cardMap.get(c.id).count++
+      }
+      const cardIds = [...cardMap.keys()]
+      const { data: existing } = await supabase
+        .from('wishlists')
+        .select('card_id, quantity')
+        .eq('user_id', user.id)
+        .in('card_id', cardIds)
+        .eq('owned', true)
+        .eq('edition', 'unspecified')
+        .eq('language', 'english')
+      const existingQty = new Map((existing ?? []).map(r => [r.card_id, r.quantity ?? 1]))
+
+      const rows = [...cardMap.values()].map(c => ({
         user_id:      user.id,
         card_id:      c.id,
         name:         c.name,
@@ -148,24 +234,29 @@ export default function PackLogModal({ user, onClose, onSaved, onCardsSaved }) {
         edition:      'unspecified',
         language:     'english',
         market_price: c.market_price || null,
+        quantity:     (existingQty.get(c.id) ?? 0) + c.count,
       }))
+
       const { error: upsertErr } = await supabase
         .from('wishlists')
         .upsert(rows, { onConflict: 'user_id,card_id,edition,language' })
       if (upsertErr) { setSaving(false); setError('Failed to save cards. Please try again.'); return }
-      onCardsSaved?.(addedCards)
+      onCardsSaved?.([...cardMap.values()])
     }
+
+    const packsPayload = filledRows.map(r => ({ name: r.name.trim(), type: purchaseType }))
 
     const { data, error: insertErr } = await supabase
       .from('pack_logs')
       .insert({
         user_id:     user.id,
-        pack_name:   packName.trim(),
-        pack_type:   packType.trim() || null,
+        pack_name:   packsPayload.map(p => p.name).join(' + '),
+        pack_type:   purchaseType,
         pack_price:  price,
         total_value: totalValue,
         store:       store.trim() || null,
         cards:       addedCards.map(c => ({ id: c.id, name: c.name, image: c.image, market_price: c.market_price })),
+        packs:       packsPayload,
       })
       .select()
       .single()
@@ -175,6 +266,8 @@ export default function PackLogModal({ user, onClose, onSaved, onCardsSaved }) {
     onSaved(data)
     onClose()
   }
+
+  const countLabel = packRows.length === 1 ? '1 pack' : `${packRows.length} packs`
 
   return (
     <motion.div
@@ -189,61 +282,28 @@ export default function PackLogModal({ user, onClose, onSaved, onCardsSaved }) {
       >
         {/* Header */}
         <div className="flex items-center justify-between mb-5">
-          <h2 className="text-lg font-bold text-gray-700">🎴 Log a Pack</h2>
+          <div>
+            <h2 className="text-lg font-bold text-gray-700">🎴 Log a Pack</h2>
+            {packRows.length > 1 && (
+              <p className="text-xs text-violet-500 font-semibold mt-0.5">{countLabel} in this purchase</p>
+            )}
+          </div>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none">×</button>
         </div>
 
         <div className="overflow-y-auto flex-1 space-y-4 pr-0.5">
-          {/* Pack Name with set suggestions */}
-          <div className="relative">
-            <label className="block text-xs font-semibold text-gray-500 mb-1">Pack Name / Set</label>
-            <input
-              ref={nameRef}
-              type="text"
-              value={packName}
-              onChange={e => handlePackNameChange(e.target.value)}
-              onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
-              onFocus={() => setShowSuggestions(true)}
-              placeholder="e.g. Stellar Crown, Twilight Masquerade…"
-              className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-pink-300"
-              autoComplete="off"
-            />
-            {showSuggestions && setSuggestions.length > 0 && (
-              <div className="absolute z-10 w-full mt-1 bg-white border border-gray-100 rounded-xl shadow-lg overflow-hidden">
-                {setSuggestions.map(s => (
-                  <button
-                    key={s.id}
-                    onMouseDown={() => pickSet(s)}
-                    className="w-full flex items-center gap-2 px-3 py-2 hover:bg-pink-50 transition text-left"
-                  >
-                    <div className="flex-1 min-w-0">
-                      <div className="text-sm font-medium text-gray-700 truncate">{s.name}</div>
-                      <div className="text-xs text-gray-400">{s.series} · {s.releaseDate?.slice(0, 4)}</div>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
 
-          {/* Pack Type */}
+          {/* ── 1. Purchase type ────────────────────────────────────────── */}
           <div>
-            <label className="block text-xs font-semibold text-gray-500 mb-1">Pack Type</label>
-            <input
-              type="text"
-              value={packType}
-              onChange={e => setPackType(e.target.value)}
-              placeholder="e.g. Booster Pack, ETB…"
-              className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-pink-300 mb-2"
-            />
+            <label className="block text-xs font-semibold text-gray-500 mb-2">Purchase Type</label>
             <div className="flex flex-wrap gap-1.5">
-              {['Booster Pack', 'Booster Bundle', 'ETB', 'Mini-Tin', 'Tin', 'Collection Box', 'Promo Pack'].map(t => (
+              {PURCHASE_TYPES.map(t => (
                 <button
                   key={t}
                   type="button"
-                  onMouseDown={() => setPackType(t)}
+                  onClick={() => setPurchaseType(t)}
                   className={`px-2.5 py-1 rounded-full text-xs font-medium border transition
-                    ${packType === t
+                    ${purchaseType === t
                       ? 'bg-pink-400 border-pink-400 text-white'
                       : 'border-gray-200 text-gray-500 hover:border-pink-300 hover:text-pink-400'}`}
                 >
@@ -253,10 +313,43 @@ export default function PackLogModal({ user, onClose, onSaved, onCardsSaved }) {
             </div>
           </div>
 
-          {/* Pack Price + Store row */}
+          {/* ── 2. Pack name rows ───────────────────────────────────────── */}
+          <div>
+            <label className="block text-xs font-semibold text-gray-500 mb-2">
+              Sets / Packs
+              <span className="ml-1 font-normal text-gray-400">— one per pack in your purchase</span>
+            </label>
+            <div className="space-y-2">
+              {packRows.map((row, i) => (
+                <PackNameRow
+                  key={row._id}
+                  row={row}
+                  index={i}
+                  total={packRows.length}
+                  allSets={allSets}
+                  onUpdate={changes => updateRow(row._id, changes)}
+                  onRemove={() => removeRow(row._id)}
+                />
+              ))}
+            </div>
+
+            {/* Add another pack button */}
+            <button
+              type="button"
+              onClick={addRow}
+              className="mt-2 flex items-center gap-1.5 text-xs font-semibold text-pink-400
+                         hover:text-pink-500 transition"
+            >
+              <span className="w-5 h-5 rounded-full border-2 border-pink-300 flex items-center justify-center
+                               text-pink-400 font-bold leading-none">+</span>
+              Add another pack
+            </button>
+          </div>
+
+          {/* ── 3. Price + Store ─────────────────────────────────────────── */}
           <div className="flex gap-3">
             <div className="flex-1">
-              <label className="block text-xs font-semibold text-gray-500 mb-1">What you paid ($)</label>
+              <label className="block text-xs font-semibold text-gray-500 mb-1">Total paid ($)</label>
               <input
                 type="number"
                 min="0"
@@ -279,24 +372,35 @@ export default function PackLogModal({ user, onClose, onSaved, onCardsSaved }) {
             </div>
           </div>
 
-          {/* Set restriction indicator */}
-          {selectedSetId && (
-            <div className="flex items-center gap-2 text-xs text-emerald-700 bg-emerald-50 rounded-lg px-3 py-1.5">
-              <span>🎯</span>
-              <span>Card search limited to <strong>{packName}</strong></span>
-              <button onClick={() => { setSelectedSetId(null) }} className="ml-auto text-gray-400 hover:text-gray-600">✕</button>
-            </div>
-          )}
-
-          {/* Card Search */}
+          {/* ── 4. Card search ───────────────────────────────────────────── */}
           <div>
-            <label className="block text-xs font-semibold text-gray-500 mb-1">Add Cards from this Pack</label>
+            <label className="block text-xs font-semibold text-gray-500 mb-1">Add Cards Pulled</label>
+
+            {/* Active set filter indicator — updates as user picks sets above */}
+            {activeSetNames.length > 0 && (
+              <div className="flex items-center gap-2 text-xs text-emerald-700 bg-emerald-50 rounded-lg px-3 py-1.5 mb-2">
+                <span>🎯</span>
+                <span className="flex-1 min-w-0 truncate">
+                  Searching in: <strong>{activeSetNames.join(' + ')}</strong>
+                </span>
+                <button
+                  onClick={() => setPackRows(prev => prev.map(r => ({ ...r, setId: null })))}
+                  className="flex-shrink-0 text-gray-400 hover:text-gray-600 transition"
+                  title="Search all sets"
+                >✕</button>
+              </div>
+            )}
+
             <div className="relative">
               <input
                 type="text"
                 value={cardSearch}
                 onChange={e => setCardSearch(e.target.value)}
-                placeholder="Search Pokémon card name…"
+                placeholder={
+                  activeSetNames.length > 0
+                    ? `Search in ${activeSetNames.length > 1 ? `${activeSetNames.length} sets` : activeSetNames[0]}…`
+                    : 'Search Pokémon card name…'
+                }
                 className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-pink-300"
               />
               {searching && (
@@ -313,17 +417,17 @@ export default function PackLogModal({ user, onClose, onSaved, onCardsSaved }) {
                     className="w-full flex items-center gap-2 px-3 py-2 hover:bg-pink-50 transition text-left"
                   >
                     <img
-                      src={card.images?.small}
+                      src={card.image_small}
                       alt={card.name}
                       className="h-10 rounded-lg flex-shrink-0"
                       onError={e => { e.currentTarget.src = CARD_BACK }}
                     />
                     <div className="flex-1 min-w-0">
                       <div className="text-sm font-medium text-gray-700 truncate">{card.name}</div>
-                      <div className="text-xs text-gray-400">{card.id}</div>
+                      <div className="text-xs text-gray-400">{card.set_name} · {card.id}</div>
                     </div>
-                    {getBestPrice(card) > 0 && (
-                      <span className="text-xs font-semibold text-emerald-600 flex-shrink-0">${getBestPrice(card).toFixed(2)}</span>
+                    {(card.best_market_price ?? 0) > 0 && (
+                      <span className="text-xs font-semibold text-emerald-600 flex-shrink-0">${card.best_market_price.toFixed(2)}</span>
                     )}
                   </button>
                 ))}
@@ -331,13 +435,13 @@ export default function PackLogModal({ user, onClose, onSaved, onCardsSaved }) {
             )}
           </div>
 
-          {/* Added Cards */}
+          {/* ── 5. Cards pulled ─────────────────────────────────────────── */}
           {addedCards.length > 0 && (
             <div>
               <div className="text-xs font-semibold text-gray-500 mb-2">Cards pulled ({addedCards.length})</div>
               <div className="flex flex-wrap gap-2">
                 {addedCards.map(c => (
-                  <div key={c.id} className="relative group">
+                  <div key={c._key} className="relative">
                     <img
                       src={c.image}
                       alt={c.name}
@@ -345,9 +449,10 @@ export default function PackLogModal({ user, onClose, onSaved, onCardsSaved }) {
                       onError={e => { e.currentTarget.src = CARD_BACK }}
                     />
                     <button
-                      onClick={() => removeCard(c.id)}
+                      onClick={() => removeCard(c._key)}
                       className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-rose-400 text-white text-xs
-                                 flex items-center justify-center opacity-0 group-hover:opacity-100 transition shadow"
+                                 flex items-center justify-center shadow transition hover:bg-rose-500 active:scale-95"
+                      title="Remove this card"
                     >×</button>
                     {c.market_price > 0 && (
                       <span className="absolute bottom-0.5 left-1/2 -translate-x-1/2 text-[10px] font-bold text-white
@@ -369,7 +474,7 @@ export default function PackLogModal({ user, onClose, onSaved, onCardsSaved }) {
           </span>
           {totalValue > 0 && (
             <span className="text-gray-500">
-              Pack worth: <strong className="text-emerald-600">${totalValue.toFixed(2)}</strong>
+              Worth: <strong className="text-emerald-600">${totalValue.toFixed(2)}</strong>
             </span>
           )}
         </div>
@@ -390,7 +495,7 @@ export default function PackLogModal({ user, onClose, onSaved, onCardsSaved }) {
             className="flex-1 py-2.5 rounded-xl text-sm font-semibold bg-gradient-to-r from-pink-400 to-violet-400
                        text-white hover:opacity-90 transition disabled:opacity-60"
           >
-            {saving ? 'Saving…' : 'Save Pack Log'}
+            {saving ? 'Saving…' : `Save ${countLabel}`}
           </button>
         </div>
       </motion.div>

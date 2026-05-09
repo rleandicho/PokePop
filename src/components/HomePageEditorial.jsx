@@ -185,6 +185,7 @@ function DragonIcon({ color }) {
 
 // ── Derive image URL from TCG card ID (e.g. "base1-4" → ".../base1/4.png")
 function cardIdToImg(cardId) {
+  if (!cardId) return ''
   const dash = cardId.lastIndexOf('-')
   if (dash === -1) return ''
   const setId = cardId.slice(0, dash)
@@ -640,12 +641,14 @@ function FriendCardModal({ T, card, user, collectionIds, onClose, isDark }) {
     const label = owned ? 'collection' : 'wishlist'
     setSaving(label)
     await supabase.from('wishlists').upsert({
-      user_id: user.id,
-      card_id: card.cardId,
-      name:    card.cardName,
-      image:   card.cardImage,
+      user_id:  user.id,
+      card_id:  card.cardId,
+      name:     card.cardName,
+      image:    card.cardImage,
       owned,
-    }, { onConflict: 'user_id,card_id' })
+      edition:  'unspecified',
+      language: 'english',
+    }, { onConflict: 'user_id,card_id,edition,language' })
     setSaving(null)
     setSaved(label)
   }
@@ -768,34 +771,115 @@ function FriendCardModal({ T, card, user, collectionIds, onClose, isDark }) {
 
 // ── Friend activity row
 function ActivityItem({ T, item, isOpen, onToggle, onOpenCard }) {
+  const [showHits, setShowHits] = useState(false)
+
   // ── Pack-open activity item
   if (item.type === 'pack') {
     return (
-      <div style={{
-        display: 'flex', alignItems: 'flex-start', gap: 8,
-        padding: '9px 0',
-        borderBottom: `1px solid ${T.border}`,
-      }}>
-        <Avatar T={T} name={item.username} size={24} />
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 12, lineHeight: 1.5, color: T.ink1 }}>
-            <a
-              href={`/share/${item.userId}`}
-              style={{ fontWeight: 600, color: T.ink0, textDecoration: 'none' }}
-              onMouseEnter={e => { e.currentTarget.style.color = T.brand; e.currentTarget.style.textDecoration = 'underline' }}
-              onMouseLeave={e => { e.currentTarget.style.color = T.ink0; e.currentTarget.style.textDecoration = 'none' }}
-            >
-              {item.username}
-            </a>
-            {' opened '}
-            <span style={{ fontWeight: 600, color: T.ink0 }}>{item.packName}</span>
-            {item.hasHit && (
-              <span style={{ color: '#f59e0b', fontWeight: 700 }}> and got a HIT 🔥</span>
-            )}
+      <>
+        <div style={{
+          display: 'flex', alignItems: 'flex-start', gap: 8,
+          padding: '9px 0',
+          borderBottom: `1px solid ${T.border}`,
+        }}>
+          <Avatar T={T} name={item.username} size={24} />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 12, lineHeight: 1.5, color: T.ink1 }}>
+              <a
+                href={`/share/${item.userId}`}
+                style={{ fontWeight: 600, color: T.ink0, textDecoration: 'none' }}
+                onMouseEnter={e => { e.currentTarget.style.color = T.brand; e.currentTarget.style.textDecoration = 'underline' }}
+                onMouseLeave={e => { e.currentTarget.style.color = T.ink0; e.currentTarget.style.textDecoration = 'none' }}
+              >
+                {item.username}
+              </a>
+              {' opened '}
+              <span style={{ fontWeight: 600, color: T.ink0 }}>{item.packName}</span>
+              {item.hasHit && (
+                <>
+                  {' '}
+                  <button
+                    onClick={() => setShowHits(true)}
+                    style={{
+                      background: 'none', border: 'none', padding: 0, cursor: 'pointer',
+                      color: '#f59e0b', fontWeight: 700, fontSize: 'inherit', fontFamily: 'inherit',
+                    }}
+                  >and got a HIT 🔥</button>
+                </>
+              )}
+            </div>
+            <div style={{ fontSize: 10, color: T.ink3, marginTop: 2 }}>🎴 pack opened · {item.time}</div>
           </div>
-          <div style={{ fontSize: 10, color: T.ink3, marginTop: 2 }}>🎴 pack opened · {item.time}</div>
         </div>
-      </div>
+
+        {/* Hit cards modal */}
+        {showHits && (
+          <div
+            onClick={() => setShowHits(false)}
+            style={{
+              position: 'fixed', inset: 0, zIndex: 9100,
+              background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(6px)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}
+          >
+            <div
+              onClick={e => e.stopPropagation()}
+              style={{
+                background: T.bgCard, borderRadius: 20, padding: '24px 24px 20px',
+                maxWidth: 420, width: '90%', boxShadow: '0 20px 60px rgba(0,0,0,0.35)',
+                border: `1px solid ${T.border}`,
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+                <div style={{ fontSize: 15, fontWeight: 700, color: T.ink0, fontFamily: T.fontSans }}>
+                  🔥 {item.username}'s hits from {item.packName}
+                </div>
+                <button
+                  onClick={() => setShowHits(false)}
+                  style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: T.ink2, lineHeight: 1 }}
+                >×</button>
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, justifyContent: 'center' }}>
+                {(item.hitCards ?? []).map((c, i) => (
+                  <button
+                    key={i}
+                    onClick={() => {
+                      setShowHits(false)
+                      onOpenCard({ cardId: c.id ?? c.card_id, cardName: c.name, cardImage: c.image })
+                    }}
+                    style={{
+                      textAlign: 'center', maxWidth: 110, background: 'none', border: 'none',
+                      padding: 0, cursor: 'pointer',
+                    }}
+                  >
+                    {c.image && (
+                      <img
+                        src={c.image}
+                        alt={c.name}
+                        style={{ width: 90, borderRadius: 8, boxShadow: '0 4px 12px rgba(0,0,0,0.2)', transition: 'transform 0.15s', display: 'block' }}
+                        onMouseEnter={e => { e.currentTarget.style.transform = 'scale(1.06)' }}
+                        onMouseLeave={e => { e.currentTarget.style.transform = 'scale(1)' }}
+                        onError={e => { e.currentTarget.style.display = 'none' }}
+                      />
+                    )}
+                    <div style={{ fontSize: 11, fontWeight: 600, color: T.ink0, marginTop: 5, fontFamily: T.fontSans }}>
+                      {c.name ?? c.card_id ?? '—'}
+                    </div>
+                    {(c.market_price || c.mid_price) && (
+                      <div style={{ fontSize: 10, color: '#10b981', fontWeight: 600 }}>
+                        ${(c.market_price || c.mid_price).toFixed(2)}
+                      </div>
+                    )}
+                  </button>
+                ))}
+                {(!item.hitCards || item.hitCards.length === 0) && (
+                  <div style={{ color: T.ink2, fontSize: 13, padding: '12px 0' }}>No hit details available.</div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+      </>
     )
   }
 
@@ -1118,7 +1202,7 @@ export default function HomePageEditorial({ user, profile, collectionIds, ownedI
           .limit(20),
         supabase
           .from('pack_logs')
-          .select('id, user_id, pack_name, opened_at, cards')
+          .select('id, user_id, pack_name, packs, opened_at, cards')
           .in('user_id', followingIds)
           .order('opened_at', { ascending: false })
           .limit(10),
@@ -1144,8 +1228,11 @@ export default function HomePageEditorial({ user, profile, collectionIds, ownedI
         type:     'pack',
         userId:   log.user_id,
         username: profileMap[log.user_id]?.username ?? 'unknown',
-        packName: log.pack_name,
+        packName: log.packs?.length > 0
+          ? log.packs.map(p => p.name).filter(Boolean).join(' + ')
+          : log.pack_name,
         hasHit:   (log.cards ?? []).some(c => (c.market_price || 0) >= 5),
+        hitCards: (log.cards ?? []).filter(c => (c.market_price || 0) >= 5),
         time:     timeAgo(log.opened_at),
         sortTime: log.opened_at,
       }))
@@ -1320,22 +1407,40 @@ export default function HomePageEditorial({ user, profile, collectionIds, ownedI
       {/* My Collection + Surprise Me — above Browse by Vibe */}
       <div style={{ padding: '0 20px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
         {user && (
-          <button
-            onClick={() => onNavigate('wishlist')}
-            style={{
-              width: '100%', padding: '16px 20px', borderRadius: 20,
-              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-              background: T.bgCardStrong, border: `1px solid ${T.border}`,
-              color: T.ink0, cursor: 'pointer', fontFamily: T.fontSans,
-              boxShadow: '0 4px 16px rgba(0,0,0,0.08)',
-            }}
-          >
-            <div style={{ textAlign: 'left' }}>
-              <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 3 }}>My Collection</div>
-              <div style={{ fontSize: 12, color: T.ink2 }}>{totalCards} cards · {ownedCards} owned</div>
-            </div>
-            <span style={{ fontSize: 22 }}>⊞</span>
-          </button>
+          <>
+            <button
+              onClick={() => onNavigate('wishlist')}
+              style={{
+                width: '100%', padding: '16px 20px', borderRadius: 20,
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                background: T.bgCardStrong, border: `1px solid ${T.border}`,
+                color: T.ink0, cursor: 'pointer', fontFamily: T.fontSans,
+                boxShadow: '0 4px 16px rgba(0,0,0,0.08)',
+              }}
+            >
+              <div style={{ textAlign: 'left' }}>
+                <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 3 }}>My Collection</div>
+                <div style={{ fontSize: 12, color: T.ink2 }}>{totalCards} cards · {ownedCards} owned</div>
+              </div>
+              <span style={{ fontSize: 22 }}>⊞</span>
+            </button>
+            <button
+              onClick={() => onNavigate('wishlist', 'binder')}
+              style={{
+                width: '100%', padding: '14px 20px', borderRadius: 20,
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                background: T.bgCard, border: `1px solid ${T.border}`,
+                color: T.ink0, cursor: 'pointer', fontFamily: T.fontSans,
+                boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
+              }}
+            >
+              <div style={{ textAlign: 'left' }}>
+                <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 2 }}>My Binder</div>
+                <div style={{ fontSize: 12, color: T.ink2 }}>View your virtual binder</div>
+              </div>
+              <span style={{ fontSize: 20 }}>📒</span>
+            </button>
+          </>
         )}
 
         {!user && (
@@ -1527,7 +1632,8 @@ export default function HomePageEditorial({ user, profile, collectionIds, ownedI
           <nav style={{ display: 'flex', gap: 16, fontSize: 13 }}>
             <span style={{ color: T.brand, fontWeight: 600 }}>Home</span>
             <button onClick={() => onNavigate('all')} style={{ background: 'none', border: 'none', color: T.ink1, cursor: 'pointer', fontSize: 13, fontFamily: T.fontSans }}>Browse</button>
-            <button onClick={() => onNavigate('wishlist', 'collection')} style={{ background: 'none', border: 'none', color: T.ink1, cursor: 'pointer', fontSize: 13, fontFamily: T.fontSans }}>Library</button>
+            <button onClick={() => onNavigate('wishlist', 'collection')} style={{ background: 'none', border: 'none', color: T.ink1, cursor: 'pointer', fontSize: 13, fontFamily: T.fontSans }}>My Collection</button>
+            <button onClick={() => onNavigate('wishlist', 'binder')} style={{ background: 'none', border: 'none', color: T.ink1, cursor: 'pointer', fontSize: 13, fontFamily: T.fontSans }}>My Binder</button>
           </nav>
           {user && <Avatar T={T} name={username} size={32} ring />}
         </div>

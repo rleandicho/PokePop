@@ -13,8 +13,9 @@ export default function SearchBar({ value, onChange, onClear, placeholder = 'Sea
 
   useEffect(() => {
     if (autoFocus && inputRef.current) {
-      // Small delay lets the AnimatePresence fade-in complete before focusing
-      const t = setTimeout(() => inputRef.current?.focus(), 150)
+      // Longer delay lets the AnimatePresence fade-in complete before focusing.
+      // preventScroll avoids jarring jumps on mobile.
+      const t = setTimeout(() => inputRef.current?.focus({ preventScroll: false }), 300)
       return () => clearTimeout(t)
     }
   }, [autoFocus])
@@ -35,6 +36,8 @@ export default function SearchBar({ value, onChange, onClear, placeholder = 'Sea
         value={value}
         onChange={e => onChange(e.target.value)}
         placeholder={placeholder}
+        // eslint-disable-next-line jsx-a11y/no-autofocus
+        autoFocus={autoFocus}
         className="w-full pl-10 pr-10 py-2.5 rounded-2xl border border-pink-200 bg-white/70
                    text-sm text-gray-600 placeholder-pink-300
                    focus:outline-none focus:ring-2 focus:ring-pink-300

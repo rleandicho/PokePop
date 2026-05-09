@@ -605,8 +605,8 @@ function ThemeControls({ theme, onThemeChange, binderSize, onSizeChange }) {
 }
 
 // ─── Main BinderView ──────────────────────────────────────────────────────────
-export default function BinderView({ items, user, readOnly = false, initialTheme, onThemeChange, binders, onTransfer, currentBinderId, onCardClick, onSlotsSwapped, onRemoveFromCollection, onInsertPage, onMovePage, onDeletePage, onSlotsPerPageChange, onEmptySlotClick }) {
-  const [binderSize,   setBinderSize]   = useState('3x3')
+export default function BinderView({ items, user, readOnly = false, initialTheme, onThemeChange, binders, onTransfer, currentBinderId, onCardClick, onSlotsSwapped, onRemoveFromCollection, onInsertPage, onMovePage, onDeletePage, onSlotsPerPageChange, onEmptySlotClick, onTotalPagesChange, onGridSizeChange, minPages = 1, initialGridSize = '3x3' }) {
+  const [binderSize,   setBinderSize]   = useState(initialGridSize)
   const [theme,        setTheme]        = useState(initialTheme ?? DEFAULT_THEME)
   const [slotArray,    setSlotArray]    = useState([])
   const [selectedIdx,  setSelectedIdx]  = useState(null)
@@ -638,8 +638,9 @@ export default function BinderView({ items, user, readOnly = false, initialTheme
   useEffect(() => {
     const maxSlot    = items.reduce((m, i) => Math.max(m, i.slot_index ?? 0), 0)
     const minNeeded  = Math.max(items.length, items.length > 0 ? maxSlot + 1 : 0)
-    const totalPages = Math.max(1, Math.ceil(minNeeded / slotsPerPage))
+    const totalPages = Math.max(minPages, 1, Math.ceil(minNeeded / slotsPerPage))
     const totalSlots = totalPages * slotsPerPage
+    onTotalPagesChange?.(totalPages)
     const arr = buildSlotArray(items, totalSlots)
     setSlotArray(arr)
 
@@ -685,7 +686,7 @@ export default function BinderView({ items, user, readOnly = false, initialTheme
     } else {
       lastDriftSigRef.current = null
     }
-  }, [items, slotsPerPage])
+  }, [items, slotsPerPage, minPages])
 
   // ── Click-to-swap handler ─────────────────────────────────────────────────
   const handleSlotClick = useCallback((globalIdx) => {
@@ -771,7 +772,7 @@ export default function BinderView({ items, user, readOnly = false, initialTheme
           theme={theme}
           onThemeChange={patchTheme}
           binderSize={binderSize}
-          onSizeChange={setBinderSize}
+          onSizeChange={sz => { setBinderSize(sz); onGridSizeChange?.(sz) }}
         />
       )}
 
