@@ -202,7 +202,15 @@ export async function fetchCardsFromDb({ vibe, search, setQuery, sort, page = 1,
     const isPromoQuery   = setQuery.includes('set.name:') && setQuery.includes('Promo')
 
     if (setIdMatch) {
-      q = q.eq('set_id', setIdMatch[1])
+      const sid = setIdMatch[1]
+      // For SV era sets (but not SVE itself), also include the illustrated
+      // basic energies from the Scarlet & Violet Energies set (sve) — those
+      // cards physically come in every SV booster pack.
+      if (sid.startsWith('sv') && sid !== 'sve') {
+        q = q.or(`set_id.eq.${sid},set_id.eq.sve`)
+      } else {
+        q = q.eq('set_id', sid)
+      }
     } else if (seriesMatch) {
       q = q.eq('series', seriesMatch[1])
     } else if (isPromoQuery) {
