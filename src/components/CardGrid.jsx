@@ -879,16 +879,13 @@ function CardModal({ card, user, onToast, onClose, saveCard, collectionIds, owne
           ) : (
             <p className="text-center text-xs text-gray-400">Login to save cards to your Wishlist & Collection 💖</p>
           )}
-          <button
-            onClick={() => {
-              const url = `${window.location.origin}/card/${card.id}`
-              navigator.clipboard.writeText(url).then(() => onToast('Card link copied! 🔗'))
-            }}
-            className="block w-full text-center border border-gray-200 text-gray-500 hover:bg-gray-50
+          <a
+            href={`/card/${card.id}`}
+            className="block text-center border border-pink-200 text-pink-500 hover:bg-pink-50
                        font-semibold py-2 rounded-2xl transition-colors text-sm"
           >
-            🔗 Copy card link
-          </button>
+            🔍 View card details
+          </a>
           {card.tcgplayer?.url && (
             <a href={card.tcgplayer.url} target="_blank" rel="noreferrer"
                className="block text-center bg-pink-400 hover:bg-pink-500 text-white

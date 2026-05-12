@@ -989,14 +989,30 @@ export default function PublicWishlist() {
               )}
 
               <a
-                href={`https://www.tcgplayer.com/search/pokemon/product?q=${encodeURIComponent(selectedShowcaseItem.name)}`}
-                target="_blank"
-                rel="noreferrer"
-                className="block text-center bg-pink-400 hover:bg-pink-500 text-white
-                           font-semibold py-2 rounded-2xl transition-colors"
+                href={`/card/${selectedShowcaseItem.card_id}`}
+                className="block text-center border border-pink-200 text-pink-500 hover:bg-pink-50
+                           font-semibold py-2 rounded-2xl transition-colors text-sm"
               >
-                View on TCGPlayer
+                🔍 View card details
               </a>
+              <div className="flex gap-2">
+                <a
+                  href={`https://www.tcgplayer.com/search/pokemon/product?q=${encodeURIComponent(selectedShowcaseItem.name)}`}
+                  target="_blank" rel="noreferrer"
+                  className="flex-1 block text-center bg-pink-400 hover:bg-pink-500 text-white
+                             font-semibold py-2 rounded-2xl transition-colors text-sm"
+                >
+                  TCGPlayer
+                </a>
+                <a
+                  href={`https://www.ebay.com/sch/i.html?_nkw=${encodeURIComponent(selectedShowcaseItem.name + ' pokemon card')}&_sacat=2536`}
+                  target="_blank" rel="noreferrer"
+                  className="flex-1 block text-center bg-amber-400 hover:bg-amber-500 text-white
+                             font-semibold py-2 rounded-2xl transition-colors text-sm"
+                >
+                  eBay
+                </a>
+              </div>
             </motion.div>
           </motion.div>
         )}

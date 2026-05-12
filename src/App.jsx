@@ -29,6 +29,7 @@ function pathToState(pathname, search) {
   if (p === '/lists')                  return { vibe: 'wishlist',  tab: 'lists',      setQuery: null }
   if (p === '/trainers')               return { vibe: 'wishlist',  tab: 'trainers',   setQuery: null }
   if (p === '/followers')              return { vibe: 'wishlist',  tab: 'followers',  setQuery: null }
+  if (p === '/scan')                   return { vibe: 'scanner',   tab: 'collection', setQuery: null }
   return { vibe: 'home', tab: 'collection', setQuery: null }
 }
 
@@ -43,6 +44,7 @@ function stateToPath(vibe, tab, sq) {
     if (tab === 'followers')  return '/followers'
     return '/collection'
   }
+  if (vibe === 'scanner') return '/scan'
   if (vibe === 'all')  return sq ? `/browse?set=${encodeURIComponent(sq)}` : '/browse'
   return sq ? `/browse/${vibe}?set=${encodeURIComponent(sq)}` : `/browse/${vibe}`
 }
@@ -73,20 +75,15 @@ export default function App() {
   // still shows the old theme, which "blocked out" gradient text like "Welcome!".
   useLayoutEffect(() => { applyTheme(themeMode) }, [themeMode])
 
-  // ── URL ↔ state bidirectional sync ─────────────────────────────────────────
-  // Sync app state → URL whenever the three routing dimensions change.
-  // We compare against the current pathname+search so we don't call navigate
-  // when the state change was itself triggered by a URL change (e.g. back/forward).
+  // ── Initial URL correction (mount only) ────────────────────────────────────
+  // On first load, if pathToState couldn't fully parse the URL (e.g. a legacy
+  // ?view=collection param), correct it with a replace so no history entry is added.
+  // All subsequent navigation uses push via the nav handlers below.
   useEffect(() => {
     const target  = stateToPath(activeVibe, wishlistTab, setQuery)
     const current = location.pathname + location.search
-    if (target !== current) {
-      navigate(target, { replace: true })
-    }
-  // location is intentionally NOT in deps — we read it for comparison but don't
-  // want to re-run this effect when location changes (that's the other effect's job).
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeVibe, wishlistTab, setQuery, navigate])
+    if (target !== current) navigate(target, { replace: true })
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Sync URL → state when the user navigates via browser back/forward.
   useEffect(() => {
@@ -191,27 +188,39 @@ export default function App() {
     }
   }
 
-  // ── Filter helpers ──────────────────────────────────────────────────────────
+  // ── Navigation helpers ──────────────────────────────────────────────────────
+  // Each handler updates React state AND pushes a new history entry so the
+  // browser back button works correctly across sections.
+
   function goHome() {
     setActiveVibe('home')
     setSetQuery(null)
+    navigate('/')
   }
 
   function handleVibeChange(vibe) {
-    // If vibe is toggled off (null), fall back to home — never leave a blank state
+    const v = vibe ?? 'home'
     setSetQuery(null)
-    setActiveVibe(vibe ?? 'home')
+    setActiveVibe(v)
+    navigate(stateToPath(v, wishlistTab, null))
   }
 
   function handleSetQuery(q) {
-    // Only update the set filter — do NOT clear search or vibe so hybrid queries
-    // (e.g. name:"*eevee*" set.id:base1) reach buildTcgQuery with all parts intact.
+    // Set-filter changes use replace so cycling through the set dropdown
+    // doesn't flood the history stack.
     setSetQuery(q)
+    navigate(stateToPath(activeVibe, wishlistTab, q), { replace: true })
   }
 
   function handleClearFilters() {
     setActiveVibe('all')
     setSetQuery(null)
+    navigate('/browse')
+  }
+
+  function handleWishlistTabChange(tab) {
+    setWishlistTab(tab)
+    navigate(stateToPath('wishlist', tab, null))
   }
 
   const showToast     = useCallback((msg) => setToast(msg), [])
@@ -238,9 +247,11 @@ export default function App() {
     const parts = []
     if (setId)     parts.push(`set.id:${setId}`)
     if (nameQuery) parts.push(`name:*${nameQuery}*`)
-    setSetQuery(parts.length ? parts.join(' ') : null)
+    const sq = parts.length ? parts.join(' ') : null
+    setSetQuery(sq)
     setWishlistTab(tab)
     setFocusSearch(false)
+    navigate(stateToPath(vibe, tab, sq))
   }
 
   // Called when user clicks the home page search bar — navigates to browse AND focuses search input
@@ -248,6 +259,7 @@ export default function App() {
     setActiveVibe('all')
     setSetQuery(null)
     setFocusSearch(true)
+    navigate('/browse')
   }
 
   const fadeTransition = { duration: 0.22, ease: 'easeInOut' }
@@ -345,7 +357,7 @@ export default function App() {
                     isDark={isDark}
                     onToast={showToast}
                     onCardAdded={handleCardAdded}
-                    onBack={() => { setActiveVibe('all'); setSetQuery(null) }}
+                    onBack={() => { setActiveVibe('all'); setSetQuery(null); navigate('/browse') }}
                   />
                 ) : isWishlist ? (
                   <WishlistDashboard
@@ -353,11 +365,11 @@ export default function App() {
                     user={user}
                     profile={profile}
                     onToast={showToast}
-                    onGoExplore={() => { setActiveVibe('all'); setSetQuery(null) }}
-                    onOpenScanner={() => { setActiveVibe('scanner'); setSetQuery(null) }}
+                    onGoExplore={() => { setActiveVibe('all'); setSetQuery(null); navigate('/browse') }}
+                    onOpenScanner={() => { setActiveVibe('scanner'); setSetQuery(null); navigate('/scan') }}
                     onBinderChange={setActiveBinderId}
                     initialTab={wishlistTab}
-                    onTabChange={setWishlistTab}
+                    onTabChange={handleWishlistTabChange}
                     onCardRemoved={handleCardRemoved}
                     onOwnedChanged={handleOwnedChanged}
                     onCardAdded={handleCardAdded}

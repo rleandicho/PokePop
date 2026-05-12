@@ -1341,15 +1341,34 @@ function WishlistCardModal({
           </div>
         )}
 
-        <a
-          href={`https://www.tcgplayer.com/search/pokemon/product?q=${encodeURIComponent(item.name)}`}
-          target="_blank"
-          rel="noreferrer"
-          className="block text-center bg-pink-400 hover:bg-pink-500 text-white
-                     font-semibold py-2 rounded-2xl transition-colors"
-        >
-          View on TCGPlayer
-        </a>
+        {/* ── External links ── */}
+        <div className="flex flex-col gap-2">
+          <a
+            href={`/card/${item.card_id}`}
+            className="block text-center border border-pink-200 text-pink-500 hover:bg-pink-50
+                       font-semibold py-2 rounded-2xl transition-colors text-sm"
+          >
+            🔍 View card details
+          </a>
+          <div className="flex gap-2">
+            <a
+              href={`https://www.tcgplayer.com/search/pokemon/product?q=${encodeURIComponent(item.name)}`}
+              target="_blank" rel="noreferrer"
+              className="flex-1 block text-center bg-pink-400 hover:bg-pink-500 text-white
+                         font-semibold py-2 rounded-2xl transition-colors text-sm"
+            >
+              TCGPlayer
+            </a>
+            <a
+              href={`https://www.ebay.com/sch/i.html?_nkw=${encodeURIComponent(item.name + ' pokemon card')}&_sacat=2536`}
+              target="_blank" rel="noreferrer"
+              className="flex-1 block text-center bg-amber-400 hover:bg-amber-500 text-white
+                         font-semibold py-2 rounded-2xl transition-colors text-sm"
+            >
+              eBay
+            </a>
+          </div>
+        </div>
       </motion.div>
     </motion.div>
   )
