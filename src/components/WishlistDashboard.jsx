@@ -1356,7 +1356,7 @@ function WishlistCardModal({
 }
 
 // ─── Main dashboard ──────────────────────────────────────────────────────────
-export default function WishlistDashboard({ user, profile, onToast, onGoExplore, onOpenScanner, onBinderChange, initialTab = 'collection', onCardRemoved, onOwnedChanged, onCardAdded }) {
+export default function WishlistDashboard({ user, profile, onToast, onGoExplore, onOpenScanner, onBinderChange, initialTab = 'collection', onTabChange, onCardRemoved, onOwnedChanged, onCardAdded }) {
   const [items,        setItems]        = useState([])
   const [loading,      setLoading]      = useState(true)
   const [selectedItem, setSelectedItem] = useState(null)
@@ -1364,6 +1364,14 @@ export default function WishlistDashboard({ user, profile, onToast, onGoExplore,
   const [toggling,  setToggling]  = useState(false)
   const [copied,    setCopied]    = useState(false)
   const [activeTab,        setActiveTab]        = useState(initialTab)  // 'collection' | 'wishlist' | 'binder' | 'lists' | 'trainers' | 'followers'
+
+  // Propagate internal tab changes up so App can keep the URL in sync.
+  // We skip the initial mount call (which would re-trigger the key remount).
+  const tabMountedRef = useRef(false)
+  useEffect(() => {
+    if (!tabMountedRef.current) { tabMountedRef.current = true; return }
+    onTabChange?.(activeTab)
+  }, [activeTab]) // eslint-disable-line react-hooks/exhaustive-deps
   const [followedTrainers, setFollowedTrainers] = useState([])
   const [followers,        setFollowers]        = useState([])  // users who follow me
   // 1st Edition is determined by card_id suffix ("-1st") — no toggle, no runtime Sets needed
@@ -3258,7 +3266,7 @@ export default function WishlistDashboard({ user, profile, onToast, onGoExplore,
                     onClick={() => { setActiveTab('followers'); setShowSocialsMenu(false) }}
                     className={`w-full flex items-center gap-2 px-4 py-2.5 text-sm font-semibold transition-colors
                       ${activeTab === 'followers' ? 'text-pink-500 bg-pink-50' : 'text-gray-600 hover:bg-gray-50'}`}
-                  >🫂 Followers{followers.length > 0 && <span className="ml-auto text-xs text-gray-400">{followers.length}</span>}</button>
+                  >👥 Followers{followers.length > 0 && <span className="ml-auto text-xs text-gray-400">{followers.length}</span>}</button>
                   {isPublic && (
                     <>
                       <div className="border-t border-gray-100" />
@@ -3366,7 +3374,7 @@ export default function WishlistDashboard({ user, profile, onToast, onGoExplore,
               action: () => { setActiveTab('lists'); setCollectionPage(1); setWishlistPage(1) } },
             { id: 'trainers',  label: `Following 👥${followedTrainers.length ? ` · ${followedTrainers.length}` : ''}`,
               isActive: activeTab === 'trainers', action: () => { setActiveTab('trainers'); setCollectionPage(1); setWishlistPage(1) } },
-            { id: 'followers', label: `Followers 🫂${followers.length ? ` · ${followers.length}` : ''}`,
+            { id: 'followers', label: `Followers 👥${followers.length ? ` · ${followers.length}` : ''}`,
               isActive: activeTab === 'followers', action: () => { setActiveTab('followers'); setCollectionPage(1); setWishlistPage(1) } },
           ].map(tab => (
             <motion.button
@@ -3848,11 +3856,11 @@ export default function WishlistDashboard({ user, profile, onToast, onGoExplore,
         <div className="max-w-2xl mx-auto px-4 pb-16">
           {followers.length === 0 ? (
             <div className="flex flex-col items-center text-center mt-16 gap-3">
-              <p className="text-5xl">🫂</p>
-              <p className="font-bold text-lg" style={{ color: 'var(--app-accent)' }}>
+              <p className="text-5xl">👥</p>
+              <p className="font-bold text-lg text-pink-400">
                 No followers yet
               </p>
-              <p className="text-sm" style={{ color: 'var(--app-text)', opacity: 0.7 }}>
+              <p className="text-sm text-gray-400">
                 Share your collection link so other trainers can follow you!
               </p>
             </div>

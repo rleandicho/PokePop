@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useLayoutEffect, useCallback, useRef } from 'react'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { supabase }        from './lib/supabase'
 import { fetchAllRows }    from './lib/fetchAllRows'
@@ -14,33 +15,86 @@ import ThemeToggle         from './components/ThemeToggle'
 import UsernameSetup       from './components/UsernameSetup'
 import './index.css'
 
+// ── URL ↔ app-state mapping ───────────────────────────────────────────────────
+// Path → { vibe, tab }
+function pathToState(pathname, search) {
+  const p = pathname.replace(/\/$/, '') || '/'
+  const params = new URLSearchParams(search)
+  if (p === '/' || p === '')           return { vibe: 'home',     tab: 'collection', setQuery: null }
+  if (p === '/browse')                 return { vibe: 'all',      tab: 'collection', setQuery: params.get('set') }
+  if (p.startsWith('/browse/'))        return { vibe: p.slice(8), tab: 'collection', setQuery: params.get('set') }
+  if (p === '/collection')             return { vibe: 'wishlist',  tab: 'collection', setQuery: null }
+  if (p === '/wishlist')               return { vibe: 'wishlist',  tab: 'wishlist',   setQuery: null }
+  if (p === '/binder')                 return { vibe: 'wishlist',  tab: 'binder',     setQuery: null }
+  if (p === '/lists')                  return { vibe: 'wishlist',  tab: 'lists',      setQuery: null }
+  if (p === '/trainers')               return { vibe: 'wishlist',  tab: 'trainers',   setQuery: null }
+  if (p === '/followers')              return { vibe: 'wishlist',  tab: 'followers',  setQuery: null }
+  return { vibe: 'home', tab: 'collection', setQuery: null }
+}
+
+// App state → URL path
+function stateToPath(vibe, tab, sq) {
+  if (vibe === 'home' || !vibe) return '/'
+  if (vibe === 'wishlist') {
+    if (tab === 'wishlist')   return '/wishlist'
+    if (tab === 'binder')     return '/binder'
+    if (tab === 'lists')      return '/lists'
+    if (tab === 'trainers')   return '/trainers'
+    if (tab === 'followers')  return '/followers'
+    return '/collection'
+  }
+  if (vibe === 'all')  return sq ? `/browse?set=${encodeURIComponent(sq)}` : '/browse'
+  return sq ? `/browse/${vibe}?set=${encodeURIComponent(sq)}` : `/browse/${vibe}`
+}
+
 export default function App() {
+  const navigate    = useNavigate()
+  const location    = useLocation()
+  const navSkipRef  = useRef(false)  // prevents URL-read → navigate → URL-read loops
+
   const [user,           setUser]           = useState(null)
   const [profile,        setProfile]        = useState(null)   // { id, username } | null
   const [profileReady,   setProfileReady]   = useState(false)  // has fetch completed?
   const [skippedSetup,   setSkippedSetup]   = useState(false)  // user clicked "maybe later"
-  const [activeVibe,     setActiveVibe]     = useState('home')
-  const [setQuery,       setSetQuery]       = useState(null)   // raw TCG query fragment
+  const [activeVibe,     setActiveVibe]     = useState(() => pathToState(location.pathname, location.search).vibe)
+  const [setQuery,       setSetQuery]       = useState(() => pathToState(location.pathname, location.search).setQuery)   // raw TCG query fragment
   const [sortBy,         setSortBy]         = useState('newest')
   const [toast,          setToast]          = useState('')
   const [activeBinderId, setActiveBinderId] = useState(null)   // tracks selected binder in Dashboard
-  const [wishlistTab,    setWishlistTab]    = useState('collection') // which tab opens when navigating to wishlist
+  const [wishlistTab,    setWishlistTab]    = useState(() => pathToState(location.pathname, location.search).tab)
   const [collectionIds,       setCollectionIds]       = useState(new Set()) // all card IDs in wishlists table
   const [ownedIds,            setOwnedIds]            = useState(new Set()) // subset where owned = true
   const [collectionLanguages, setCollectionLanguages] = useState(new Map()) // card_id → string[]
   const [themeMode,      setThemeMode]      = useState(() => getStoredTheme())
 
-  useEffect(() => { applyTheme(themeMode) }, [themeMode])
+  // useLayoutEffect fires synchronously before paint so CSS vars (data-theme)
+  // are applied in the same frame as the React render — prevents the one-frame
+  // mismatch where inline styles reflect the new theme but the body background
+  // still shows the old theme, which "blocked out" gradient text like "Welcome!".
+  useLayoutEffect(() => { applyTheme(themeMode) }, [themeMode])
 
-  // ── URL param: ?view=collection (from "Return to Poképop" on public profiles) ─
+  // ── URL ↔ state bidirectional sync ─────────────────────────────────────────
+  // Sync app state → URL whenever the three routing dimensions change.
+  // We compare against the current pathname+search so we don't call navigate
+  // when the state change was itself triggered by a URL change (e.g. back/forward).
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search)
-    if (params.get('view') === 'collection') {
-      setActiveVibe('wishlist')
-      // Clean the URL without a full reload
-      window.history.replaceState({}, '', window.location.pathname)
+    const target  = stateToPath(activeVibe, wishlistTab, setQuery)
+    const current = location.pathname + location.search
+    if (target !== current) {
+      navigate(target, { replace: true })
     }
-  }, [])
+  // location is intentionally NOT in deps — we read it for comparison but don't
+  // want to re-run this effect when location changes (that's the other effect's job).
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeVibe, wishlistTab, setQuery, navigate])
+
+  // Sync URL → state when the user navigates via browser back/forward.
+  useEffect(() => {
+    const { vibe, tab, setQuery: sq } = pathToState(location.pathname, location.search)
+    setActiveVibe(vibe)
+    setWishlistTab(tab)
+    setSetQuery(sq)
+  }, [location.pathname, location.search])
 
   // ── Auth + profile ──────────────────────────────────────────────────────────
   useEffect(() => {
@@ -303,6 +357,7 @@ export default function App() {
                     onOpenScanner={() => { setActiveVibe('scanner'); setSetQuery(null) }}
                     onBinderChange={setActiveBinderId}
                     initialTab={wishlistTab}
+                    onTabChange={setWishlistTab}
                     onCardRemoved={handleCardRemoved}
                     onOwnedChanged={handleOwnedChanged}
                     onCardAdded={handleCardAdded}

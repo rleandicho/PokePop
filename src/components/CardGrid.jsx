@@ -879,6 +879,16 @@ function CardModal({ card, user, onToast, onClose, saveCard, collectionIds, owne
           ) : (
             <p className="text-center text-xs text-gray-400">Login to save cards to your Wishlist & Collection 💖</p>
           )}
+          <button
+            onClick={() => {
+              const url = `${window.location.origin}/card/${card.id}`
+              navigator.clipboard.writeText(url).then(() => onToast('Card link copied! 🔗'))
+            }}
+            className="block w-full text-center border border-gray-200 text-gray-500 hover:bg-gray-50
+                       font-semibold py-2 rounded-2xl transition-colors text-sm"
+          >
+            🔗 Copy card link
+          </button>
           {card.tcgplayer?.url && (
             <a href={card.tcgplayer.url} target="_blank" rel="noreferrer"
                className="block text-center bg-pink-400 hover:bg-pink-500 text-white
@@ -1214,9 +1224,9 @@ function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, onClearF
         setTotalPages(lsCached.totalPages ?? 0)
         setLoading(false)
       } else {
-        // Full cache miss: fresh fetch with the correct API ordering for this sort
+        // Full cache miss: keep previous cards visible while the fetch runs so
+        // the grid never flashes blank. setLoading(true) is called inside fetchCards.
         setPage(1)
-        setCards([])
         fetchCards(activeVibe, effectiveSearch, setQuery, sortBy, 1, langFilter)
       }
     }
