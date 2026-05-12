@@ -5,6 +5,7 @@ import { supabase } from '../lib/supabase'
 import { fetchAllRows } from '../lib/fetchAllRows'
 import BinderView from './BinderView'
 import PackLogModal from './PackLogModal'
+import TradeLogModal from './TradeLogModal'
 
 // ─── Pagination ───────────────────────────────────────────────────────────────
 const ITEMS_PER_PAGE = 20
@@ -1013,10 +1014,6 @@ function WishlistCardModal({
   const [tradeSaving,   setTradeSaving]   = useState(false)
   const [movingBack,    setMovingBack]    = useState(false)
   const [suggestedPrice, setSuggestedPrice] = useState(null)
-  const [tradeReceived,     setTradeReceived]     = useState(false)   // step after trade confirms
-  const [receivedCards,     setReceivedCards]     = useState([''])    // card name inputs
-  const [addingReceived,    setAddingReceived]    = useState(false)
-  const [addResults,        setAddResults]        = useState(null)    // [{name, found, cardName}]
 
   useEffect(() => {
     supabase.rpc('get_suggested_price', { p_card_id: item.card_id }).then(({ data }) => {
@@ -1081,45 +1078,7 @@ function WishlistCardModal({
     setTradeSaving(false)
     onTraded?.(item)
     onToast?.('Card traded! 🤝')
-    // Transition to the "what did you get?" step instead of closing immediately
-    setTradeReceived(true)
-    setTradeConfirm(false)
-  }
-
-  async function handleAddReceivedCards() {
-    const names = receivedCards.map(n => n.trim()).filter(Boolean)
-    if (!names.length) { onClose(); return }
-    setAddingReceived(true)
-    const results = []
-    for (const name of names) {
-      const { data } = await supabase
-        .from('tcg_cards_with_price')
-        .select('id, name')
-        .ilike('name', name)
-        .limit(1)
-        .maybeSingle()
-      if (data) {
-        await supabase.from('wishlists').upsert({
-          user_id:  user.id,
-          card_id:  data.id,
-          owned:    true,
-          quantity: 1,
-          language: 'english',
-          edition:  '',
-        }, { onConflict: 'user_id,card_id,edition,language' })
-        results.push({ input: name, found: true, cardName: data.name })
-      } else {
-        results.push({ input: name, found: false, cardName: null })
-      }
-    }
-    setAddingReceived(false)
-    setAddResults(results)
-    const allFound = results.every(r => r.found)
-    if (allFound) {
-      onToast?.(`${results.length} card${results.length === 1 ? '' : 's'} added to collection! 📦`)
-      onClose()
-    }
-    // If some not found, show results so user can see what was/wasn't added
+    onClose()
   }
 
   async function handleMoveToWishlist() {
@@ -1389,73 +1348,8 @@ function WishlistCardModal({
           </div>
         )}
 
-        {/* ── Trade received step ──────────────────────────────────── */}
-        {tradeReceived && (
-          <div className="flex flex-col gap-3 p-4 bg-sky-50 rounded-2xl border border-sky-200 mb-2">
-            <div>
-              <p className="text-sm font-bold text-sky-700">What did you receive? 📦</p>
-              <p className="text-[11px] text-sky-500 mt-0.5">
-                Enter card names below and we'll auto-add them to your collection.
-              </p>
-            </div>
-
-            <div className="flex flex-col gap-2">
-              {receivedCards.map((name, i) => (
-                <div key={i} className="flex gap-1.5 items-center">
-                  <input
-                    type="text"
-                    value={name}
-                    onChange={e => setReceivedCards(prev => prev.map((v, idx) => idx === i ? e.target.value : v))}
-                    placeholder={`Card name ${i + 1}…`}
-                    className="flex-1 text-sm border border-sky-200 rounded-xl px-3 py-1.5
-                               focus:outline-none focus:border-sky-400 bg-white"
-                  />
-                  {receivedCards.length > 1 && (
-                    <button
-                      onClick={() => setReceivedCards(prev => prev.filter((_, idx) => idx !== i))}
-                      className="text-gray-300 hover:text-red-400 transition-colors text-sm font-bold leading-none w-6 h-6 flex items-center justify-center"
-                    >✕</button>
-                  )}
-                </div>
-              ))}
-
-              <button
-                onClick={() => setReceivedCards(prev => [...prev, ''])}
-                className="text-xs text-sky-500 hover:text-sky-700 font-semibold self-start"
-              >
-                + Add another card
-              </button>
-            </div>
-
-            {/* Show add results if some names weren't found */}
-            {addResults && (
-              <div className="text-xs space-y-1">
-                {addResults.map((r, i) => (
-                  <p key={i} className={r.found ? 'text-green-600' : 'text-red-400'}>
-                    {r.found ? `✓ ${r.cardName}` : `✗ "${r.input}" not found — check spelling`}
-                  </p>
-                ))}
-              </div>
-            )}
-
-            <div className="flex gap-2">
-              <button
-                onClick={onClose}
-                className="flex-1 border border-gray-200 text-gray-400 hover:bg-gray-50
-                           font-semibold py-2 rounded-xl text-sm transition-colors"
-              >Skip</button>
-              <button
-                onClick={handleAddReceivedCards}
-                disabled={addingReceived || !receivedCards.some(n => n.trim())}
-                className="flex-1 bg-sky-400 hover:bg-sky-500 text-white
-                           font-semibold py-2 rounded-xl text-sm transition-colors disabled:opacity-60"
-              >{addingReceived ? 'Adding…' : 'Add to Collection'}</button>
-            </div>
-          </div>
-        )}
-
         {/* ── External links ── */}
-        {!tradeReceived && <div className="flex flex-col gap-2">
+        <div className="flex flex-col gap-2">
           <a
             href={`/card/${item.card_id}`}
             className="block text-center border border-pink-200 text-pink-500 hover:bg-pink-50
@@ -1481,7 +1375,7 @@ function WishlistCardModal({
               eBay
             </a>
           </div>
-        </div>}
+        </div>
       </motion.div>
     </motion.div>
   )
@@ -1566,6 +1460,7 @@ export default function WishlistDashboard({ user, profile, onToast, onGoExplore,
   const [tileTagInputs, setTileTagInputs] = useState({})    // rowId → current inline tag input value
   const [soldModal,     setSoldModal]     = useState(null)  // item object when active
   const [tradeModal,    setTradeModal]    = useState(null)  // item object when active
+  const [tradeLogItem,  setTradeLogItem]  = useState(null)  // opens TradeLogModal after a trade
   const [soldPrice,     setSoldPrice]     = useState('')
   const [salesTotal,    setSalesTotal]    = useState(0)
   const [tradeCount,    setTradeCount]    = useState(0)
@@ -2298,6 +2193,8 @@ export default function WishlistDashboard({ user, profile, onToast, onGoExplore,
     setTradeCount(prev => prev + 1)
     onCardRemoved?.(item.card_id)
     onToast('Card traded! 🤝')
+    // Open the trade log modal so the user can record what they received
+    setTradeLogItem(item)
   }
 
   async function updateQuantity(rowId, cardId, delta) {
@@ -4494,6 +4391,8 @@ export default function WishlistDashboard({ user, profile, onToast, onGoExplore,
                 onCardRemoved?.(item.card_id)
               }
               setTradeCount(prev => prev + 1)
+              setSelectedItem(null)
+              setTradeLogItem(item)
             }}
           />
         )}
@@ -4852,6 +4751,18 @@ export default function WishlistDashboard({ user, profile, onToast, onGoExplore,
               </div>
             </motion.div>
           </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── Trade Log Modal ─────────────────────────────────────────── */}
+      <AnimatePresence>
+        {tradeLogItem && (
+          <TradeLogModal
+            user={user}
+            tradedItem={tradeLogItem}
+            onClose={() => setTradeLogItem(null)}
+            onToast={onToast}
+          />
         )}
       </AnimatePresence>
     </>
