@@ -449,10 +449,6 @@ function GradientEm({ T, children }) {
   return (
     <em style={{
       fontStyle: 'italic',
-      // inline-block so padding applies — prevents WebkitBackgroundClip from cropping
-      // ascenders/descenders when the gradient bounding box aligns with the line box
-      display: 'inline-block',
-      padding: '0.05em 0.02em',
       background: `linear-gradient(135deg, ${T.brandSoft}, ${T.brand})`,
       WebkitBackgroundClip: 'text', backgroundClip: 'text',
       WebkitTextFillColor: 'transparent',
