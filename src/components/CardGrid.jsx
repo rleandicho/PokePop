@@ -55,7 +55,8 @@ function buildCacheKey(vibe, search, setQuery, sort, langFilter) {
 // Persists non-price-sort results across page refreshes.
 // Price sorts are skipped — too many rows for reliable localStorage storage.
 // v2: card data now sourced from Supabase (different shape — invalidates v1 entries)
-const LS_PREFIX = 'pokepop_cards_v3|'
+// v4: pokellector image URLs — busts any cached entries with stale Limitless CDN URLs
+const LS_PREFIX = 'pokepop_cards_v4|'
 const LS_TTL    = 60 * 60 * 1000  // 1 hour — card data rarely changes within a session
 
 function lsGet(key) {
