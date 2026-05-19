@@ -62,7 +62,8 @@ function useCountUp(target, duration = 1200) {
 }
 
 // ─── Stat card ────────────────────────────────────────────────────────────────
-function StatCard({ label, value, prefix = '', suffix = '', decimals = 0, color = 'pink', icon, onClick, subValue, subLabel }) {
+// trend: { up: bool, pct: string, dollar: string } — shows 24h direction arrow
+function StatCard({ label, value, prefix = '', suffix = '', decimals = 0, color = 'pink', icon, onClick, subValue, subLabel, trend }) {
   const animated = useCountUp(value)
   const display  = decimals > 0 ? animated.toFixed(decimals) : Math.round(animated).toLocaleString()
 
@@ -89,6 +90,11 @@ function StatCard({ label, value, prefix = '', suffix = '', decimals = 0, color 
       <p className="text-lg font-bold text-gray-700 leading-tight">
         {prefix}{display}{suffix}
       </p>
+      {trend && (
+        <p className={`text-[10px] font-semibold mt-0.5 leading-tight ${trend.up ? 'text-emerald-500' : 'text-rose-500'}`}>
+          {trend.up ? '▲' : '▼'} {trend.pct}% · {trend.up ? '+' : '-'}${trend.dollar}
+        </p>
+      )}
       {subValue != null && (
         <p className="text-[10px] text-gray-500 mt-0.5 leading-tight">
           {subLabel && <span className="text-gray-400">{subLabel}: </span>}
@@ -1477,6 +1483,28 @@ export default function WishlistDashboard({ user, profile, onToast, onGoExplore,
   const [historyCard,    setHistoryCard]    = useState(null)   // card preview from pack history
   const [tradeDropdownId, setTradeDropdownId] = useState(null) // rowId with trade/sale dropdown open
   const [showSocialsMenu, setShowSocialsMenu] = useState(false) // mobile Socials dropdown open
+  // Edit modals for logged actions
+  const [editingPack,       setEditingPack]       = useState(null) // pack_log row being edited
+  const [editingSale,       setEditingSale]       = useState(null) // card_sale row being edited
+  const [editingTrade,      setEditingTrade]      = useState(null) // card_trade row being edited
+  const [editPackSearch,    setEditPackSearch]    = useState('')
+  const [editPackResults,   setEditPackResults]   = useState([])
+  const [editPackNewCards,  setEditPackNewCards]  = useState([])
+  const [editPackSearching, setEditPackSearching] = useState(false)
+  const editPackDebounce = useRef(null)
+  // Delete confirmations
+  const [confirmDeletePack,  setConfirmDeletePack]  = useState(null) // logId pending delete
+  const [confirmDeleteTrade, setConfirmDeleteTrade] = useState(null) // tradeRecord pending delete
+  // Set collection view
+  const [setCollectionOpen,  setSetCollectionOpen]  = useState(false)
+  const [setCollectionData,  setSetCollectionData]  = useState([])   // [{set, owned, total}]
+  const [setCollectionLoading, setSetCollectionLoading] = useState(false)
+  const [setCollectionTab,   setSetCollectionTab]   = useState('english') // 'english' | 'foreign'
+  // Collection value trend + chart
+  const [valueSnapshots,   setValueSnapshots]   = useState([])
+  const [valueTrend,       setValueTrend]       = useState(null) // {up, pct, dollar}
+  const [valueChartOpen,   setValueChartOpen]   = useState(false)
+  const snapshotTakenRef = useRef(false)
   const [feedItems,       setFeedItems]       = useState([])    // social feed activity
   const [feedLoading,     setFeedLoading]     = useState(false)
 
@@ -1495,6 +1523,25 @@ export default function WishlistDashboard({ user, profile, onToast, onGoExplore,
     document.addEventListener('click', close)
     return () => document.removeEventListener('click', close)
   }, [showSocialsMenu])
+
+  // Card search for Edit Pack Log modal
+  useEffect(() => {
+    if (!editPackSearch.trim()) { setEditPackResults([]); return }
+    clearTimeout(editPackDebounce.current)
+    editPackDebounce.current = setTimeout(async () => {
+      setEditPackSearching(true)
+      try {
+        const words = editPackSearch.trim().split(/\s+/).filter(Boolean)
+        let q = supabase.from('tcg_cards_with_price').select('id, name, image_small, set_name, best_market_price')
+        for (const w of words) q = q.or(`name.ilike.%${w}%,english_name.ilike.%${w}%`)
+        q = q.order('release_date', { ascending: false }).limit(15)
+        const { data } = await q
+        setEditPackResults(data ?? [])
+      } catch { setEditPackResults([]) }
+      finally { setEditPackSearching(false) }
+    }, 350)
+    return () => clearTimeout(editPackDebounce.current)
+  }, [editPackSearch])
 
   // Notify App whenever the active binder changes (so CardGrid can route new cards here)
   useEffect(() => { onBinderChange?.(selectedBinder?.id ?? null) }, [selectedBinder])
@@ -1777,6 +1824,45 @@ export default function WishlistDashboard({ user, profile, onToast, onGoExplore,
     [wishlistItemsList]
   )
 
+  // Packs Deep: total individual packs opened across all logged sessions
+  const totalPacksOpened = useMemo(
+    () => packLogs.reduce((sum, log) => {
+      if (log.packs?.length > 0) return sum + log.packs.reduce((s, p) => s + (p.qty ?? 1), 0)
+      return sum + 1 // legacy format without packs array
+    }, 0),
+    [packLogs]
+  )
+
+  // ── Collection value snapshot — once per session after value is non-zero ─────
+  useEffect(() => {
+    if (!user || collectionValue <= 0 || snapshotTakenRef.current) return
+    snapshotTakenRef.current = true
+    const today = new Date().toISOString().split('T')[0]
+    supabase.from('collection_value_snapshots')
+      .upsert({ user_id: user.id, snapshot_date: today, total_value: collectionValue },
+               { onConflict: 'user_id,snapshot_date' })
+      .then(() => {
+        // Fetch snapshots for trend + chart
+        supabase
+          .from('collection_value_snapshots')
+          .select('snapshot_date, total_value')
+          .eq('user_id', user.id)
+          .order('snapshot_date', { ascending: true })
+          .limit(90)
+          .then(({ data }) => {
+            const snaps = data ?? []
+            setValueSnapshots(snaps)
+            if (snaps.length >= 2) {
+              const last = snaps[snaps.length - 1].total_value
+              const prev = snaps[snaps.length - 2].total_value
+              const diff = last - prev
+              const pct  = prev > 0 ? Math.abs(diff / prev * 100).toFixed(1) : '0.0'
+              setValueTrend({ up: diff >= 0, dollar: Math.abs(diff).toFixed(2), pct })
+            }
+          })
+      })
+  }, [user, collectionValue]) // eslint-disable-line react-hooks/exhaustive-deps
+
   // Search-filtered + sorted views
   // Items are fetched created_at DESC (newest first); 'oldest' just reverses that slice.
   // All unique tags across all wishlist/collection items (for tag filter pills)
@@ -1907,6 +1993,7 @@ export default function WishlistDashboard({ user, profile, onToast, onGoExplore,
 
   async function saveCondition(rowId, condition) {
     setItems(prev => prev.map(i => i.id === rowId ? { ...i, condition } : i))
+    setSelectedItem(prev => prev?.id === rowId ? { ...prev, condition } : prev)
     await supabase.from('wishlists').update({ condition: condition || null }).eq('id', rowId)
   }
 
@@ -1963,6 +2050,7 @@ export default function WishlistDashboard({ user, profile, onToast, onGoExplore,
     await supabase.from('card_trades').delete().eq('id', id)
     setTradesHistory(prev => prev.filter(r => r.id !== id))
     setTradeCount(prev => Math.max(0, prev - 1))
+    setConfirmDeleteTrade(null)
     // Restore card back to collection
     if (record) {
       const { data: restored } = await supabase
@@ -1984,6 +2072,67 @@ export default function WishlistDashboard({ user, profile, onToast, onGoExplore,
         onToast('Card restored to Collection ✨')
       }
     }
+  }
+
+  // ── Edit logged actions ──────────────────────────────────────────────────────
+  async function saveEditPack(id, changes, originalPrice, newCards) {
+    // If there are new cards to add to the collection, upsert them first
+    if (newCards?.length > 0) {
+      const cardMap = new Map()
+      for (const c of newCards) {
+        if (!cardMap.has(c.id)) cardMap.set(c.id, { ...c, count: 0 })
+        cardMap.get(c.id).count++
+      }
+      const cardIds = [...cardMap.keys()]
+      const { data: existing } = await supabase
+        .from('wishlists')
+        .select('card_id, quantity')
+        .eq('user_id', user.id)
+        .in('card_id', cardIds)
+        .eq('owned', true)
+      const existingQty = new Map((existing ?? []).map(r => [r.card_id, r.quantity ?? 1]))
+      const rows = [...cardMap.values()].map(c => ({
+        user_id:  user.id,
+        card_id:  c.id,
+        name:     c.name,
+        image:    c.image,
+        owned:    true,
+        edition:  'unspecified',
+        language: 'english',
+        market_price: c.market_price || null,
+        quantity: (existingQty.get(c.id) ?? 0) + c.count,
+      }))
+      await supabase.from('wishlists').upsert(rows, { onConflict: 'user_id,card_id,edition,language' })
+      newCards.forEach(c => onCardAdded?.(c.id, true, 'english'))
+      // Merge new cards into the log's cards array
+      const current = packLogs.find(p => p.id === id)
+      const merged = [...(current?.cards ?? []), ...newCards.map(c => ({ id: c.id, name: c.name, image: c.image, market_price: c.market_price }))]
+      changes = { ...changes, cards: merged }
+    }
+    await supabase.from('pack_logs').update(changes).eq('id', id)
+    setPackLogs(prev => prev.map(p => p.id === id ? { ...p, ...changes } : p))
+    if (changes.pack_price != null) {
+      setPackInvested(prev => Math.max(0, prev - (originalPrice ?? 0) + changes.pack_price))
+    }
+    setEditingPack(null)
+    onToast('Pack log updated ✅')
+  }
+
+  async function saveEditSale(id, changes, originalPrice) {
+    await supabase.from('card_sales').update(changes).eq('id', id)
+    setSalesHistory(prev => prev.map(s => s.id === id ? { ...s, ...changes } : s))
+    if (changes.sale_price != null) {
+      setSalesTotal(prev => Math.max(0, prev - (originalPrice ?? 0) + changes.sale_price))
+    }
+    setEditingSale(null)
+    onToast('Sale record updated ✅')
+  }
+
+  async function saveEditTrade(id, changes) {
+    await supabase.from('card_trades').update(changes).eq('id', id)
+    setTradesHistory(prev => prev.map(t => t.id === id ? { ...t, ...changes } : t))
+    setEditingTrade(null)
+    onToast('Trade record updated ✅')
   }
 
   async function togglePublic() {
@@ -2155,6 +2304,39 @@ export default function WishlistDashboard({ user, profile, onToast, onGoExplore,
       setPackInvested(next.reduce((s, l) => s + (l.pack_price || 0), 0))
       return next
     })
+    setConfirmDeletePack(null)
+  }
+
+  async function loadSetCollection() {
+    setSetCollectionLoading(true)
+    // Get all sets ordered by release date
+    const { data: sets } = await supabase
+      .from('tcg_sets')
+      .select('id, name, series, release_date, total, printed_total, logo_url')
+      .order('release_date', { ascending: false })
+    // Get owned card_ids for this user
+    const { data: ownedRows } = await supabase
+      .from('wishlists')
+      .select('card_id')
+      .eq('user_id', user.id)
+      .eq('owned', true)
+    const cardIds = [...new Set((ownedRows ?? []).map(r => r.card_id).filter(Boolean))]
+    // Fetch set_ids for those cards in batches of 500
+    const owned = {}
+    for (let i = 0; i < cardIds.length; i += 500) {
+      const { data: cardRows } = await supabase
+        .from('tcg_cards')
+        .select('id, set_id')
+        .in('id', cardIds.slice(i, i + 500))
+      for (const c of cardRows ?? []) {
+        if (c.set_id) owned[c.set_id] = (owned[c.set_id] ?? 0) + 1
+      }
+    }
+    const enriched = (sets ?? [])
+      .map(s => ({ ...s, owned: owned[s.id] ?? 0, total: s.printed_total || s.total || 0 }))
+      .filter(s => s.total > 0)
+    setSetCollectionData(enriched)
+    setSetCollectionLoading(false)
   }
 
   async function handleSold(item, price) {
@@ -3452,10 +3634,11 @@ export default function WishlistDashboard({ user, profile, onToast, onGoExplore,
       {/* ── Shared stats + HighRollers (collection & wishlist tabs only) ── */}
       {(activeTab === 'collection' || activeTab === 'wishlist') && items.length > 0 && <>
         <div className="grid grid-cols-3 gap-3 px-4 pb-4">
-          <StatCard icon="📦" label="Collection Value"    value={collectionValue} color="mint"  prefix="$" decimals={2} />
-          <StatCard icon="✨" label="Wishlist Value"       value={wishlistValue}   color="lilac" prefix="$" decimals={2} />
-          <StatCard icon="🎴" label="Total Invested"       value={packInvested}    color="pink"  prefix="$" decimals={2} onClick={() => setPackLogOpen(true)}
-                    subValue={packCount > 0 ? `${packCount} pack${packCount === 1 ? '' : 's'}` : null} subLabel="Logged" />
+          <StatCard icon="📦" label="Collection Value"    value={collectionValue} color="mint"  prefix="$" decimals={2}
+                    onClick={() => setValueChartOpen(true)} trend={valueTrend} />
+          <StatCard icon="🎴" label="Packs Deep"            value={totalPacksOpened} color="lilac" suffix=" packs" decimals={0}
+                    onClick={() => { setSetCollectionOpen(true); setSetCollectionTab('english'); loadSetCollection() }} />
+          <StatCard icon="💸" label="Total Invested"       value={packInvested}    color="pink"  prefix="$" decimals={2} onClick={() => setPackLogOpen(true)} />
           <StatCard icon="✅" label="Progress"             value={totalCount > 0 ? Math.round((ownedCount / totalCount) * 100) : 0} color="lilac" suffix="%" />
           <StatCard icon="💰" label="Total Sales"          value={salesTotal}      color="mint"  prefix="$" decimals={2} onClick={openSalesHistory} />
           <StatCard icon="🤝" label="Cards Traded"         value={tradeCount}      color="pink"  onClick={openTradesHistory} />
@@ -4421,7 +4604,7 @@ export default function WishlistDashboard({ user, profile, onToast, onGoExplore,
               ) : (
                 <div className="overflow-y-auto space-y-2 pr-1">
                   {salesHistory.map(s => (
-                    <div key={s.id} className="flex items-center gap-3 p-2.5 bg-amber-50 rounded-xl border border-amber-100">
+                    <div key={s.id} className="flex items-center gap-3 p-2.5 bg-amber-50 rounded-xl border border-amber-100 group relative">
                       {s.card_image && (
                         <img src={s.card_image} alt={s.card_name} className="w-10 rounded-lg flex-shrink-0 shadow-sm"
                              onError={e => { e.currentTarget.src = CARD_BACK }} />
@@ -4431,11 +4614,18 @@ export default function WishlistDashboard({ user, profile, onToast, onGoExplore,
                         <p className="text-xs text-amber-600 font-semibold">${Number(s.sale_price).toFixed(2)}</p>
                         <p className="text-[10px] text-gray-400">{new Date(s.sold_at).toLocaleDateString()}</p>
                       </div>
-                      <button
-                        onClick={() => deleteSaleRecord(s.id, Number(s.sale_price))}
-                        className="w-6 h-6 flex-shrink-0 flex items-center justify-center rounded-full bg-red-100 text-red-400 hover:bg-red-200 text-xs"
-                        title="Remove record"
-                      >✕</button>
+                      <div className="flex gap-1 flex-shrink-0">
+                        <button
+                          onClick={() => setEditingSale({ ...s, _originalPrice: s.sale_price ?? 0 })}
+                          className="w-6 h-6 flex items-center justify-center rounded-full bg-sky-100 text-sky-400 hover:bg-sky-200 text-xs"
+                          title="Edit record"
+                        >✎</button>
+                        <button
+                          onClick={() => deleteSaleRecord(s.id, Number(s.sale_price))}
+                          className="w-6 h-6 flex items-center justify-center rounded-full bg-red-100 text-red-400 hover:bg-red-200 text-xs"
+                          title="Remove record"
+                        >✕</button>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -4468,7 +4658,7 @@ export default function WishlistDashboard({ user, profile, onToast, onGoExplore,
               ) : (
                 <div className="overflow-y-auto space-y-2 pr-1">
                   {tradesHistory.map(t => (
-                    <div key={t.id} className="flex items-center gap-3 p-2.5 bg-sky-50 rounded-xl border border-sky-100">
+                    <div key={t.id} className="flex items-center gap-3 p-2.5 bg-sky-50 rounded-xl border border-sky-100 group relative">
                       {t.card_image && (
                         <img src={t.card_image} alt={t.card_name} className="w-10 rounded-lg flex-shrink-0 shadow-sm"
                              onError={e => { e.currentTarget.src = CARD_BACK }} />
@@ -4477,11 +4667,18 @@ export default function WishlistDashboard({ user, profile, onToast, onGoExplore,
                         <p className="text-xs font-bold text-gray-700 truncate">{t.card_name}</p>
                         <p className="text-[10px] text-gray-400">{new Date(t.traded_at).toLocaleDateString()}</p>
                       </div>
-                      <button
-                        onClick={() => deleteTradeRecord(t.id)}
-                        className="w-6 h-6 flex-shrink-0 flex items-center justify-center rounded-full bg-red-100 text-red-400 hover:bg-red-200 text-xs"
-                        title="Remove record"
-                      >✕</button>
+                      <div className="flex gap-1 flex-shrink-0">
+                        <button
+                          onClick={() => setEditingTrade({ ...t })}
+                          className="w-6 h-6 flex items-center justify-center rounded-full bg-violet-100 text-violet-400 hover:bg-violet-200 text-xs"
+                          title="Edit record"
+                        >✎</button>
+                        <button
+                          onClick={() => setConfirmDeleteTrade(t)}
+                          className="w-6 h-6 flex items-center justify-center rounded-full bg-red-100 text-red-400 hover:bg-red-200 text-xs"
+                          title="Remove record"
+                        >✕</button>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -4583,25 +4780,57 @@ export default function WishlistDashboard({ user, profile, onToast, onGoExplore,
           >
             <motion.div
               initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }}
-              className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-md max-h-[80vh] flex flex-col"
+              className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl p-6 w-full max-w-md max-h-[80vh] flex flex-col"
               onClick={e => e.stopPropagation()}
             >
               <div className="flex items-center justify-between mb-4">
-                <h2 className="text-base font-bold text-gray-700">🎴 Pack History</h2>
+                <h2 className="text-base font-bold text-gray-700 dark:text-gray-100">🎴 Pack History</h2>
                 <button onClick={() => setPackLogOpen(false)} className="text-gray-400 hover:text-gray-600 text-xl leading-none">×</button>
               </div>
-              <div className="mb-3 text-sm text-gray-500">
+              <div className="mb-3 text-sm text-gray-500 dark:text-gray-400">
                 Total invested: <span className="font-bold text-pink-500">${packInvested.toFixed(2)}</span>
               </div>
+              {/* Packs-per-set breakdown */}
+              {packLogs.length > 0 && (() => {
+                const setTotals = {}
+                packLogs.forEach(log => {
+                  const rows = log.packs?.length > 0 ? log.packs : (log.pack_name ? [{ name: log.pack_name, qty: 1 }] : [])
+                  rows.forEach(p => {
+                    if (!p.name) return
+                    setTotals[p.name] = (setTotals[p.name] ?? 0) + (p.qty ?? 1)
+                  })
+                })
+                const entries = Object.entries(setTotals).sort((a, b) => b[1] - a[1])
+                if (!entries.length) return null
+                return (
+                  <div className="mb-3 border border-gray-200 dark:border-gray-700 rounded-xl p-3 bg-gray-50 dark:bg-gray-800">
+                    <div className="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2">Packs opened by set</div>
+                    <div className="space-y-1 max-h-28 overflow-y-auto">
+                      {entries.map(([name, count]) => (
+                        <div key={name} className="flex items-center gap-2">
+                          <div className="flex-1 text-xs text-gray-700 dark:text-gray-200 truncate">{name}</div>
+                          <div className="text-xs font-bold text-pink-500 dark:text-pink-400 tabular-nums">{count}</div>
+                          <div className="w-20 h-1.5 bg-gray-200 dark:bg-gray-600 rounded-full overflow-hidden">
+                            <div
+                              className="h-full bg-gradient-to-r from-pink-400 to-violet-400 rounded-full"
+                              style={{ width: `${Math.min(100, (count / entries[0][1]) * 100)}%` }}
+                            />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )
+              })()}
               {packLogs.length === 0 ? (
                 <p className="text-sm text-gray-400 text-center py-8">No packs logged yet.<br/>Hit "Log a Pack" to start tracking!</p>
               ) : (
                 <div className="overflow-y-auto flex-1 space-y-2 pr-1">
                   {packLogs.map(log => (
-                    <div key={log.id} className="border border-gray-100 rounded-xl p-3 flex items-start gap-3 group relative">
+                    <div key={log.id} className="border border-gray-100 dark:border-gray-700 rounded-xl p-3 flex items-start gap-3">
                       <div className="text-2xl">🎴</div>
                       <div className="flex-1 min-w-0">
-                        <div className="font-semibold text-gray-700 text-sm">
+                        <div className="font-semibold text-gray-700 dark:text-gray-100 text-sm">
                         {(log.packs?.length > 0
                           ? log.packs.map(p => p.name).filter(Boolean).join(' + ')
                           : log.pack_name) || '—'}
@@ -4633,15 +4862,19 @@ export default function WishlistDashboard({ user, profile, onToast, onGoExplore,
                           </div>
                         )}
                       </div>
-                      {/* Delete button — visible on hover */}
-                      <button
-                        onClick={() => handleDeletePack(log.id)}
-                        className="absolute top-2 right-2 w-6 h-6 rounded-full flex items-center justify-center
-                                   text-gray-300 hover:text-rose-400 hover:bg-rose-50 transition opacity-0 group-hover:opacity-100"
-                        title="Delete this pack log"
-                      >
-                        ×
-                      </button>
+                      {/* Edit / Delete buttons — always visible */}
+                      <div className="flex gap-1 flex-shrink-0 ml-1">
+                        <button
+                          onClick={() => { setEditingPack({ ...log, _originalPrice: log.pack_price ?? 0 }); setEditPackNewCards([]); setEditPackSearch(''); setEditPackResults([]) }}
+                          className="w-7 h-7 rounded-full flex items-center justify-center text-gray-300 hover:text-sky-400 hover:bg-sky-50 transition text-sm"
+                          title="Edit this pack log"
+                        >✎</button>
+                        <button
+                          onClick={() => setConfirmDeletePack(log.id)}
+                          className="w-7 h-7 rounded-full flex items-center justify-center text-gray-300 hover:text-rose-400 hover:bg-rose-50 transition text-base"
+                          title="Delete this pack log"
+                        >×</button>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -4711,7 +4944,10 @@ export default function WishlistDashboard({ user, profile, onToast, onGoExplore,
             setPackLogs(prev => [log, ...prev])
             setPackInvested(prev => prev + (log.pack_price || 0))
           }}
-          onCardsSaved={cards => cards.forEach(c => onCardAdded?.(c.id, true, 'english'))}
+          onCardsSaved={cards => {
+            cards.forEach(c => onCardAdded?.(c.id, true, 'english'))
+            fetchWishlist()
+          }}
         />
       )}
 
@@ -4762,7 +4998,461 @@ export default function WishlistDashboard({ user, profile, onToast, onGoExplore,
             tradedItem={tradeLogItem}
             onClose={() => setTradeLogItem(null)}
             onToast={onToast}
+            onConfirmed={fetchWishlist}
           />
+        )}
+      </AnimatePresence>
+
+      {/* ── Edit Pack Log Modal ──────────────────────────────────────── */}
+      <AnimatePresence>
+        {editingPack && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 px-4"
+            onClick={() => setEditingPack(null)}
+          >
+            <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-white rounded-2xl shadow-2xl p-5 w-full max-w-md max-h-[90vh] flex flex-col"
+              onClick={e => e.stopPropagation()}
+            >
+              <h2 className="text-base font-bold text-gray-700 mb-4">✎ Edit Pack Log</h2>
+              <div className="overflow-y-auto flex-1 space-y-3 pr-0.5">
+
+                {/* Price + Store */}
+                <div className="flex gap-3">
+                  <div className="flex-1">
+                    <label className="block text-xs font-semibold text-gray-500 mb-1">Amount Paid ($)</label>
+                    <input type="number" min="0" step="0.01"
+                      value={editingPack.pack_price ?? ''}
+                      onChange={e => setEditingPack(p => ({ ...p, pack_price: parseFloat(e.target.value) || 0 }))}
+                      className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-pink-300"
+                    />
+                  </div>
+                  <div className="flex-1">
+                    <label className="block text-xs font-semibold text-gray-500 mb-1">Store / Location</label>
+                    <input type="text"
+                      value={editingPack.store ?? ''}
+                      onChange={e => setEditingPack(p => ({ ...p, store: e.target.value }))}
+                      placeholder="Target, eBay…"
+                      className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-pink-300"
+                    />
+                  </div>
+                </div>
+
+                {/* Date */}
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 mb-1">Date Opened</label>
+                  <input type="date"
+                    value={editingPack.opened_at ? new Date(editingPack.opened_at).toISOString().split('T')[0] : ''}
+                    onChange={e => setEditingPack(p => ({ ...p, opened_at: e.target.value }))}
+                    className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-pink-300"
+                  />
+                </div>
+
+                {/* Existing cards */}
+                {(editingPack.cards ?? []).length > 0 && (
+                  <div>
+                    <div className="text-xs font-semibold text-gray-500 mb-1">Cards already logged ({editingPack.cards.length})</div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {editingPack.cards.map((c, i) => (
+                        <img key={i} src={c.image} alt={c.name} title={c.name}
+                          className="h-12 rounded-lg shadow-sm"
+                          onError={e => { e.currentTarget.src = CARD_BACK }} />
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Add missed cards */}
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 mb-1">Add missed cards</label>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      value={editPackSearch}
+                      onChange={e => setEditPackSearch(e.target.value)}
+                      placeholder="Search card name…"
+                      className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-pink-300"
+                    />
+                    {editPackSearching && (
+                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 animate-pulse">searching…</span>
+                    )}
+                  </div>
+                  {editPackResults.length > 0 && (
+                    <div className="mt-1 border border-gray-100 rounded-xl overflow-hidden max-h-36 overflow-y-auto shadow-md">
+                      {editPackResults.map(card => (
+                        <button key={card.id}
+                          onClick={() => {
+                            setEditPackNewCards(prev => [...prev, { id: card.id, name: card.name, image: card.image_small ?? '', market_price: card.best_market_price ?? 0, _key: `${card.id}-${Date.now()}` }])
+                            setEditPackSearch('')
+                            setEditPackResults([])
+                          }}
+                          className="w-full flex items-center gap-2 px-3 py-2 hover:bg-pink-50 transition text-left"
+                        >
+                          <img src={card.image_small} alt={card.name} className="h-9 rounded-lg flex-shrink-0" onError={e => { e.currentTarget.src = CARD_BACK }} />
+                          <div className="flex-1 min-w-0">
+                            <div className="text-sm font-medium text-gray-700 truncate">{card.name}</div>
+                            <div className="text-xs text-gray-400">{card.set_name}</div>
+                          </div>
+                          {(card.best_market_price ?? 0) > 0 && (
+                            <span className="text-xs font-semibold text-emerald-600">${card.best_market_price.toFixed(2)}</span>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  {editPackNewCards.length > 0 && (
+                    <div className="mt-2">
+                      <div className="text-xs font-semibold text-gray-500 mb-1">Adding {editPackNewCards.length} card{editPackNewCards.length > 1 ? 's' : ''}</div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {editPackNewCards.map(c => (
+                          <div key={c._key} className="relative">
+                            <img src={c.image} alt={c.name} title={c.name} className="h-12 rounded-lg shadow-md" onError={e => { e.currentTarget.src = CARD_BACK }} />
+                            <button
+                              onClick={() => setEditPackNewCards(prev => prev.filter(x => x._key !== c._key))}
+                              className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-rose-400 text-white text-[10px] flex items-center justify-center"
+                            >×</button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex gap-2 mt-4">
+                <button onClick={() => setEditingPack(null)}
+                  className="flex-1 py-2 rounded-xl text-sm font-semibold border border-gray-200 text-gray-400 hover:bg-gray-50 transition">
+                  Cancel
+                </button>
+                <button onClick={() => saveEditPack(
+                    editingPack.id,
+                    { pack_price: editingPack.pack_price, store: editingPack.store || null, opened_at: editingPack.opened_at },
+                    editingPack._originalPrice,
+                    editPackNewCards
+                  )}
+                  className="flex-1 py-2 rounded-xl text-sm font-semibold bg-pink-400 hover:bg-pink-500 text-white transition">
+                  Save
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── Edit Sale Modal ──────────────────────────────────────────── */}
+      <AnimatePresence>
+        {editingSale && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 px-4"
+            onClick={() => setEditingSale(null)}
+          >
+            <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-white rounded-2xl shadow-2xl p-5 w-full max-w-sm"
+              onClick={e => e.stopPropagation()}
+            >
+              <h2 className="text-base font-bold text-gray-700 mb-1">✎ Edit Sale</h2>
+              <p className="text-xs text-gray-400 mb-4">{editingSale.card_name}</p>
+              <label className="block text-xs font-semibold text-gray-500 mb-1">Sale Price ($)</label>
+              <input type="number" min="0" step="0.01"
+                value={editingSale.sale_price ?? ''}
+                onChange={e => setEditingSale(s => ({ ...s, sale_price: parseFloat(e.target.value) || 0 }))}
+                className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm mb-3 focus:outline-none focus:border-amber-300"
+              />
+              <label className="block text-xs font-semibold text-gray-500 mb-1">Date Sold</label>
+              <input type="date"
+                value={editingSale.sold_at ? new Date(editingSale.sold_at).toISOString().split('T')[0] : ''}
+                onChange={e => setEditingSale(s => ({ ...s, sold_at: e.target.value }))}
+                className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm mb-4 focus:outline-none focus:border-amber-300"
+              />
+              <div className="flex gap-2">
+                <button onClick={() => setEditingSale(null)}
+                  className="flex-1 py-2 rounded-xl text-sm font-semibold border border-gray-200 text-gray-400 hover:bg-gray-50 transition">
+                  Cancel
+                </button>
+                <button onClick={() => saveEditSale(editingSale.id, { sale_price: editingSale.sale_price, sold_at: editingSale.sold_at }, editingSale._originalPrice)}
+                  className="flex-1 py-2 rounded-xl text-sm font-semibold bg-amber-400 hover:bg-amber-500 text-white transition">
+                  Save
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── Edit Trade Modal ─────────────────────────────────────────── */}
+      <AnimatePresence>
+        {editingTrade && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 px-4"
+            onClick={() => setEditingTrade(null)}
+          >
+            <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-white rounded-2xl shadow-2xl p-5 w-full max-w-sm"
+              onClick={e => e.stopPropagation()}
+            >
+              <h2 className="text-base font-bold text-gray-700 mb-1">✎ Edit Trade</h2>
+              <p className="text-xs text-gray-400 mb-4">{editingTrade.card_name}</p>
+              <label className="block text-xs font-semibold text-gray-500 mb-1">Date Traded</label>
+              <input type="date"
+                value={editingTrade.traded_at ? new Date(editingTrade.traded_at).toISOString().split('T')[0] : ''}
+                onChange={e => setEditingTrade(t => ({ ...t, traded_at: e.target.value }))}
+                className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm mb-4 focus:outline-none focus:border-sky-300"
+              />
+              <div className="flex gap-2">
+                <button onClick={() => setEditingTrade(null)}
+                  className="flex-1 py-2 rounded-xl text-sm font-semibold border border-gray-200 text-gray-400 hover:bg-gray-50 transition">
+                  Cancel
+                </button>
+                <button onClick={() => saveEditTrade(editingTrade.id, { traded_at: editingTrade.traded_at })}
+                  className="flex-1 py-2 rounded-xl text-sm font-semibold bg-sky-400 hover:bg-sky-500 text-white transition">
+                  Save
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── Collection Value Chart Modal ─────────────────────────────── */}
+      <AnimatePresence>
+        {valueChartOpen && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 px-4"
+            onClick={() => setValueChartOpen(false)}
+          >
+            <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-white rounded-2xl shadow-2xl p-5 w-full max-w-md"
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h2 className="text-base font-bold text-gray-700">📈 Collection Value History</h2>
+                  <p className="text-xs text-gray-400">Daily snapshots of your collection's worth</p>
+                </div>
+                <button onClick={() => setValueChartOpen(false)}
+                  className="w-7 h-7 flex items-center justify-center rounded-full bg-gray-100 text-gray-400 hover:bg-gray-200 text-sm">✕</button>
+              </div>
+
+              {valueSnapshots.length < 2 ? (
+                <p className="text-sm text-gray-400 text-center py-8">
+                  Not enough data yet — check back tomorrow for your first trend!
+                </p>
+              ) : (() => {
+                const vals  = valueSnapshots.map(s => s.total_value)
+                const dates = valueSnapshots.map(s => s.snapshot_date)
+                const min   = Math.min(...vals)
+                const max   = Math.max(...vals)
+                const range = max - min || 1
+                const W = 340, H = 140, padX = 8, padY = 12
+                const points = vals.map((v, i) => {
+                  const x = padX + (i / (vals.length - 1)) * (W - padX * 2)
+                  const y = padY + (1 - (v - min) / range) * (H - padY * 2)
+                  return [x, y]
+                })
+                const polyline = points.map(([x, y]) => `${x},${y}`).join(' ')
+                const area = `${points[0][0]},${H} ${polyline} ${points[points.length - 1][0]},${H}`
+                const last  = vals[vals.length - 1]
+                const prev  = vals[vals.length - 2]
+                const diff  = last - prev
+                return (
+                  <div>
+                    <div className="flex items-center justify-between text-xs text-gray-500 mb-2">
+                      <span>{new Date(dates[0]).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span>
+                      <span className={`font-semibold ${diff >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                        {diff >= 0 ? '▲' : '▼'} ${Math.abs(diff).toFixed(2)} ({diff >= 0 ? '+' : ''}{(diff / (prev || 1) * 100).toFixed(1)}%) vs prev day
+                      </span>
+                      <span>{new Date(dates[dates.length - 1]).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span>
+                    </div>
+                    <svg viewBox={`0 0 ${W} ${H}`} className="w-full rounded-xl bg-emerald-50" style={{ height: 160 }}>
+                      <defs>
+                        <linearGradient id="chartFill" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="#10b981" stopOpacity="0.25" />
+                          <stop offset="100%" stopColor="#10b981" stopOpacity="0.02" />
+                        </linearGradient>
+                      </defs>
+                      <polygon points={area} fill="url(#chartFill)" />
+                      <polyline points={polyline} fill="none" stroke="#10b981" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
+                      {points.map(([x, y], i) => (
+                        <circle key={i} cx={x} cy={y} r="3" fill="#10b981" stroke="white" strokeWidth="1.5" />
+                      ))}
+                    </svg>
+                    <div className="flex justify-between mt-3 text-xs text-gray-400">
+                      <span>Low: <strong className="text-gray-600">${min.toFixed(2)}</strong></span>
+                      <span>Current: <strong className="text-emerald-600">${last.toFixed(2)}</strong></span>
+                      <span>High: <strong className="text-gray-600">${max.toFixed(2)}</strong></span>
+                    </div>
+                  </div>
+                )
+              })()}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── Confirm Delete Pack ──────────────────────────────────────── */}
+      <AnimatePresence>
+        {confirmDeletePack && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 px-4"
+            onClick={() => setConfirmDeletePack(null)}
+          >
+            <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-xs text-center"
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="text-3xl mb-3">🗑️</div>
+              <h2 className="text-base font-bold text-gray-700 mb-1">Delete pack log?</h2>
+              <p className="text-xs text-gray-400 mb-5">This cannot be undone. Cards added from this pack will stay in your collection.</p>
+              <div className="flex gap-2">
+                <button onClick={() => setConfirmDeletePack(null)}
+                  className="flex-1 py-2 rounded-xl text-sm font-semibold border border-gray-200 text-gray-400 hover:bg-gray-50 transition">
+                  Cancel
+                </button>
+                <button onClick={() => handleDeletePack(confirmDeletePack)}
+                  className="flex-1 py-2 rounded-xl text-sm font-semibold bg-rose-400 hover:bg-rose-500 text-white transition">
+                  Delete
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── Confirm Delete Trade ─────────────────────────────────────── */}
+      <AnimatePresence>
+        {confirmDeleteTrade && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 px-4"
+            onClick={() => setConfirmDeleteTrade(null)}
+          >
+            <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-xs text-center"
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="text-3xl mb-3">🗑️</div>
+              <h2 className="text-base font-bold text-gray-700 mb-1">Delete trade record?</h2>
+              <p className="text-xs text-gray-400 mb-1">
+                <span className="font-semibold text-gray-600">{confirmDeleteTrade.card_name}</span>
+              </p>
+              <p className="text-xs text-gray-400 mb-5">The card will be restored to your collection.</p>
+              <div className="flex gap-2">
+                <button onClick={() => setConfirmDeleteTrade(null)}
+                  className="flex-1 py-2 rounded-xl text-sm font-semibold border border-gray-200 text-gray-400 hover:bg-gray-50 transition">
+                  Cancel
+                </button>
+                <button onClick={() => deleteTradeRecord(confirmDeleteTrade.id)}
+                  className="flex-1 py-2 rounded-xl text-sm font-semibold bg-rose-400 hover:bg-rose-500 text-white transition">
+                  Delete
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── Set Collection View ──────────────────────────────────────── */}
+      <AnimatePresence>
+        {setCollectionOpen && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 backdrop-blur-sm px-4"
+            onClick={() => setSetCollectionOpen(false)}
+          >
+            <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[88vh] flex flex-col"
+              onClick={e => e.stopPropagation()}
+            >
+              {/* Header */}
+              <div className="flex items-center justify-between px-5 pt-5 pb-3 border-b border-gray-100 dark:border-gray-800">
+                <div>
+                  <h2 className="text-base font-bold text-gray-700 dark:text-gray-100">My Collection by Set</h2>
+                  <p className="text-xs text-gray-400 mt-0.5">{setCollectionData.filter(s => s.owned > 0).length} sets with cards · {setCollectionData.reduce((s, d) => s + d.owned, 0)} total owned</p>
+                </div>
+                <button onClick={() => setSetCollectionOpen(false)} className="text-gray-400 hover:text-gray-600 text-xl leading-none">×</button>
+              </div>
+
+              {/* Tabs */}
+              <div className="flex gap-1 px-5 pt-3 pb-0">
+                {[
+                  { key: 'english', label: 'English' },
+                  { key: 'foreign', label: 'Foreign' },
+                ].map(tab => (
+                  <button
+                    key={tab.key}
+                    onClick={() => setSetCollectionTab(tab.key)}
+                    className={`px-4 py-1.5 rounded-full text-xs font-semibold transition
+                      ${setCollectionTab === tab.key
+                        ? 'bg-pink-500 text-white shadow-sm'
+                        : 'bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700'}`}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Set grid */}
+              <div className="overflow-y-auto flex-1 p-4">
+                {setCollectionLoading ? (
+                  <div className="flex items-center justify-center py-16 text-gray-400 text-sm">Loading sets…</div>
+                ) : (() => {
+                  // English sets: ID has no 2-letter language prefix (fr-, de-, ja-, zh-, etc.)
+                  const isForeign = s => /^[a-z]{2}-/i.test(s.id)
+                  const visible = setCollectionData.filter(s =>
+                    setCollectionTab === 'english' ? !isForeign(s) : isForeign(s)
+                  )
+                  if (!visible.length) {
+                    return (
+                      <div className="flex items-center justify-center py-16 text-gray-400 text-sm">
+                        No {setCollectionTab} sets found.
+                      </div>
+                    )
+                  }
+                  return (
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                      {visible.map(s => {
+                        const pct = s.total > 0 ? Math.min(100, Math.round((s.owned / s.total) * 100)) : 0
+                        const hasCards = s.owned > 0
+                        return (
+                          <div key={s.id}
+                            className={`rounded-2xl border p-3 flex flex-col gap-2 overflow-hidden transition
+                              ${hasCards
+                                ? 'border-pink-200 bg-gradient-to-br from-pink-50 to-violet-50 dark:from-gray-800 dark:to-gray-700 dark:border-gray-600'
+                                : 'border-gray-100 bg-gray-50 dark:bg-gray-800 dark:border-gray-700 opacity-60'}`}
+                          >
+                            {/* Set logo (hidden on error) */}
+                            {s.logo_url && (
+                              <img
+                                src={s.logo_url}
+                                alt=""
+                                className="h-5 object-contain object-left w-full"
+                                onError={e => { e.currentTarget.style.display = 'none' }}
+                              />
+                            )}
+                            <div className="overflow-hidden">
+                              <div className="text-xs font-bold text-gray-700 dark:text-gray-100 leading-tight truncate w-full">{s.name}</div>
+                              <div className="text-[10px] text-gray-400 truncate w-full">{s.series} · {s.release_date?.slice(0, 4)}</div>
+                            </div>
+                            {/* Progress bar */}
+                            <div className="mt-auto">
+                              <div className="flex justify-between items-center mb-1">
+                                <span className="text-[10px] text-gray-500 dark:text-gray-400 tabular-nums">{s.owned} / {s.total}</span>
+                                <span className={`text-[10px] font-bold tabular-nums ${pct === 100 ? 'text-emerald-500' : 'text-pink-500'}`}>{pct}%</span>
+                              </div>
+                              <div className="h-1.5 bg-gray-200 dark:bg-gray-600 rounded-full overflow-hidden">
+                                <div
+                                  className={`h-full rounded-full transition-all duration-700 ${pct === 100 ? 'bg-emerald-400' : 'bg-gradient-to-r from-pink-400 to-violet-400'}`}
+                                  style={{ width: `${pct}%` }}
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )
+                })()}
+              </div>
+            </motion.div>
+          </motion.div>
         )}
       </AnimatePresence>
     </>

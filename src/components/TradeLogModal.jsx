@@ -33,7 +33,10 @@ function useCardSearch() {
         for (const word of words) {
           req = req.or(`name.ilike.%${word}%,english_name.ilike.%${word}%`)
         }
-        req = req.order('release_date', { ascending: false }).limit(20)
+        req = req
+          .order('card_language', { ascending: true })   // 'en' before 'ja', 'zh', etc.
+          .order('release_date',  { ascending: false })
+          .limit(20)
         const { data } = await req
         setResults(data ?? [])
       } catch {
@@ -102,7 +105,7 @@ function CardResultRow({ card, onAdd }) {
 }
 
 // ── Main modal ────────────────────────────────────────────────────────────────
-export default function TradeLogModal({ user, tradedItem, onClose, onToast }) {
+export default function TradeLogModal({ user, tradedItem, onClose, onToast, onConfirmed }) {
   // ── Cards traded away (already-traded item + any extras the user adds) ──
   // tradedItem is the card that was already removed from collection.
   // extraOut cards are additional cards the user selects to log as also traded out.
@@ -216,6 +219,7 @@ export default function TradeLogModal({ user, tradedItem, onClose, onToast }) {
       onToast?.(receivedCount > 0
         ? `Trade logged — ${receivedCount} card${receivedCount === 1 ? '' : 's'} added to collection! 📦`
         : 'Trade logged! 🤝')
+      onConfirmed?.()
       onClose()
     } catch (e) {
       setError('Something went wrong. Please try again.')

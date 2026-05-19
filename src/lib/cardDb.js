@@ -362,6 +362,15 @@ export async function refreshPriceIfStale(cardId, tcgApiKey) {
       updated_at:             new Date().toISOString(),
     }
 
+    // Don't burn the TTL if TCGPlayer returned no data at all — this commonly
+    // happens for newly released sets that TCGPlayer hasn't priced yet.
+    // Skipping the upsert means the row stays stale and we'll retry tomorrow.
+    const hasAnyPrice = [
+      priceRow.normal_market, priceRow.holofoil_market, priceRow.reverse_holo_market,
+      priceRow.first_ed_holo_market, priceRow.first_ed_normal_market, priceRow.other_market,
+    ].some(v => v != null)
+    if (!hasAnyPrice) return
+
     await supabase.from('tcg_prices').upsert(priceRow, { onConflict: 'card_id' })
   } catch {
     // Silently fail — we still have the cached (stale) price to show

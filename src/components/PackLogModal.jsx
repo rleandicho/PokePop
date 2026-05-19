@@ -1,15 +1,15 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback, memo } from 'react'
 import { motion } from 'framer-motion'
 import { supabase } from '../lib/supabase'
 
 const CARD_BACK = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="250" height="350" viewBox="0 0 250 350"><rect width="250" height="350" fill="#1a56cc" rx="14"/><rect x="8" y="8" width="234" height="334" fill="none" stroke="rgba(255,255,255,0.28)" stroke-width="2" rx="10"/><circle cx="125" cy="175" r="78" fill="none" stroke="rgba(255,255,255,0.22)" stroke-width="5"/><circle cx="125" cy="175" r="50" fill="rgba(255,255,255,0.06)" stroke="rgba(255,255,255,0.16)" stroke-width="3"/><line x1="47" y1="175" x2="203" y2="175" stroke="rgba(255,255,255,0.22)" stroke-width="4"/><circle cx="125" cy="175" r="15" fill="rgba(255,255,255,0.88)" stroke="rgba(0,0,0,0.18)" stroke-width="2"/><circle cx="125" cy="175" r="9" fill="#1a56cc"/></svg>')}`
 
-const SETS_CACHE_KEY = 'pokepop_sets_v1'
+const SETS_CACHE_KEY = 'pokepop_sets_v2'
 const SETS_TTL       = 24 * 60 * 60 * 1000
 
 const PURCHASE_TYPES = [
   'Booster Pack', 'Blister Pack', 'Booster Bundle', 'ETB',
-  'Mini-Tin', 'Tin', 'Collection Box', 'Promo Pack',
+  'Mini-Tin', 'Tin', 'Pokeball Tin', 'Collection Box', 'Pre-release Kit', 'Promo Pack',
 ]
 
 async function loadSets() {
@@ -19,11 +19,37 @@ async function loadSets() {
       const { data, ts } = JSON.parse(cached)
       if (Date.now() - ts < SETS_TTL && Array.isArray(data)) return data
     }
-    const apiKey  = import.meta.env.VITE_TCG_API_KEY
-    const headers = apiKey ? { 'X-Api-Key': apiKey } : {}
-    const res     = await fetch('https://api.pokemontcg.io/v2/sets?orderBy=-releaseDate&pageSize=250&select=id,name,series,releaseDate', { headers })
-    const json    = await res.json()
-    const sets    = json.data ?? []
+
+    // Fetch from both pokemontcg.io and Supabase in parallel so ME-series sets appear
+    const [apiSets, supabaseSets] = await Promise.all([
+      (async () => {
+        try {
+          const apiKey  = import.meta.env.VITE_TCG_API_KEY
+          const headers = apiKey ? { 'X-Api-Key': apiKey } : {}
+          const res  = await fetch('https://api.pokemontcg.io/v2/sets?orderBy=-releaseDate&pageSize=250&select=id,name,series,releaseDate', { headers })
+          const json = await res.json()
+          return json.data ?? []
+        } catch { return [] }
+      })(),
+      (async () => {
+        try {
+          const { data } = await supabase
+            .from('tcg_sets')
+            .select('id, name, series, release_date')
+            .order('release_date', { ascending: false })
+          return (data ?? []).map(s => ({ id: s.id, name: s.name, series: s.series, releaseDate: s.release_date }))
+        } catch { return [] }
+      })(),
+    ])
+
+    // Merge: Supabase sets first (newer/custom), deduplicate by id
+    const seenIds = new Set()
+    const sets = [...supabaseSets, ...apiSets].filter(s => {
+      if (seenIds.has(s.id)) return false
+      seenIds.add(s.id)
+      return true
+    })
+
     localStorage.setItem(SETS_CACHE_KEY, JSON.stringify({ data: sets, ts: Date.now() }))
     return sets
   } catch {
@@ -36,7 +62,9 @@ function blankRow() {
 }
 
 // ── Single pack name row — name input + qty stepper + set autocomplete ────────
-function PackNameRow({ row, index, total, allSets, onUpdate, onRemove }) {
+// memo: skips re-render if props haven't changed (prevents re-renders from
+// purchaseType / price / store state changes in the parent modal).
+const PackNameRow = memo(function PackNameRow({ row, index, total, allSets, onUpdate, onRemove }) {
   const [showSugg, setShowSugg] = useState(false)
   const [sugg,     setSugg]     = useState([])
 
@@ -126,38 +154,61 @@ function PackNameRow({ row, index, total, allSets, onUpdate, onRemove }) {
       )}
     </div>
   )
-}
+})
 
 export default function PackLogModal({ user, onClose, onSaved, onCardsSaved }) {
-  const [purchaseType, setPurchaseType] = useState('Booster Pack')
-  const [packRows,     setPackRows]     = useState([blankRow()])
-  const [packPrice,    setPackPrice]    = useState('')
-  const [store,        setStore]        = useState('')
-  const [cardSearch,   setCardSearch]   = useState('')
-  const [cardResults,  setCardResults]  = useState([])
-  const [searching,    setSearching]    = useState(false)
-  const [addedCards,   setAddedCards]   = useState([])
-  const [saving,       setSaving]       = useState(false)
-  const [error,        setError]        = useState('')
-  const [allSets,      setAllSets]      = useState([])
+  const [purchaseType,  setPurchaseType]  = useState('Booster Pack')
+  const [packRows,      setPackRows]      = useState([blankRow()])
+  const [packPrice,     setPackPrice]     = useState('')
+  const [store,         setStore]         = useState('')
+  const [cardSearch,    setCardSearch]    = useState('')
+  const [cardResults,   setCardResults]   = useState([])
+  const [searching,     setSearching]     = useState(false)
+  const [addedCards,    setAddedCards]    = useState([])
+  const [saving,        setSaving]        = useState(false)
+  const [error,         setError]         = useState('')
+  const [allSets,       setAllSets]       = useState([])
+  const [recentStores,  setRecentStores]  = useState([]) // autofill suggestions
+  const [lastPrice,     setLastPrice]     = useState(null) // last used price hint
+  const [showStoreSugg, setShowStoreSugg] = useState(false)
   const debounceRef = useRef(null)
 
   useEffect(() => { loadSets().then(setAllSets) }, [])
+
+  // Load recent stores + last price from pack_logs for autofill
+  useEffect(() => {
+    if (!user) return
+    supabase
+      .from('pack_logs')
+      .select('store, pack_price')
+      .eq('user_id', user.id)
+      .order('opened_at', { ascending: false })
+      .limit(50)
+      .then(({ data }) => {
+        if (!data) return
+        const stores = [...new Set(data.map(r => r.store).filter(Boolean))].slice(0, 8)
+        setRecentStores(stores)
+        const lastUsedPrice = data.find(r => r.pack_price > 0)?.pack_price
+        if (lastUsedPrice) setLastPrice(lastUsedPrice)
+      })
+  }, [user])
 
   // Deduplicated set IDs — prevents duplicate .in() entries and unstable dep strings
   const activeSetIds   = [...new Set(packRows.filter(r => r.setId).map(r => r.setId))]
   const activeSetNames = [...new Set(packRows.filter(r => r.setId && r.name).map(r => r.name))]
 
   // ── Pack row management ───────────────────────────────────────────────────
-  function updateRow(id, changes) {
+  // useCallback keeps references stable so memo'd PackNameRows don't re-render
+  // when unrelated state (purchaseType, price, store) changes.
+  const updateRow = useCallback((id, changes) => {
     setPackRows(prev => prev.map(r => r._id === id ? { ...r, ...changes } : r))
-  }
-  function addRow() {
+  }, [])
+  const addRow = useCallback(() => {
     setPackRows(prev => [...prev, blankRow()])
-  }
-  function removeRow(id) {
+  }, [])
+  const removeRow = useCallback((id) => {
     setPackRows(prev => prev.filter(r => r._id !== id))
-  }
+  }, [])
 
   // ── Card search — Supabase query, OR across all selected sets ───────────────
   useEffect(() => {
@@ -297,7 +348,7 @@ export default function PackLogModal({ user, onClose, onSaved, onCardsSaved }) {
   return (
     <motion.div
       initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm px-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4"
       onClick={onClose}
     >
       <motion.div
@@ -384,16 +435,43 @@ export default function PackLogModal({ user, onClose, onSaved, onCardsSaved }) {
                 placeholder="4.99"
                 className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-pink-300"
               />
+              {lastPrice != null && !packPrice && (
+                <button
+                  type="button"
+                  onClick={() => setPackPrice(String(lastPrice))}
+                  className="mt-0.5 text-[11px] text-pink-400 hover:text-pink-500 font-medium"
+                >
+                  Use last: ${Number(lastPrice).toFixed(2)}
+                </button>
+              )}
             </div>
-            <div className="flex-1">
+            <div className="flex-1 relative">
               <label className="block text-xs font-semibold text-gray-500 mb-1">Store (optional)</label>
               <input
                 type="text"
                 value={store}
-                onChange={e => setStore(e.target.value)}
+                onChange={e => { setStore(e.target.value); setShowStoreSugg(true) }}
+                onFocus={() => setShowStoreSugg(true)}
+                onBlur={() => setTimeout(() => setShowStoreSugg(false), 150)}
                 placeholder="Target, eBay…"
                 className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-pink-300"
               />
+              {showStoreSugg && recentStores.length > 0 && (
+                <div className="absolute z-20 w-full mt-1 bg-white border border-gray-100 rounded-xl shadow-lg overflow-hidden">
+                  {recentStores
+                    .filter(s => !store || s.toLowerCase().includes(store.toLowerCase()))
+                    .map(s => (
+                      <button
+                        key={s}
+                        type="button"
+                        onMouseDown={() => { setStore(s); setShowStoreSugg(false) }}
+                        className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-pink-50 transition"
+                      >
+                        📍 {s}
+                      </button>
+                    ))}
+                </div>
+              )}
             </div>
           </div>
 
