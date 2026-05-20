@@ -171,8 +171,11 @@ export default function CardScanner({ user, isDark = false, onToast, onCardAdded
   const [scanLocked, setScanLocked] = useState(false)
   const [matchedCandidate, setMatchedCandidate] = useState('')
   const [results, setResults] = useState([])
+  const [resultsPage, setResultsPage] = useState(1)
   const [searching, setSearching] = useState(false)
   const [savingId, setSavingId] = useState('')
+
+  const RESULTS_PER_PAGE = 8
 
   const supportsTextDetection = useMemo(
     () => typeof window !== 'undefined' && 'TextDetector' in window,
@@ -213,9 +216,10 @@ export default function CardScanner({ user, isDark = false, onToast, onCardAdded
 
     setSearching(true)
     setScanStatus(`Searching database for "${trimmed}"...`)
-    // Prefer English results — try English-only first, fall back to all languages
+    // Prefer English results — try English-only first, fall back to all languages.
+    // pageSize: 40 lets us paginate client-side without extra DB calls per page flip.
     const { cards: enCards, error } = await fetchCardsFromDb({
-      search: trimmed, sort: 'newest', page: 1, pageSize: 8, langFilter: 'en',
+      search: trimmed, sort: 'newest', page: 1, pageSize: 40, langFilter: 'en',
     })
     setSearching(false)
 
@@ -227,17 +231,19 @@ export default function CardScanner({ user, isDark = false, onToast, onCardAdded
     if (enCards?.length) {
       const sorted = sortScannerResults(enCards)
       setResults(sorted)
+      setResultsPage(1)
       return sorted
     }
 
     // No English results — search all languages
     setSearching(true)
     const { cards: allCards } = await fetchCardsFromDb({
-      search: trimmed, sort: 'newest', page: 1, pageSize: 8,
+      search: trimmed, sort: 'newest', page: 1, pageSize: 40,
     })
     setSearching(false)
     const sortedAll = sortScannerResults(allCards ?? [])
     setResults(sortedAll)
+    setResultsPage(1)
     return sortedAll
   }, [onToast, query])
 
@@ -260,26 +266,26 @@ export default function CardScanner({ user, isDark = false, onToast, onCardAdded
       if (isNameOnly) {
         // 1. Exact English
         const { cards: exactEn } = await fetchCardsFromDb({
-          exactName: trimmed, sort: 'newest', page: 1, pageSize: 8, langFilter: 'en',
+          exactName: trimmed, sort: 'newest', page: 1, pageSize: 40, langFilter: 'en',
         })
         if (exactEn?.length) return sortScannerResults(exactEn)
 
         // 2. Exact any-language (Japanese-only cards, foreign-exclusive sets)
         const { cards: exactAll } = await fetchCardsFromDb({
-          exactName: trimmed, sort: 'newest', page: 1, pageSize: 8,
+          exactName: trimmed, sort: 'newest', page: 1, pageSize: 40,
         })
         if (exactAll?.length) return sortScannerResults(exactAll)
       }
 
       // 3. Substring English (promo codes, collector-number combos, partial names)
       const { cards: subEn } = await fetchCardsFromDb({
-        search: trimmed, sort: 'newest', page: 1, pageSize: 8, langFilter: 'en',
+        search: trimmed, sort: 'newest', page: 1, pageSize: 40, langFilter: 'en',
       })
       if (subEn?.length) return sortScannerResults(subEn)
 
       // 4. Substring any-language — last resort
       const { cards: subAll } = await fetchCardsFromDb({
-        search: trimmed, sort: 'newest', page: 1, pageSize: 8,
+        search: trimmed, sort: 'newest', page: 1, pageSize: 40,
       })
       return sortScannerResults(subAll ?? [])
     } catch {
@@ -308,6 +314,7 @@ export default function CardScanner({ user, isDark = false, onToast, onCardAdded
       lastCandidateRef.current = winner
       setQuery(winner)
       setResults(parallelResults[winnerIdx])
+      setResultsPage(1)
       setMatchedCandidate(winner)
       setScanLocked(true)
       setScanStatus(`Matched "${winner}". Scan paused so results stay stable.`)
@@ -326,6 +333,7 @@ export default function CardScanner({ user, isDark = false, onToast, onCardAdded
         lastCandidateRef.current = candidate
         setQuery(candidate)
         setResults(cards)
+        setResultsPage(1)
         setMatchedCandidate(candidate)
         setScanLocked(true)
         setScanStatus(`Matched "${candidate}". Scan paused so results stay stable.`)
@@ -509,6 +517,7 @@ export default function CardScanner({ user, isDark = false, onToast, onCardAdded
     setScanLocked(false)
     setMatchedCandidate('')
     setResults([])
+    setResultsPage(1)
     lastCandidateRef.current = ''
     lastRawTextRef.current = ''
     setScanStatus(supportsTextDetection ? 'Scanning automatically...' : 'Scanning with fallback OCR...')
@@ -519,6 +528,7 @@ export default function CardScanner({ user, isDark = false, onToast, onCardAdded
     setQuery('')
     setDetectedText('')
     setResults([])
+    setResultsPage(1)
     setScanLocked(false)
     setMatchedCandidate('')
     lastCandidateRef.current = ''
@@ -703,59 +713,117 @@ export default function CardScanner({ user, isDark = false, onToast, onCardAdded
           </div>
         </div>
 
-        <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          {scanLocked && matchedCandidate && (
-            <div className={`sm:col-span-2 lg:col-span-4 rounded-2xl px-4 py-3 text-sm font-semibold ${
-              isDark ? 'bg-emerald-300/10 text-emerald-100 border border-emerald-300/20' : 'bg-emerald-50 text-emerald-700 border border-emerald-100'
-            }`}>
-              Results locked for "{matchedCandidate}". Use Retry to rescan this card or Next Scan for a new card.
-            </div>
-          )}
-          {results.map(card => {
-            const price = bestPrice(card)
-            return (
-              <article
-                key={card.id}
-                className={`rounded-3xl border p-3 shadow-sm ${
-                  isDark ? 'bg-slate-900/70 border-violet-300/20' : 'bg-white/85 border-pink-100'
-                }`}
-              >
-                <img
-                  src={card.images?.small}
-                  alt={card.name}
-                  className="mx-auto aspect-[2.5/3.5] w-full max-w-36 rounded-xl object-contain"
-                />
-                <div className="mt-3">
-                  <h3 className="text-sm font-black leading-tight">{card.name}</h3>
-                  <p className={`text-xs mt-1 ${isDark ? 'text-violet-100/60' : 'text-slate-400'}`}>
-                    {card.set?.name} #{card.number}
-                  </p>
-                  <p className="mt-2 text-lg font-black text-emerald-400">
-                    {price ? `$${Number(price).toFixed(2)}` : 'No price'}
-                  </p>
-                </div>
-                <div className="mt-3 grid grid-cols-2 gap-2">
+        {(() => {
+          const totalResultPages = Math.ceil(results.length / RESULTS_PER_PAGE)
+          const visibleResults = results.slice(
+            (resultsPage - 1) * RESULTS_PER_PAGE,
+            resultsPage * RESULTS_PER_PAGE,
+          )
+          return (
+            <>
+              <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                {scanLocked && matchedCandidate && (
+                  <div className={`sm:col-span-2 lg:col-span-4 rounded-2xl px-4 py-3 text-sm font-semibold ${
+                    isDark ? 'bg-emerald-300/10 text-emerald-100 border border-emerald-300/20' : 'bg-emerald-50 text-emerald-700 border border-emerald-100'
+                  }`}>
+                    Results for "{matchedCandidate}" — {results.length} printing{results.length !== 1 ? 's' : ''} found.
+                    {totalResultPages > 1 && ` Showing page ${resultsPage} of ${totalResultPages}.`}
+                    {' '}Use Retry to rescan or Next Scan for a new card.
+                  </div>
+                )}
+                {visibleResults.map(card => {
+                  const price = bestPrice(card)
+                  return (
+                    <article
+                      key={card.id}
+                      className={`rounded-3xl border p-3 shadow-sm ${
+                        isDark ? 'bg-slate-900/70 border-violet-300/20' : 'bg-white/85 border-pink-100'
+                      }`}
+                    >
+                      <img
+                        src={card.images?.small}
+                        alt={card.name}
+                        className="mx-auto aspect-[2.5/3.5] w-full max-w-36 rounded-xl object-contain"
+                      />
+                      <div className="mt-3">
+                        <h3 className="text-sm font-black leading-tight">{card.name}</h3>
+                        <p className={`text-xs mt-1 ${isDark ? 'text-violet-100/60' : 'text-slate-400'}`}>
+                          {card.set?.name} #{card.number}
+                        </p>
+                        <p className="mt-2 text-lg font-black text-emerald-400">
+                          {price ? `$${Number(price).toFixed(2)}` : 'No price'}
+                        </p>
+                      </div>
+                      <div className="mt-3 grid grid-cols-2 gap-2">
+                        <button
+                          type="button"
+                          disabled={!!savingId}
+                          onClick={() => saveCard(card, false)}
+                          className="rounded-full bg-violet-400 px-2 py-2 text-xs font-bold text-white disabled:opacity-50"
+                        >
+                          {savingId === `${card.id}-wish` ? '...' : 'Wishlist'}
+                        </button>
+                        <button
+                          type="button"
+                          disabled={!!savingId}
+                          onClick={() => saveCard(card, true)}
+                          className="rounded-full bg-emerald-400 px-2 py-2 text-xs font-bold text-white disabled:opacity-50"
+                        >
+                          {savingId === `${card.id}-owned` ? '...' : 'Collect'}
+                        </button>
+                      </div>
+                    </article>
+                  )
+                })}
+              </div>
+
+              {/* Pagination bar — only shown when there's more than one page of results */}
+              {totalResultPages > 1 && (
+                <div className="flex items-center justify-center gap-1.5 pt-5 flex-wrap">
                   <button
-                    type="button"
-                    disabled={!!savingId}
-                    onClick={() => saveCard(card, false)}
-                    className="rounded-full bg-violet-400 px-2 py-2 text-xs font-bold text-white disabled:opacity-50"
+                    onClick={() => setResultsPage(p => Math.max(1, p - 1))}
+                    disabled={resultsPage === 1}
+                    className={`px-3 py-1.5 rounded-full text-sm font-semibold border transition-all
+                      disabled:opacity-30 disabled:cursor-not-allowed
+                      ${isDark
+                        ? 'bg-slate-900 border-violet-300/20 text-violet-100 hover:bg-slate-800'
+                        : 'bg-white/70 border-gray-200 text-gray-500 hover:bg-white/90'
+                      }`}
                   >
-                    {savingId === `${card.id}-wish` ? '...' : 'Wishlist'}
+                    ← Prev
                   </button>
+                  {Array.from({ length: totalResultPages }, (_, i) => i + 1).map(p => (
+                    <button
+                      key={p}
+                      onClick={() => setResultsPage(p)}
+                      className={`w-9 h-9 rounded-full text-sm font-semibold border transition-all
+                        ${p === resultsPage
+                          ? 'bg-pink-400 text-white border-pink-400 shadow-sm'
+                          : isDark
+                            ? 'bg-slate-900 border-violet-300/20 text-violet-100 hover:bg-slate-800'
+                            : 'bg-white/70 text-gray-500 border-gray-200 hover:bg-white/90'
+                        }`}
+                    >
+                      {p}
+                    </button>
+                  ))}
                   <button
-                    type="button"
-                    disabled={!!savingId}
-                    onClick={() => saveCard(card, true)}
-                    className="rounded-full bg-emerald-400 px-2 py-2 text-xs font-bold text-white disabled:opacity-50"
+                    onClick={() => setResultsPage(p => Math.min(totalResultPages, p + 1))}
+                    disabled={resultsPage === totalResultPages}
+                    className={`px-3 py-1.5 rounded-full text-sm font-semibold border transition-all
+                      disabled:opacity-30 disabled:cursor-not-allowed
+                      ${isDark
+                        ? 'bg-slate-900 border-violet-300/20 text-violet-100 hover:bg-slate-800'
+                        : 'bg-white/70 border-gray-200 text-gray-500 hover:bg-white/90'
+                      }`}
                   >
-                    {savingId === `${card.id}-owned` ? '...' : 'Collect'}
+                    Next →
                   </button>
                 </div>
-              </article>
-            )
-          })}
-        </div>
+              )}
+            </>
+          )
+        })()}
 
         {!searching && query && results.length === 0 && (
           <p className={`mt-5 text-center text-sm ${isDark ? 'text-violet-100/60' : 'text-slate-500'}`}>
