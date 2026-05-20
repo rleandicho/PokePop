@@ -175,7 +175,7 @@ function normaliseCard(row) {
 }
 
 // ── Main query function ───────────────────────────────────────────────────────
-export async function fetchCardsFromDb({ vibe, search, setQuery, sort, page = 1, pageSize, langFilter = null } = {}) {
+export async function fetchCardsFromDb({ vibe, search, exactName, setQuery, sort, page = 1, pageSize, langFilter = null } = {}) {
   const isPriceSort   = sort === 'price-high' || sort === 'price-low'
   const effectiveSize = isPriceSort ? PRICE_PAGE_SIZE : (pageSize ?? PAGE_SIZE)
   const from          = (page - 1) * effectiveSize
@@ -237,7 +237,14 @@ export async function fetchCardsFromDb({ vibe, search, setQuery, sort, page = 1,
   //   "094"           → exact card number (pure digits)
   //   "Haunter 56"    → name contains "Haunter" AND number = "56"
   //   "Gengar"        → name, english_name, or set_name contains the phrase
-  if (search && search.trim()) {
+  //
+  // exactName (separate param, used by CardScanner):
+  //   ilike without wildcards = case-insensitive exact match. "Rotom" will NOT
+  //   match "Heat Rotom"/"Wash Rotom"/etc. Scanner tries this before falling
+  //   back to the substring search so the right card surfaces first.
+  if (exactName) {
+    q = q.ilike('name', exactName)
+  } else if (search && search.trim()) {
     const s = search.trim()
     const aliasSetIds = resolveSearchSetAlias(s)
 

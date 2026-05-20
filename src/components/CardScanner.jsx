@@ -49,7 +49,9 @@ function isNoisyCandidate(candidate) {
 
   if (noisyWords.has(c)) return true
   if (/^tra[a-z]{0,4}$/.test(c)) return true
-  if (c.length <= 4 && !['mew', 'muk', 'jynx', 'hooh', 'abra', 'onix'].includes(c)) return true
+  // Short names (≤4 chars) are noisy — except for real Pokémon with short names
+  const shortAllowlist = new Set(['mew', 'muk', 'jynx', 'hooh', 'abra', 'onix', 'seel'])
+  if (c.length <= 4 && !shortAllowlist.has(c)) return true
 
   // G-Max / V-Max / Max attacks (e.g. "G-Max Pump", "Max Geist") — always attack names, not Pokémon names
   if (/^g[\s-]?max\b/i.test(candidate)) return true
@@ -79,11 +81,18 @@ function buildSearchCandidates(text) {
   const names = []
   const collectorNumbers = []
 
-  // HP line: text before "XXX HP" is almost always the Pokémon name
+  // HP line: text before "XXX HP" is almost always the Pokémon name.
+  // Lives in tier2 (below promo codes and name+number combos in tier1) because
+  // a specific "Rotom 23" hit is more useful than a bare "Rotom" name hit.
   const hpLine = rawLines.find(line => /\b\d{2,3}\s*HP\b/i.test(line))
   if (hpLine) {
     const nameFromHp = cleanOcrLine(hpLine.replace(/\b\d{2,3}\s*HP\b.*$/i, ''))
-    if (nameFromHp && !isNoisyCandidate(nameFromHp)) tier2.push(nameFromHp)
+    if (nameFromHp && !isNoisyCandidate(nameFromHp)) {
+      tier2.push(nameFromHp)
+      // Also try the base name without suffix (e.g. "Rotom ex" → "Rotom")
+      const base = nameFromHp.replace(/\b(?:ex|EX|GX|V|VMAX|VSTAR|GMAX)\b/g, '').trim()
+      if (base && base !== nameFromHp && !isNoisyCandidate(base)) tier2.push(base)
+    }
   }
 
   for (const line of lines) {
@@ -222,10 +231,22 @@ export default function CardScanner({ user, isDark = false, onToast, onCardAdded
   }, [onToast, query])
 
   // Pure data fetch — does not touch component state. Used by parallel candidate search.
+  // For text-only name candidates (no digits / set codes), we try an exact case-insensitive
+  // match first so "Rotom" doesn't also pull Heat Rotom, Wash Rotom, etc. Only fall back
+  // to the broader substring search if the exact match returns nothing.
   const rawSearch = useCallback(async (candidate) => {
     const trimmed = candidate?.trim()
     if (!trimmed) return []
     try {
+      const isNameOnly = /^[a-zA-ZÀ-ÿ\s'\u2019-]+$/.test(trimmed) && trimmed.length >= 3
+      if (isNameOnly) {
+        const { cards: exact } = await fetchCardsFromDb({
+          exactName: trimmed, sort: 'newest', page: 1, pageSize: 8,
+        })
+        const exactSorted = sortScannerResults(exact ?? [])
+        if (exactSorted.length) return exactSorted
+      }
+      // Substring fallback — also used for promo codes, collector-number combos, etc.
       const { cards } = await fetchCardsFromDb({ search: trimmed, sort: 'newest', page: 1, pageSize: 8 })
       return sortScannerResults(cards ?? [])
     } catch {
@@ -405,9 +426,11 @@ export default function CardScanner({ user, isDark = false, onToast, onCardAdded
   useEffect(() => {
     if (!cameraOn) return undefined
     setScanStatus(supportsTextDetection ? 'Scanning automatically...' : 'Scanning with fallback OCR...')
+    // TextDetector is a native GPU call (near-instant), so 700 ms feels responsive
+    // without hammering the DB. Tesseract takes 2-4 s per pass so 3000 ms is plenty.
     const id = window.setInterval(() => {
       captureAndDetect({ quiet: true })
-    }, supportsTextDetection ? 1200 : 4500)
+    }, supportsTextDetection ? 700 : 3000)
     return () => window.clearInterval(id)
   }, [cameraOn, captureAndDetect, supportsTextDetection])
 
@@ -424,11 +447,14 @@ export default function CardScanner({ user, isDark = false, onToast, onCardAdded
     }
 
     try {
+      // 1280×720 is the sweet spot for card scanning — more than enough detail
+      // for OCR while keeping canvas operations fast. 1080p adds no OCR benefit
+      // and significantly slows down pixel manipulation on mid-range phones.
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
           facingMode: { ideal: 'environment' },
-          width:  { ideal: 1920 },
-          height: { ideal: 1080 },
+          width:  { ideal: 1280 },
+          height: { ideal: 720 },
         },
         audio: false,
       })
