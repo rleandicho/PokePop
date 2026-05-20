@@ -213,11 +213,9 @@ export default function CardScanner({ user, isDark = false, onToast, onCardAdded
 
     setSearching(true)
     setScanStatus(`Searching database for "${trimmed}"...`)
-    const { cards, error } = await fetchCardsFromDb({
-      search: trimmed,
-      sort: 'newest',
-      page: 1,
-      pageSize: 8,
+    // Prefer English results — try English-only first, fall back to all languages
+    const { cards: enCards, error } = await fetchCardsFromDb({
+      search: trimmed, sort: 'newest', page: 1, pageSize: 8, langFilter: 'en',
     })
     setSearching(false)
 
@@ -225,30 +223,65 @@ export default function CardScanner({ user, isDark = false, onToast, onCardAdded
       if (!quiet) onToast?.('Could not search cards. Try again.')
       return []
     }
-    const sortedCards = sortScannerResults(cards ?? [])
-    setResults(sortedCards)
-    return sortedCards
+
+    if (enCards?.length) {
+      const sorted = sortScannerResults(enCards)
+      setResults(sorted)
+      return sorted
+    }
+
+    // No English results — search all languages
+    setSearching(true)
+    const { cards: allCards } = await fetchCardsFromDb({
+      search: trimmed, sort: 'newest', page: 1, pageSize: 8,
+    })
+    setSearching(false)
+    const sortedAll = sortScannerResults(allCards ?? [])
+    setResults(sortedAll)
+    return sortedAll
   }, [onToast, query])
 
   // Pure data fetch — does not touch component state. Used by parallel candidate search.
-  // For text-only name candidates (no digits / set codes), we try an exact case-insensitive
-  // match first so "Rotom" doesn't also pull Heat Rotom, Wash Rotom, etc. Only fall back
-  // to the broader substring search if the exact match returns nothing.
+  //
+  // Strategy (in order):
+  //   1. Exact English name  — avoids "Rotom" pulling Heat/Wash Rotom variants AND foreign cards
+  //   2. Exact any-language  — for cards that only exist in foreign sets
+  //   3. Substring English   — catches partial OCR reads, promo codes, collector-number combos
+  //   4. Substring any-lang  — final fallback so we always show something
+  //
+  // English-first is critical: fetchCardsFromDb caps results at pageSize=8, so without
+  // a lang filter the 8 slots can fill entirely with foreign printings of the same card.
   const rawSearch = useCallback(async (candidate) => {
     const trimmed = candidate?.trim()
     if (!trimmed) return []
     try {
       const isNameOnly = /^[a-zA-ZÀ-ÿ\s'\u2019-]+$/.test(trimmed) && trimmed.length >= 3
+
       if (isNameOnly) {
-        const { cards: exact } = await fetchCardsFromDb({
+        // 1. Exact English
+        const { cards: exactEn } = await fetchCardsFromDb({
+          exactName: trimmed, sort: 'newest', page: 1, pageSize: 8, langFilter: 'en',
+        })
+        if (exactEn?.length) return sortScannerResults(exactEn)
+
+        // 2. Exact any-language (Japanese-only cards, foreign-exclusive sets)
+        const { cards: exactAll } = await fetchCardsFromDb({
           exactName: trimmed, sort: 'newest', page: 1, pageSize: 8,
         })
-        const exactSorted = sortScannerResults(exact ?? [])
-        if (exactSorted.length) return exactSorted
+        if (exactAll?.length) return sortScannerResults(exactAll)
       }
-      // Substring fallback — also used for promo codes, collector-number combos, etc.
-      const { cards } = await fetchCardsFromDb({ search: trimmed, sort: 'newest', page: 1, pageSize: 8 })
-      return sortScannerResults(cards ?? [])
+
+      // 3. Substring English (promo codes, collector-number combos, partial names)
+      const { cards: subEn } = await fetchCardsFromDb({
+        search: trimmed, sort: 'newest', page: 1, pageSize: 8, langFilter: 'en',
+      })
+      if (subEn?.length) return sortScannerResults(subEn)
+
+      // 4. Substring any-language — last resort
+      const { cards: subAll } = await fetchCardsFromDb({
+        search: trimmed, sort: 'newest', page: 1, pageSize: 8,
+      })
+      return sortScannerResults(subAll ?? [])
     } catch {
       return []
     }
