@@ -4,7 +4,6 @@ import { supabase } from '../lib/supabase.js'
 
 // ─── Vibe definitions ─────────────────────────────────────────────────────────
 const VIBES = [
-  { id: 'all',         label: 'All Cards 🌐',          color: 'bg-sky-100 text-sky-700' },
   { id: 'girlypop',    label: 'Girlypop 🌸',           color: 'bg-pink-200 text-pink-700' },
   { id: 'space',       label: 'Space ✨',               color: 'bg-indigo-200 text-indigo-700' },
   { id: 'pastel',      label: 'Pastel 🍬',              color: 'bg-yellow-100 text-yellow-600' },
@@ -17,8 +16,6 @@ const VIBES = [
   { id: 'dragons',        label: 'Dragons 🐉',             color: 'bg-blue-200 text-blue-700' },
   { id: 'megaevolution',  label: 'Mega Evolution ⚡',      color: 'bg-orange-200 text-orange-700' },
 ]
-
-const WISHLIST_VIBE = { id: 'wishlist', label: 'Wishlist & Collection ✨📦', color: 'bg-rose-200 text-rose-700' }
 
 // ─── Sets cache — memory + localStorage with 24-hour TTL ─────────────────────
 // v7: grouped by language tab, then series within each language
@@ -130,13 +127,12 @@ async function fetchSets() {
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
-function AestheticFilter({ active, onChange, setQuery, onSetQuery, user }) {
-  const [setsOpen,       setSetsOpen]       = useState(false)
-  const [vibesOpen,      setVibesOpen]      = useState(false)
-  const [setGroups,      setSetGroups]      = useState({ byLang: {}, langOrder: [] })
-  const [activeLang,     setActiveLang]     = useState('en')
-  const [expandedSeries, setExpandedSeries] = useState(null)
-  const [loadingSets,    setLoadingSets]    = useState(false)
+function AestheticFilter({ active, onChange, setQuery, onSetQuery }) {
+  const [setsOpen,    setSetsOpen]    = useState(false)
+  const [vibesOpen,   setVibesOpen]   = useState(false)
+  const [setGroups,   setSetGroups]   = useState({ byLang: {}, langOrder: [] })
+  const [activeLang,  setActiveLang]  = useState('en')
+  const [loadingSets, setLoadingSets] = useState(false)
 
   useEffect(() => {
     if (!setsOpen) return
@@ -150,69 +146,29 @@ function AestheticFilter({ active, onChange, setQuery, onSetQuery, user }) {
 
   function handleVibe(id) {
     onSetQuery(null)
-    // Toggling the active pill off snaps back to home, never leaves a null state
     onChange(id === active ? 'home' : id)
   }
 
-  function handleSeriesClick(series) {
-    // Do NOT call onChange(null) — clearing vibe would trigger handleVibeChange
-    // in App.jsx which wipes the search term, breaking hybrid queries.
-    setExpandedSeries(expandedSeries === series ? null : series)
-    const q = series === PROMO_KEY ? PROMO_QUERY : `set.series:"${series}"`
-    onSetQuery(setQuery === q ? null : q)
-  }
-
   function handleSetClick(setId) {
-    // Do NOT call onChange(null) — same reason as above.
     const q = `set.id:${setId}`
     onSetQuery(setQuery === q ? null : q)
   }
 
-  const activeSeriesQuery = (setQuery?.startsWith('set.series:') || setQuery === PROMO_QUERY) ? setQuery : null
-  const activeSetQuery    = setQuery?.startsWith('set.id:')     ? setQuery : null
+  const activeSetQuery = setQuery?.startsWith('set.id:') ? setQuery : null
 
   // A vibe is "active" if it's not 'all', 'home', 'wishlist', and not null
   const vibeIsActive = active && active !== 'all' && active !== 'home' && active !== 'wishlist'
 
-  const allVibe = VIBES.find(x => x.id === 'all')
   // Shared base class — full-width so the grid controls sizing
   const navBtn = 'w-full flex items-center justify-center gap-2 px-4 py-3 rounded-2xl font-bold text-sm transition-all shadow-sm'
 
   return (
     <div className="px-4 pb-2 max-w-2xl mx-auto">
 
-      {/* ── Bento grid: 1 col mobile → 2 col desktop ───────────────────── */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-3 pb-1">
+      {/* ── Always 2-col grid: Browse by Vibe | Browse by Set ──────────── */}
+      <div className="grid grid-cols-2 gap-3 pt-3 pb-1">
 
-        {/* 1. All Cards — spans both cols when no wishlist button (logged out) */}
-        <motion.button
-          whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
-          onClick={() => handleVibe('all')}
-          className={`${navBtn} ${!user ? 'sm:col-span-2' : ''}
-            ${active === 'all'
-              ? `${allVibe.color} ring-2 ring-offset-1 ring-pink-400 shadow-md`
-              : 'bg-white/60 text-gray-500 hover:bg-white/80'
-            }`}
-        >
-          {allVibe.label}
-        </motion.button>
-
-        {/* 2. Wishlist & Collection — logged-in users only */}
-        {user && (
-          <motion.button
-            whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
-            onClick={() => handleVibe(WISHLIST_VIBE.id)}
-            className={`${navBtn}
-              ${active === WISHLIST_VIBE.id
-                ? `${WISHLIST_VIBE.color} ring-2 ring-offset-1 ring-pink-400 shadow-md`
-                : 'bg-white/60 text-gray-500 hover:bg-white/80'
-              }`}
-          >
-            {WISHLIST_VIBE.label}
-          </motion.button>
-        )}
-
-        {/* 3. Browse by Vibe */}
+        {/* 1. Browse by Vibe */}
         <motion.button
           whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
           onClick={() => { setVibesOpen(o => !o); setSetsOpen(false) }}
@@ -232,7 +188,7 @@ function AestheticFilter({ active, onChange, setQuery, onSetQuery, user }) {
           </motion.span>
         </motion.button>
 
-        {/* 4. Browse by Set */}
+        {/* 2. Browse by Set */}
         <motion.button
           whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
           onClick={() => { setSetsOpen(o => !o); setVibesOpen(false) }}
@@ -263,7 +219,7 @@ function AestheticFilter({ active, onChange, setQuery, onSetQuery, user }) {
             className="overflow-hidden"
           >
             <div className="flex flex-wrap justify-center gap-2 pt-3 pb-1 border-t border-white/40 mt-2">
-              {VIBES.filter(v => v.id !== 'all').map(v => (
+              {VIBES.map(v => (
                 <motion.button
                   key={v.id}
                   whileHover={{ scale: 1.08 }} whileTap={{ scale: 0.95 }}
@@ -282,7 +238,7 @@ function AestheticFilter({ active, onChange, setQuery, onSetQuery, user }) {
         )}
       </AnimatePresence>
 
-      {/* ── Sets accordion (expands below grid) ────────────────────────── */}
+      {/* ── Sets tile grid (expands below grid) ────────────────────────── */}
       <AnimatePresence>
         {setsOpen && (
           <motion.div
@@ -306,11 +262,11 @@ function AestheticFilter({ active, onChange, setQuery, onSetQuery, user }) {
 
               {/* Language tabs */}
               {!loadingSets && setGroups.langOrder.length > 0 && (
-                <div className="flex flex-wrap gap-1 pb-2 px-1">
+                <div className="flex flex-wrap gap-1 pb-3 px-1">
                   {setGroups.langOrder.map(lang => (
                     <button
                       key={lang}
-                      onClick={() => { setActiveLang(lang); setExpandedSeries(null) }}
+                      onClick={() => setActiveLang(lang)}
                       className={`px-2.5 py-1 rounded-full text-xs font-semibold transition-all
                         ${activeLang === lang
                           ? 'bg-blue-500 text-white shadow-sm'
@@ -323,78 +279,44 @@ function AestheticFilter({ active, onChange, setQuery, onSetQuery, user }) {
                 </div>
               )}
 
-              {/* Series list for active language */}
-              <div className="max-h-56 overflow-y-auto scrollbar-thin space-y-0.5 px-1">
-                {(setGroups.byLang[activeLang]?.order ?? []).map(series => {
-                  const sets        = setGroups.byLang[activeLang]?.grouped[series] ?? []
-                  const isExpanded  = expandedSeries === series
-                  const seriesQ     = series === PROMO_KEY ? PROMO_QUERY : `set.series:"${series}"`
-                  const isSeriesAct = activeSeriesQuery === seriesQ
-
-                  return (
-                    <div key={series}>
-                      <div className="flex items-center gap-1">
-                        <motion.button
-                          whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
-                          onClick={() => handleSeriesClick(series)}
-                          className={`flex-1 text-left px-3 py-1.5 rounded-xl text-xs font-semibold transition-all
-                            ${isSeriesAct
-                              ? 'bg-sky-200 text-sky-700'
-                              : 'text-gray-600 hover:bg-sky-50 hover:text-sky-600'
-                            }`}
-                        >
+              {/* Set tile grid — grouped by series with section labels */}
+              {!loadingSets && (
+                <div className="max-h-72 overflow-y-auto scrollbar-thin space-y-4 px-1 pb-2">
+                  {(setGroups.byLang[activeLang]?.order ?? []).map(series => {
+                    const sets = setGroups.byLang[activeLang]?.grouped[series] ?? []
+                    return (
+                      <div key={series}>
+                        <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest px-1 mb-1.5">
                           {series}
-                          <span className="ml-1 text-gray-400 font-normal">({sets.length})</span>
-                        </motion.button>
-                        <button
-                          onClick={() => setExpandedSeries(isExpanded ? null : series)}
-                          className="p-1 text-gray-400 hover:text-sky-500 transition-colors"
-                        >
-                          <motion.span
-                            animate={{ rotate: isExpanded ? 90 : 0 }}
-                            transition={{ duration: 0.15 }}
-                            className="inline-block text-xs leading-none"
-                          >
-                            ▶
-                          </motion.span>
-                        </button>
+                        </div>
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                          {sets.map(set => {
+                            const setQ     = `set.id:${set.id}`
+                            const isActive = activeSetQuery === setQ
+                            return (
+                              <motion.button
+                                key={set.id}
+                                whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
+                                onClick={() => handleSetClick(set.id)}
+                                className={`text-left px-3 py-2 rounded-xl text-xs transition-all shadow-sm border
+                                  ${isActive
+                                    ? 'bg-pink-100 text-pink-800 border-pink-300 font-semibold ring-1 ring-pink-300'
+                                    : 'bg-white/70 text-gray-600 border-white/60 hover:bg-pink-50 hover:text-pink-700 hover:border-pink-200'
+                                  }`}
+                              >
+                                <div className="font-semibold leading-tight truncate">{set.name}</div>
+                                {set.releaseDate && (
+                                  <div className="text-[10px] opacity-60 mt-0.5">{set.releaseDate.slice(0, 4)}</div>
+                                )}
+                              </motion.button>
+                            )
+                          })}
+                        </div>
                       </div>
-
-                      <AnimatePresence>
-                        {isExpanded && (
-                          <motion.div
-                            initial={{ opacity: 0, height: 0 }}
-                            animate={{ opacity: 1, height: 'auto' }}
-                            exit={{ opacity: 0, height: 0 }}
-                            className="overflow-hidden pl-3"
-                          >
-                            <div className="flex flex-wrap gap-1 py-1.5">
-                              {sets.map(set => {
-                                const setQ     = `set.id:${set.id}`
-                                const isActive = activeSetQuery === setQ
-                                return (
-                                  <motion.button
-                                    key={set.id}
-                                    whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.96 }}
-                                    onClick={() => handleSetClick(set.id)}
-                                    className={`px-2.5 py-1 rounded-full text-xs transition-all shadow-sm
-                                      ${isActive
-                                        ? 'bg-pink-300 text-pink-800 font-semibold ring-1 ring-pink-400'
-                                        : 'bg-white/70 text-gray-500 hover:bg-pink-50 hover:text-pink-600'
-                                      }`}
-                                  >
-                                    {set.name}
-                                  </motion.button>
-                                )
-                              })}
-                            </div>
-                          </motion.div>
-                        )}
-                      </AnimatePresence>
-                    </div>
-                  )
-                })}
-              </div>
+                    )
+                  })}
+                </div>
+              )}
             </div>
           </motion.div>
         )}

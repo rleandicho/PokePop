@@ -38,6 +38,7 @@ html[data-theme='dark'] {
 body {
   margin: 0;
   min-height: 100vh;
+  overflow-x: hidden;
   background: var(--app-bg);
   color: var(--app-text);
   transition: background 240ms ease, color 240ms ease;

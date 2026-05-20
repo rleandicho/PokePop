@@ -1038,7 +1038,7 @@ const CardTile = memo(function CardTile({ card, inList, isOwned, myLangs, quickA
 })
 
 // ─── Main grid ────────────────────────────────────────────────────────────────
-function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, onClearFilters, user, onToast, activeBinderId, collectionIds, ownedIds, collectionLanguages, onCardAdded, onCardRemoved, onOwnedChanged, autoFocusSearch = false, onSetQuery }) {
+function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, onClearFilters, user, onToast, activeBinderId, collectionIds, ownedIds, collectionLanguages, onCardAdded, onCardRemoved, onOwnedChanged, autoFocusSearch = false, hideInlineSearch = false, onSetQuery }) {
   const gridTopRef   = useRef(null)
   const [cards,      setCards]      = useState([])
   const [page,       setPage]       = useState(1)
@@ -1332,13 +1332,16 @@ function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, onClearF
   return (
     <>
       <div ref={gridTopRef} />
-      <SearchBar
-        value={inlineSearch}
-        onChange={setInlineSearch}
-        onClear={handleInlineClear}
-        placeholder="Search by name, set, or card # (e.g. SWSH094)…"
-        autoFocus={autoFocusSearch}
-      />
+      {/* Mobile always shows inline search; desktop hides it when header has the search bar */}
+      <div className={hideInlineSearch ? 'sm:hidden' : ''}>
+        <SearchBar
+          value={inlineSearch}
+          onChange={setInlineSearch}
+          onClear={handleInlineClear}
+          placeholder="Search by name, set, or card # (e.g. SWSH094)…"
+          autoFocus={autoFocusSearch}
+        />
+      </div>
       <SortToolbar
         sortBy={sortBy}
         onSortChange={onSortChange}

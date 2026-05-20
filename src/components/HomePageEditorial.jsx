@@ -1084,7 +1084,7 @@ function MiniAuthModal({ T, isDark, onClose }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // Main component
 // ─────────────────────────────────────────────────────────────────────────────
-export default function HomePageEditorial({ user, profile, collectionIds, ownedIds, onNavigate, onNavigateToSearch, isDark = false, themeMode, onThemeToggle, onCardAdded }) {
+export default function HomePageEditorial({ user, profile, profileReady = false, collectionIds, ownedIds, onNavigate, onNavigateToSearch, isDark = false, themeMode, onThemeToggle, onCardAdded }) {
   const [recentCards,    setRecentCards]    = useState([])
   const [friendActivity, setFriendActivity] = useState([])
   const [sharedCards,    setSharedCards]    = useState([])
@@ -1118,7 +1118,11 @@ export default function HomePageEditorial({ user, profile, collectionIds, ownedI
   }, [dailyPokemon.cardId])
   const totalCards    = collectionIds?.size ?? 0
   const ownedCards    = ownedIds?.size      ?? 0
-  const username      = profile?.username ?? user?.email?.split('@')[0] ?? 'collector'
+  // Only resolve the username once the profile fetch has completed to avoid
+  // a flash where the email prefix renders briefly before the real username arrives.
+  const username = profileReady
+    ? (profile?.username ?? user?.email?.split('@')[0] ?? 'collector')
+    : null
   const today         = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })
 
   // Fetch alternate printings of the daily Pokemon for the hero showcase
@@ -1387,11 +1391,12 @@ export default function HomePageEditorial({ user, profile, collectionIds, ownedI
       <div style={{ padding: '0 20px 20px' }}>
         <div style={{ fontSize: 11, color: T.ink2, letterSpacing: '0.18em', textTransform: 'uppercase', marginBottom: 8 }}>{today}</div>
         <h1 style={{ fontFamily: T.fontDisplay, fontWeight: 400, fontSize: 40, margin: '0 0 4px', letterSpacing: '-0.02em', lineHeight: 1.1, color: T.ink0 }}>
-          {user ? (
-            <>Welcome back,<br /><GradientEm T={T}>{username}.</GradientEm></>
-          ) : (
-            <GradientEm T={T}>Welcome!</GradientEm>
-          )}
+          {user
+            ? username
+              ? <><span style={{ color: T.ink0 }}>Welcome back,</span><br /><GradientEm T={T}>{username}.</GradientEm></>
+              : <GradientEm T={T}>Welcome back!</GradientEm>
+            : <GradientEm T={T}>Welcome!</GradientEm>
+          }
         </h1>
       </div>
 
@@ -1400,45 +1405,8 @@ export default function HomePageEditorial({ user, profile, collectionIds, ownedI
         <DailyHero T={T} pokemon={dailyPokemon} cardImage={dailyCardImage} isDark={isDark} onSetClick={handleSetClick} onCardClick={setSelectedCard} onBrowsePokemon={handleBrowsePokemon} />
       </div>
 
-      {/* My Collection + Surprise Me — above Browse by Vibe */}
+      {/* Quick actions — above Browse by Vibe */}
       <div style={{ padding: '0 20px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
-        {user && (
-          <>
-            <button
-              onClick={() => onNavigate('wishlist')}
-              style={{
-                width: '100%', padding: '16px 20px', borderRadius: 20,
-                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                background: T.bgCardStrong, border: `1px solid ${T.border}`,
-                color: T.ink0, cursor: 'pointer', fontFamily: T.fontSans,
-                boxShadow: '0 4px 16px rgba(0,0,0,0.08)',
-              }}
-            >
-              <div style={{ textAlign: 'left' }}>
-                <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 3 }}>My Collection</div>
-                <div style={{ fontSize: 12, color: T.ink2 }}>{totalCards} cards · {ownedCards} owned</div>
-              </div>
-              <span style={{ fontSize: 22 }}>⊞</span>
-            </button>
-            <button
-              onClick={() => onNavigate('wishlist', 'binder')}
-              style={{
-                width: '100%', padding: '14px 20px', borderRadius: 20,
-                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                background: T.bgCard, border: `1px solid ${T.border}`,
-                color: T.ink0, cursor: 'pointer', fontFamily: T.fontSans,
-                boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
-              }}
-            >
-              <div style={{ textAlign: 'left' }}>
-                <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 2 }}>My Binder</div>
-                <div style={{ fontSize: 12, color: T.ink2 }}>View your virtual binder</div>
-              </div>
-              <span style={{ fontSize: 20 }}>📒</span>
-            </button>
-          </>
-        )}
-
         {!user && (
           <button
             onClick={() => setShowMiniAuth(true)}
@@ -1506,6 +1474,36 @@ export default function HomePageEditorial({ user, profile, collectionIds, ownedI
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10, padding: '0 20px 32px' }}>
         {VIBES.slice(4).map(v => <VibeTile key={v.id} vibe={v} onClick={onNavigate} />)}
+      </div>
+
+      {/* Ko-fi support tile — mobile, centered */}
+      <div style={{ padding: '0 20px 28px', display: 'flex', justifyContent: 'center' }}>
+        <a
+          href="https://ko-fi.com/qakirap"
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{
+            display: 'flex', alignItems: 'center', gap: 12,
+            padding: '14px 22px', borderRadius: 20,
+            background: isDark
+              ? 'linear-gradient(135deg, oklch(35% 0.08 30), oklch(30% 0.06 30))'
+              : 'linear-gradient(135deg, #fff7ed, #ffedd5)',
+            border: `1px solid ${isDark ? 'rgba(251,146,60,0.25)' : 'rgba(251,146,60,0.35)'}`,
+            textDecoration: 'none', width: '100%', maxWidth: 340,
+            boxShadow: '0 2px 12px rgba(251,146,60,0.12)',
+          }}
+        >
+          <span style={{ fontSize: 28, lineHeight: 1, flexShrink: 0 }}>☕</span>
+          <div>
+            <div style={{ fontSize: 14, fontWeight: 700, color: isDark ? '#fdba74' : '#c2410c', lineHeight: 1.2 }}>
+              Support on Ko-fi
+            </div>
+            <div style={{ fontSize: 11, color: isDark ? '#9ca3af' : '#9a3412', opacity: 0.8, marginTop: 2 }}>
+              Help keep Poképop free & growing
+            </div>
+          </div>
+          <span style={{ marginLeft: 'auto', fontSize: 14, color: isDark ? '#fdba74' : '#c2410c', flexShrink: 0 }}>→</span>
+        </a>
       </div>
 
       {/* Social feed — below vibe catalog on mobile */}
@@ -1631,7 +1629,7 @@ export default function HomePageEditorial({ user, profile, collectionIds, ownedI
             <button onClick={() => onNavigate('wishlist', 'collection')} style={{ background: 'none', border: 'none', color: T.ink1, cursor: 'pointer', fontSize: 13, fontFamily: T.fontSans }}>My Collection</button>
             <button onClick={() => onNavigate('wishlist', 'binder')} style={{ background: 'none', border: 'none', color: T.ink1, cursor: 'pointer', fontSize: 13, fontFamily: T.fontSans }}>My Binder</button>
           </nav>
-          {user && <Avatar T={T} name={username} size={32} ring />}
+          {user && username && <Avatar T={T} name={username} size={32} ring />}
         </div>
       </div>
 
@@ -1644,12 +1642,7 @@ export default function HomePageEditorial({ user, profile, collectionIds, ownedI
         overflowY: 'auto',
         display: 'flex', flexDirection: 'column',
       }}>
-        <div style={{ fontSize: 10, color: T.ink2, letterSpacing: '0.18em', textTransform: 'uppercase', padding: '0 10px 8px' }}>Library</div>
-        <SideItem T={T} icon="⊞" label="All cards"  count={user ? (totalCards || undefined) : undefined}   active onClick={() => user ? onNavigate('wishlist', 'collection') : setShowMiniAuth(true)} />
-        <SideItem T={T} icon="✓" label="Owned"      count={user ? (ownedCards || undefined) : undefined}    onClick={() => user ? onNavigate('wishlist', 'collection') : setShowMiniAuth(true)} />
-        <SideItem T={T} icon="♥" label="Wishlist"   count={user ? ((totalCards - ownedCards) || undefined) : undefined}  onClick={() => user ? onNavigate('wishlist', 'wishlist') : setShowMiniAuth(true)} />
-
-        <div style={{ height: 1, background: T.border, margin: '16px 10px' }} />
+        <div style={{ height: 1, background: T.border, margin: '4px 10px 16px' }} />
 
         <div style={{ fontSize: 10, color: T.ink2, letterSpacing: '0.18em', textTransform: 'uppercase', padding: '0 10px 10px' }}>Recently added</div>
         {!user && (
@@ -1697,7 +1690,9 @@ export default function HomePageEditorial({ user, profile, collectionIds, ownedI
         <div style={{ fontSize: 11, color: T.ink2, letterSpacing: '0.18em', textTransform: 'uppercase', marginBottom: 8 }}>{today}</div>
         <h1 style={{ fontFamily: T.fontDisplay, fontWeight: 400, fontSize: 56, margin: '0 0 28px', lineHeight: 1.05, letterSpacing: '-0.02em', color: T.ink0 }}>
           {user
-            ? <>Welcome back, <GradientEm T={T}>{username}.</GradientEm></>
+            ? username
+              ? <>Welcome back, <GradientEm T={T}>{username}.</GradientEm></>
+              : <GradientEm T={T}>Welcome back!</GradientEm>
             : <GradientEm T={T}>Welcome!</GradientEm>
           }
         </h1>
@@ -1771,6 +1766,37 @@ export default function HomePageEditorial({ user, profile, collectionIds, ownedI
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14, marginBottom: 32 }}>
           {VIBES.map(v => <VibeTile key={v.id} vibe={v} onClick={onNavigate} />)}
         </div>
+
+        {/* Ko-fi support tile — desktop */}
+        <a
+          href="https://ko-fi.com/qakirap"
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{
+            display: 'flex', alignItems: 'center', gap: 14,
+            padding: '16px 24px', borderRadius: 20,
+            background: isDark
+              ? 'linear-gradient(135deg, oklch(35% 0.08 30), oklch(30% 0.06 30))'
+              : 'linear-gradient(135deg, #fff7ed, #ffedd5)',
+            border: `1px solid ${isDark ? 'rgba(251,146,60,0.25)' : 'rgba(251,146,60,0.35)'}`,
+            textDecoration: 'none',
+            boxShadow: '0 2px 16px rgba(251,146,60,0.10)',
+            transition: 'box-shadow 0.2s, transform 0.2s',
+          }}
+          onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 6px 24px rgba(251,146,60,0.18)' }}
+          onMouseLeave={e => { e.currentTarget.style.transform = ''; e.currentTarget.style.boxShadow = '0 2px 16px rgba(251,146,60,0.10)' }}
+        >
+          <span style={{ fontSize: 32, lineHeight: 1, flexShrink: 0 }}>☕</span>
+          <div>
+            <div style={{ fontSize: 15, fontWeight: 700, color: isDark ? '#fdba74' : '#c2410c', lineHeight: 1.3 }}>
+              Support on Ko-fi
+            </div>
+            <div style={{ fontSize: 12, color: isDark ? '#9ca3af' : '#9a3412', opacity: 0.8, marginTop: 3 }}>
+              Help keep Poképop free & growing
+            </div>
+          </div>
+          <span style={{ marginLeft: 'auto', fontSize: 16, color: isDark ? '#fdba74' : '#c2410c', flexShrink: 0 }}>→</span>
+        </a>
       </main>
 
       {/* ── Right rail — Friend activity (top 50%) + Shared cards (bottom 50%) */}
@@ -1887,7 +1913,7 @@ export default function HomePageEditorial({ user, profile, collectionIds, ownedI
         <PackLogModal
           user={user}
           onClose={() => setPackModalOpen(false)}
-          onSaved={() => setPackModalOpen(false)}
+          onSaved={() => {}}
           onCardsSaved={cards => cards.forEach(c => onCardAdded?.(c.id, true, 'english'))}
         />
       )}

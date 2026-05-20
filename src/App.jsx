@@ -1,4 +1,4 @@
-import { useState, useEffect, useLayoutEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useLayoutEffect, useCallback, useRef, useMemo } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { supabase }        from './lib/supabase'
@@ -6,10 +6,10 @@ import { fetchAllRows }    from './lib/fetchAllRows'
 import { getStoredTheme, applyTheme } from './lib/theme'
 import AestheticFilter     from './components/AestheticFilter'
 import CardGrid            from './components/CardGrid'
+import SearchBar           from './components/SearchBar'
 import WishlistDashboard   from './components/WishlistDashboard'
 import HomePageEditorial   from './components/HomePageEditorial'
 import CardScanner         from './components/CardScanner'
-import Auth                from './components/Auth'
 import Toast               from './components/Toast'
 import ThemeToggle         from './components/ThemeToggle'
 import UsernameSetup       from './components/UsernameSetup'
@@ -229,6 +229,18 @@ export default function App() {
   const isScanner     = activeVibe === 'scanner'
   const isDark        = themeMode === 'dark'
 
+  // ── Header search bar state (desktop — lifted from CardGrid) ──────────────
+  const [headerSearch,         setHeaderSearch]         = useState('')
+  const [headerSearchDebounced, setHeaderSearchDebounced] = useState('')
+  const headerSearchTimer = useRef(null)
+  useEffect(() => {
+    clearTimeout(headerSearchTimer.current)
+    headerSearchTimer.current = setTimeout(() => setHeaderSearchDebounced(headerSearch.trim()), 500)
+    return () => clearTimeout(headerSearchTimer.current)
+  }, [headerSearch])
+  // Reset when vibe changes so stale search doesn't carry over
+  useEffect(() => { setHeaderSearch(''); setHeaderSearchDebounced('') }, [activeVibe])
+
   // ── Back-to-top visibility ──────────────────────────────────────────────────
   const [showBackTop, setShowBackTop] = useState(false)
   useEffect(() => {
@@ -254,12 +266,14 @@ export default function App() {
     navigate(stateToPath(vibe, tab, sq))
   }
 
-  // Called when user clicks the home page search bar — navigates to browse AND focuses search input
+  // Called when user clicks the home page search bar — navigates to browse AND focuses header search
+  const headerSearchRef = useRef(null)
   function handleNavigateToSearch() {
     setActiveVibe('all')
     setSetQuery(null)
     setFocusSearch(true)
     navigate('/browse')
+    setTimeout(() => headerSearchRef.current?.focus({ preventScroll: false }), 320)
   }
 
   const fadeTransition = { duration: 0.22, ease: 'easeInOut' }
@@ -281,6 +295,7 @@ export default function App() {
             <HomePageEditorial
               user={user}
               profile={profile}
+              profileReady={profileReady}
               collectionIds={collectionIds}
               ownedIds={ownedIds}
               onNavigate={handleNavigate}
@@ -289,12 +304,6 @@ export default function App() {
               themeMode={themeMode}
               onThemeToggle={() => setThemeMode(prev => prev === 'dark' ? 'light' : 'dark')}
               onCardAdded={handleCardAdded}
-            />
-            {/* Desktop-only ThemeToggle — mobile version lives inside HomePageEditorial above BottomNav */}
-            <ThemeToggle
-              mode={themeMode}
-              onToggle={() => setThemeMode(prev => prev === 'dark' ? 'light' : 'dark')}
-              className="hidden sm:flex fixed bottom-5 left-5 z-40 shadow-lg backdrop-blur-md"
             />
           </motion.div>
         ) : (
@@ -307,34 +316,97 @@ export default function App() {
           >
             <div className={`theme-shell ${isDark ? 'dark-theme' : ''}`}>
 
-              {/* ── Header ─────────────────────────────────────────────────────── */}
-              <header className="text-center pt-8 pb-2 px-4 space-y-3">
-                <motion.button
-                  onClick={goHome}
-                  whileHover={{ scale: 1.06 }}
-                  whileTap={{ scale: 0.97 }}
-                  className="text-5xl sm:text-6xl font-bold theme-heading drop-shadow-md tracking-tight
-                             cursor-pointer bg-transparent border-none p-0 transition-opacity
-                             inline-flex items-center gap-3"
-                  title="Back to home"
-                >
-                  Poképop
-                  <span
-                    className={`theme-ball ${isDark ? 'luxury-ball' : 'love-ball'}`}
-                    style={{ width: '0.8em', height: '0.8em', flexShrink: 0 }}
+              {/* ── Top nav bar ─────────────────────────────────────────────────── */}
+              {/* Mobile: flex justify-center so logo is centered (matches home page).
+                  Desktop (sm+): 3-col grid so logo left, search center, nav right. */}
+              <header
+                className="flex items-center justify-center sm:grid"
+                style={{
+                  position: 'sticky', top: 0, zIndex: 40,
+                  background: isDark ? 'rgba(21, 18, 39, 0.92)' : 'rgba(255, 255, 255, 0.88)',
+                  backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
+                  borderBottom: `1px solid ${isDark ? 'rgba(192,132,252,0.22)' : 'rgba(244,114,182,0.28)'}`,
+                  gridTemplateColumns: '1fr auto 1fr',
+                  padding: '0 24px', height: 64, gap: 16,
+                }}>
+                {/* Left — logo */}
+                <div style={{ display: 'flex', alignItems: 'center' }}>
+                  <motion.button
+                    onClick={goHome}
+                    whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }}
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', gap: 8 }}
+                    title="Back to home"
                   >
-                    <span className="theme-ball__top" />
-                    <span className="theme-ball__band" />
-                    <span className="theme-ball__button" />
-                    <span className="theme-ball__mark">{isDark ? 'L' : '♥'}</span>
-                  </span>
-                </motion.button>
-                <p className="theme-subtle font-medium text-sm">
-                  Discover Pokémon cards by vibe ✨
-                </p>
-                {/* On mobile, hide Auth when in wishlist — WishlistDashboard shows username/sign out there */}
-                <div className={isWishlist || isScanner ? 'hidden sm:block' : ''}>
-                  <Auth user={user} username={profile?.username} isDark={isDark} />
+                    <span className="theme-heading" style={{ fontSize: 24, fontWeight: 700, letterSpacing: '-0.02em', lineHeight: 1 }}>
+                      Poképop
+                    </span>
+                    <span
+                      className={`theme-ball ${isDark ? 'luxury-ball' : 'love-ball'}`}
+                      style={{ width: 22, height: 22, flexShrink: 0 }}
+                    >
+                      <span className="theme-ball__top" />
+                      <span className="theme-ball__band" />
+                      <span className="theme-ball__button" />
+                      <span className="theme-ball__mark">{isDark ? 'L' : '♥'}</span>
+                    </span>
+                  </motion.button>
+                </div>
+
+                {/* Center — search bar on browse (desktop only) */}
+                <div className="hidden sm:flex" style={{ width: 420, alignItems: 'center', justifyContent: 'center' }}>
+                  {!isWishlist && !isScanner ? (
+                    <div style={{ position: 'relative', width: '100%', display: 'flex', alignItems: 'center' }}>
+                      <span style={{ position: 'absolute', left: 14, fontSize: 14, pointerEvents: 'none', userSelect: 'none', zIndex: 1 }}>🔍</span>
+                      <input
+                        ref={headerSearchRef}
+                        type="text"
+                        value={headerSearch}
+                        onChange={e => setHeaderSearch(e.target.value)}
+                        placeholder="Search 18,000+ cards…"
+                        style={{
+                          width: '100%', paddingLeft: 38, paddingRight: headerSearch ? 36 : 16,
+                          paddingTop: 9, paddingBottom: 9,
+                          borderRadius: 999, fontSize: 13,
+                          border: `1px solid ${isDark ? 'rgba(192,132,252,0.28)' : 'rgba(244,114,182,0.35)'}`,
+                          background: isDark ? 'rgba(34,26,52,0.9)' : 'rgba(255,255,255,0.9)',
+                          color: isDark ? '#d6d0e6' : '#374151',
+                          outline: 'none', boxShadow: '0 1px 4px rgba(0,0,0,0.07)',
+                          fontFamily: 'inherit',
+                        }}
+                        onFocus={e => { e.target.style.boxShadow = `0 0 0 2px ${isDark ? 'rgba(192,132,252,0.4)' : 'rgba(244,114,182,0.4)'}` }}
+                        onBlur={e => { e.target.style.boxShadow = '0 1px 4px rgba(0,0,0,0.07)' }}
+                      />
+                      {headerSearch && (
+                        <button
+                          onClick={() => { setHeaderSearch(''); setHeaderSearchDebounced(''); headerSearchRef.current?.focus() }}
+                          style={{ position: 'absolute', right: 12, background: 'none', border: 'none', cursor: 'pointer', color: isDark ? '#8d82a8' : '#f9a8d4', fontSize: 16, lineHeight: 1, padding: '2px 4px' }}
+                          aria-label="Clear search"
+                        >✕</button>
+                      )}
+                    </div>
+                  ) : null}
+                </div>
+
+                {/* Right — nav links only (no auth, no toggle — toggle lives bottom-left) */}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
+                  <nav className="hidden sm:flex" style={{ gap: 2, alignItems: 'center' }}>
+                    {[
+                      { label: 'Browse',        active: !isWishlist && !isScanner, onClick: () => handleNavigate('all') },
+                      { label: 'My Collection', active: isWishlist && wishlistTab !== 'binder', onClick: () => handleNavigate('wishlist', 'collection') },
+                      { label: 'My Binder',     active: isWishlist && wishlistTab === 'binder', onClick: () => handleNavigate('wishlist', 'binder') },
+                    ].map(({ label, active, onClick }) => (
+                      <button key={label} onClick={onClick} style={{
+                        background: 'none', border: 'none', cursor: 'pointer',
+                        padding: '6px 12px', borderRadius: 8,
+                        fontSize: 13, fontWeight: active ? 600 : 400,
+                        color: active ? (isDark ? '#c084fc' : '#ec4899') : (isDark ? '#8d82a8' : '#6b7280'),
+                        fontFamily: 'inherit',
+                        transition: 'color 0.15s',
+                        whiteSpace: 'nowrap',
+                        lineHeight: 1,
+                      }}>{label}</button>
+                    ))}
+                  </nav>
                 </div>
               </header>
 
@@ -345,12 +417,11 @@ export default function App() {
                   onChange={handleVibeChange}
                   setQuery={setQuery}
                   onSetQuery={handleSetQuery}
-                  user={user}
                 />
               )}
 
               {/* ── Main content ────────────────────────────────────────────────── */}
-              <main className="max-w-6xl mx-auto pb-16">
+              <main className="max-w-6xl mx-auto pb-24 sm:pb-16">
                 {isScanner ? (
                   <CardScanner
                     user={user}
@@ -378,6 +449,7 @@ export default function App() {
                   <CardGrid
                     key={activeVibe ?? ''}
                     activeVibe={activeVibe}
+                    search={headerSearchDebounced}
                     setQuery={setQuery}
                     sortBy={sortBy}
                     onSortChange={setSortBy}
@@ -392,6 +464,7 @@ export default function App() {
                     onCardRemoved={handleCardRemoved}
                     onOwnedChanged={handleOwnedChanged}
                     autoFocusSearch={focusSearch}
+                    hideInlineSearch
                     onSetQuery={handleSetQuery}
                   />
                 )}
@@ -401,11 +474,11 @@ export default function App() {
               {showBackTop && (
                 <button
                   onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-                  className="fixed bottom-6 right-4 z-50 sm:bottom-16 sm:right-5
-                             w-9 h-9 flex items-center justify-center
+                  className="fixed z-50 w-9 h-9 flex items-center justify-center
                              bg-white/80 hover:bg-white text-pink-400 hover:text-pink-500
                              rounded-full border border-pink-200 shadow-md
                              transition-all hover:scale-110 active:scale-95 text-sm"
+                  style={{ bottom: 72, right: 16 }}
                   title="Back to top"
                   aria-label="Back to top"
                 >
@@ -413,7 +486,7 @@ export default function App() {
                 </button>
               )}
 
-              {/* ── Ko-fi FAB ── */}
+              {/* ── Desktop Ko-fi FAB ── */}
               <a
                 href="https://ko-fi.com/qakirap"
                 target="_blank"
@@ -432,33 +505,65 @@ export default function App() {
                 ☕ Support on Ko-fi
               </a>
 
-              {/* ── Theme toggle FAB ── */}
-              <ThemeToggle
-                mode={themeMode}
-                onToggle={() => setThemeMode(prev => prev === 'dark' ? 'light' : 'dark')}
-                className="fixed bottom-5 left-5 z-40 shadow-lg backdrop-blur-md"
-              />
-
-              {/* Mobile footer Ko-fi link */}
-              <footer className="sm:hidden text-center py-4 pb-6">
-                <a
-                  href="https://ko-fi.com/qakirap"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1.5
-                             text-xs text-pink-400 font-semibold
-                             bg-white/60 hover:bg-white/90
-                             px-4 py-2 rounded-full
-                             border border-pink-200
-                             shadow-sm transition-all"
-                >
-                  ☕ Support on Ko-fi
-                </a>
-              </footer>
             </div>
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* ── Persistent overlays — OUTSIDE AnimatePresence so opacity animations
+          on motion.div don't create a stacking context that breaks position:fixed ── */}
+
+      {/* Mobile ThemeToggle FAB — home page has its own, so only show on shell pages */}
+      {!isHome && (
+        <div
+          className="sm:hidden fixed z-50"
+          style={{ bottom: 'calc(64px + env(safe-area-inset-bottom, 0px))', left: 16 }}
+        >
+          <ThemeToggle
+            mode={themeMode}
+            onToggle={() => setThemeMode(prev => prev === 'dark' ? 'light' : 'dark')}
+          />
+        </div>
+      )}
+
+      {/* Desktop ThemeToggle FAB — always visible bottom-left on all pages */}
+      <div className="hidden sm:block fixed z-40" style={{ bottom: 20, left: 20 }}>
+        <ThemeToggle
+          mode={themeMode}
+          onToggle={() => setThemeMode(prev => prev === 'dark' ? 'light' : 'dark')}
+        />
+      </div>
+
+      {/* Mobile bottom nav — shown on all non-home shell pages */}
+      {!isHome && (
+        <nav
+          className="sm:hidden fixed bottom-0 left-0 right-0 z-50 flex justify-around"
+          style={{
+            background: isDark ? 'rgba(21, 18, 39, 0.95)' : 'rgba(255, 255, 255, 0.92)',
+            backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
+            borderTop: `1px solid ${isDark ? 'rgba(192,132,252,0.22)' : 'rgba(244,114,182,0.25)'}`,
+            paddingTop: 8,
+            paddingBottom: 'calc(8px + env(safe-area-inset-bottom, 0px))',
+          }}
+        >
+          {[
+            { id: 'home',    label: 'Home',    icon: '⌂', active: false,       onClick: goHome },
+            { id: 'browse',  label: 'Browse',  icon: '▤', active: !isWishlist && !isScanner, onClick: () => handleVibeChange('all') },
+            { id: 'scanner', label: 'Scan',    icon: '▣', active: isScanner,   onClick: () => handleNavigate('scanner') },
+            { id: 'library', label: 'Library', icon: '⊞', active: isWishlist,  onClick: () => { if (!user) return; handleNavigate('wishlist', wishlistTab) } },
+          ].map(tab => (
+            <button key={tab.id} onClick={tab.onClick} style={{
+              display: 'flex', flexDirection: 'column', alignItems: 'center',
+              gap: 3, flex: 1, background: 'none', border: 'none', cursor: 'pointer',
+              color: tab.active ? (isDark ? '#c084fc' : '#ec4899') : (isDark ? '#5b5072' : '#9ca3af'),
+              fontSize: 10, lineHeight: 1, padding: '2px 0',
+            }}>
+              <span style={{ fontSize: 18, lineHeight: 1 }}>{tab.icon}</span>
+              <span style={{ lineHeight: 1.2 }}>{tab.label}</span>
+            </button>
+          ))}
+        </nav>
+      )}
     </>
   )
 }

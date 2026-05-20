@@ -1504,7 +1504,7 @@ export default function WishlistDashboard({ user, profile, onToast, onGoExplore,
   const [valueSnapshots,   setValueSnapshots]   = useState([])
   const [valueTrend,       setValueTrend]       = useState(null) // {up, pct, dollar}
   const [valueChartOpen,   setValueChartOpen]   = useState(false)
-  const snapshotTakenRef = useRef(false)
+  const snapshotValueRef = useRef(null) // tracks last snapshotted value to avoid redundant writes
   const [feedItems,       setFeedItems]       = useState([])    // social feed activity
   const [feedLoading,     setFeedLoading]     = useState(false)
 
@@ -1833,16 +1833,20 @@ export default function WishlistDashboard({ user, profile, onToast, onGoExplore,
     [packLogs]
   )
 
-  // ── Collection value snapshot — once per session after value is non-zero ─────
+  // ── Collection value snapshot — updates today's record whenever value changes ─
+  // Uses upsert so only one row per (user, date) exists. snapshotValueRef prevents
+  // redundant writes when collectionValue hasn't actually changed between renders.
   useEffect(() => {
-    if (!user || collectionValue <= 0 || snapshotTakenRef.current) return
-    snapshotTakenRef.current = true
+    if (!user || collectionValue <= 0) return
+    if (snapshotValueRef.current === collectionValue) return // no change, skip write
+    snapshotValueRef.current = collectionValue
+
     const today = new Date().toISOString().split('T')[0]
     supabase.from('collection_value_snapshots')
       .upsert({ user_id: user.id, snapshot_date: today, total_value: collectionValue },
                { onConflict: 'user_id,snapshot_date' })
       .then(() => {
-        // Fetch snapshots for trend + chart
+        // Re-fetch snapshots so the chart and trend reflect the updated value
         supabase
           .from('collection_value_snapshots')
           .select('snapshot_date, total_value')
@@ -3509,17 +3513,6 @@ export default function WishlistDashboard({ user, profile, onToast, onGoExplore,
           </div>
         </div>
 
-        {/* Row 0b (mobile only): Browse All Cards — full width */}
-        <motion.button
-          whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.97 }}
-          onClick={onGoExplore}
-          className="w-full sm:hidden flex items-center justify-center gap-1.5
-                     text-sm font-bold px-4 py-2.5
-                     bg-gradient-to-r from-pink-400 to-violet-400 text-white
-                     rounded-full shadow-md transition-all"
-        >
-          ▤ Browse All Cards
-        </motion.button>
         <motion.button
           whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.97 }}
           onClick={onOpenScanner}
@@ -3567,32 +3560,15 @@ export default function WishlistDashboard({ user, profile, onToast, onGoExplore,
           Lists 📋
         </motion.button>
 
-        {/* Desktop: Browse All Cards — own row above the tab pills */}
-        <div className="hidden sm:flex justify-center">
-          <motion.button
-            whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }}
-            onClick={onGoExplore}
-            className="flex items-center gap-2 text-sm font-bold px-5 py-2
-                       bg-gradient-to-r from-pink-400 to-violet-400 text-white
-                       rounded-full shadow-md transition-all"
-          >
-            ▤ Browse All Cards
-          </motion.button>
-        </div>
-
-        {/* Desktop: tab pills + share/settings */}
+        {/* Desktop: tab pills + socials dropdown + settings */}
         <div className="hidden sm:flex sm:flex-wrap sm:justify-center sm:items-center gap-2">
           {[
-            { id: 'cards',     label: 'My Cards 📦',      isActive: activeTab === 'collection' || activeTab === 'wishlist',
+            { id: 'cards',  label: 'My Cards 📦',       isActive: activeTab === 'collection' || activeTab === 'wishlist',
               action: () => { if (activeTab !== 'collection' && activeTab !== 'wishlist') setActiveTab('collection'); setCollectionPage(1); setWishlistPage(1) } },
-            { id: 'binder',    label: 'Virtual Binder 📒', isActive: activeTab === 'binder',
+            { id: 'binder', label: 'Virtual Binder 📒',  isActive: activeTab === 'binder',
               action: () => { setActiveTab('binder'); setCollectionPage(1); setWishlistPage(1) } },
-            { id: 'lists',     label: 'Lists 📋',           isActive: activeTab === 'lists',
+            { id: 'lists',  label: 'Lists 📋',            isActive: activeTab === 'lists',
               action: () => { setActiveTab('lists'); setCollectionPage(1); setWishlistPage(1) } },
-            { id: 'trainers',  label: `Following 👥${followedTrainers.length ? ` · ${followedTrainers.length}` : ''}`,
-              isActive: activeTab === 'trainers', action: () => { setActiveTab('trainers'); setCollectionPage(1); setWishlistPage(1) } },
-            { id: 'followers', label: `Followers 👥${followers.length ? ` · ${followers.length}` : ''}`,
-              isActive: activeTab === 'followers', action: () => { setActiveTab('followers'); setCollectionPage(1); setWishlistPage(1) } },
           ].map(tab => (
             <motion.button
               key={tab.id}
@@ -3607,17 +3583,53 @@ export default function WishlistDashboard({ user, profile, onToast, onGoExplore,
               {tab.label}
             </motion.button>
           ))}
-          {isPublic && (
+
+          {/* Desktop Socials dropdown — same pattern as mobile */}
+          <div className="relative">
             <motion.button
               whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }}
-              onClick={handleShare}
-              className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5
-                         bg-violet-400 hover:bg-violet-500 text-white rounded-full
-                         shadow-sm transition-colors"
+              onClick={e => { e.stopPropagation(); setShowSocialsMenu(p => !p) }}
+              className={`flex items-center gap-1 text-sm font-semibold px-5 py-2
+                         border rounded-full shadow-sm transition-colors
+                         ${showSocialsMenu || ['trainers','followers','socialfeed'].includes(activeTab)
+                           ? 'bg-pink-400 text-white border-pink-400'
+                           : 'bg-white/60 border-gray-200 text-gray-500 hover:bg-white/80'}`}
             >
-              ↗ Share
+              👥 Socials
             </motion.button>
-          )}
+            {showSocialsMenu && (
+              <div
+                className="absolute left-0 top-11 z-30 bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden min-w-[175px]"
+                onClick={e => e.stopPropagation()}
+              >
+                <button
+                  onClick={() => { setActiveTab('socialfeed'); setShowSocialsMenu(false) }}
+                  className={`w-full flex items-center gap-2 px-4 py-2.5 text-sm font-semibold transition-colors
+                    ${activeTab === 'socialfeed' ? 'text-pink-500 bg-pink-50' : 'text-gray-600 hover:bg-gray-50'}`}
+                >📰 Social Feed</button>
+                <button
+                  onClick={() => { setActiveTab('trainers'); setCollectionPage(1); setWishlistPage(1); setShowSocialsMenu(false) }}
+                  className={`w-full flex items-center gap-2 px-4 py-2.5 text-sm font-semibold transition-colors
+                    ${activeTab === 'trainers' ? 'text-pink-500 bg-pink-50' : 'text-gray-600 hover:bg-gray-50'}`}
+                >👥 Following{followedTrainers.length > 0 && <span className="ml-auto text-xs text-gray-400">{followedTrainers.length}</span>}</button>
+                <button
+                  onClick={() => { setActiveTab('followers'); setCollectionPage(1); setWishlistPage(1); setShowSocialsMenu(false) }}
+                  className={`w-full flex items-center gap-2 px-4 py-2.5 text-sm font-semibold transition-colors
+                    ${activeTab === 'followers' ? 'text-pink-500 bg-pink-50' : 'text-gray-600 hover:bg-gray-50'}`}
+                >👥 Followers{followers.length > 0 && <span className="ml-auto text-xs text-gray-400">{followers.length}</span>}</button>
+                {isPublic && (
+                  <>
+                    <div className="border-t border-gray-100" />
+                    <button
+                      onClick={() => { handleShare(); setShowSocialsMenu(false) }}
+                      className="w-full flex items-center gap-2 px-4 py-2.5 text-sm font-semibold text-violet-600 hover:bg-violet-50 transition-colors"
+                    >↗ Share Profile</button>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+
           <motion.button
             whileHover={{ scale: 1.1, rotate: 30 }} whileTap={{ scale: 0.92 }}
             onClick={() => setShowSettings(true)}

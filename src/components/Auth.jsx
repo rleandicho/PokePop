@@ -94,7 +94,7 @@ export default function Auth({ user, username, isDark }) {
     return (
       <div className="flex items-center gap-2 justify-center flex-wrap">
         <span className="text-xs text-pink-400 font-semibold">
-          ✨ {username ? `@${username}` : user.email}
+          {username ? `@${username}` : user.email}
         </span>
         <button
           onClick={handleSignOut}
