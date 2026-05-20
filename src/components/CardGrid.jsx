@@ -1154,19 +1154,24 @@ function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, onClearF
       // A newer request has already started — discard this response
       if (reqIdRef.current !== reqId) return
 
-      // Write to LRU in-memory cache
-      const keyList = cacheKeysRef.current
-      const existing = keyList.indexOf(key)
-      if (existing !== -1) keyList.splice(existing, 1)
-      if (keyList.length >= CACHE_LIMIT) {
-        const evicted = keyList.shift()
-        delete cacheRef.current[evicted]
-      }
-      keyList.push(key)
-      cacheRef.current[key] = { rawCards, page: pg, totalPages: total }
+      // Write to LRU in-memory cache and localStorage ONLY for page 1.
+      // Page > 1 results are transient — caching them under the same key would
+      // overwrite page-1 data, causing the filter-change effect to serve the
+      // wrong page when it does a cache hit and resets page to 1.
+      if (pg === 1) {
+        const keyList = cacheKeysRef.current
+        const existing = keyList.indexOf(key)
+        if (existing !== -1) keyList.splice(existing, 1)
+        if (keyList.length >= CACHE_LIMIT) {
+          const evicted = keyList.shift()
+          delete cacheRef.current[evicted]
+        }
+        keyList.push(key)
+        cacheRef.current[key] = { rawCards, totalPages: total }
 
-      // Persist to localStorage so the next page load skips the network (non-price sorts only)
-      if (!isPriceSort) lsSet(key, { rawCards, totalPages: total })
+        // Persist to localStorage so the next page load skips the network (non-price sorts only)
+        if (!isPriceSort) lsSet(key, { rawCards, totalPages: total })
+      }
 
       setCards(sortCards(rawCards, sort))
       setTotalPages(total)
@@ -1194,13 +1199,16 @@ function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, onClearF
     activeKeyRef.current = key
 
     // Cancel any in-flight request when filter/sort changes.
+    // We always bump reqIdRef here so that a stale page-N fetch (if running)
+    // won't overwrite the filter-change result — but we only do it once before
+    // deciding cache-hit vs network fetch.
     abortRef.current?.abort()
     reqIdRef.current++
 
     const cached = cacheRef.current[key]
 
     if (cached) {
-      // Cache hit: serve immediately, no network request
+      // Cache hit: serve immediately (always page-1 data — see fetchCards cache-write guard).
       setCards(sortCards(cached.rawCards, sortBy))
       setPage(1)
       setTotalPages(cached.totalPages ?? 0)
