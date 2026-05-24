@@ -161,14 +161,22 @@ export default function CardScanner({ user, isDark = false, onToast, onCardAdded
   const streamRef = useRef(null)
   const workerRef = useRef(null)
   const detectingRef = useRef(false)
-  const lastCandidateRef = useRef('')
-  const lastRawTextRef = useRef('')  // frame stability: skip scan if text unchanged
+  const scanLockedRef = useRef(false)       // mirrors scanLocked state — safe to read in stale closures
+  const triedCandidatesRef = useRef(new Set()) // all candidates tried for the current text frame
+  const resultsCountRef = useRef(0)         // mirrors results.length — avoids re-creating the interval on every result change
+  const lastRawTextRef = useRef('')         // frame stability: skip scan if text unchanged
   const [cameraOn, setCameraOn] = useState(false)
   const [cameraError, setCameraError] = useState('')
   const [query, setQuery] = useState('')
   const [detectedText, setDetectedText] = useState('')
   const [scanStatus, setScanStatus] = useState('Start the camera to scan automatically.')
-  const [scanLocked, setScanLocked] = useState(false)
+  const [scanLocked, setScanLockedState] = useState(false)
+  // Keep ref in sync so captureAndDetect always sees the current lock value
+  // even when the interval closure captured a stale version of the state.
+  const setScanLocked = useCallback((v) => {
+    scanLockedRef.current = v
+    setScanLockedState(v)
+  }, [])
   const [matchedCandidate, setMatchedCandidate] = useState('')
   const [results, setResults] = useState([])
   const [resultsPage, setResultsPage] = useState(1)
@@ -296,8 +304,22 @@ export default function CardScanner({ user, isDark = false, onToast, onCardAdded
   const searchCandidates = useCallback(async (candidates, { quiet = false } = {}) => {
     if (!candidates.length) return false
 
-    const fresh = candidates.filter(c => c && c !== lastCandidateRef.current)
+    // Skip candidates already tried for this text frame.
+    // Uses a Set (triedCandidatesRef) so ALL previously-tried candidates are excluded,
+    // not just the single last one tracked by the old lastCandidateRef string.
+    const fresh = candidates.filter(c => c && !triedCandidatesRef.current.has(c))
     if (!fresh.length) return false
+
+    const lockResult = (winner, cards) => {
+      triedCandidatesRef.current.clear() // next scan starts fresh
+      setQuery(winner)
+      setResults(cards)
+      resultsCountRef.current = cards.length
+      setResultsPage(1)
+      setMatchedCandidate(winner)
+      setScanLocked(true)
+      setScanStatus(`Matched "${winner}". Scan paused so results stay stable.`)
+    }
 
     // Fire the top 3 candidates in parallel — network round-trips dominate,
     // so parallel requests are ~3x faster than sequential when name+number
@@ -308,35 +330,24 @@ export default function CardScanner({ user, isDark = false, onToast, onCardAdded
     const parallelResults = await Promise.all(top.map(c => rawSearch(c)))
     setSearching(false)
 
+    // Mark all parallel candidates as tried regardless of outcome
+    top.forEach(c => triedCandidatesRef.current.add(c))
+
     const winnerIdx = parallelResults.findIndex(r => r.length > 0)
     if (winnerIdx >= 0) {
-      const winner = top[winnerIdx]
-      lastCandidateRef.current = winner
-      setQuery(winner)
-      setResults(parallelResults[winnerIdx])
-      setResultsPage(1)
-      setMatchedCandidate(winner)
-      setScanLocked(true)
-      setScanStatus(`Matched "${winner}". Scan paused so results stay stable.`)
+      lockResult(top[winnerIdx], parallelResults[winnerIdx])
       return true
     }
-    // Update ref so we don't retry these exact candidates next frame
-    lastCandidateRef.current = top[top.length - 1]
 
     // Fall back to remaining candidates sequentially
     for (const candidate of fresh.slice(3, 8)) {
       setScanStatus(`Checking "${candidate}"...`)
+      triedCandidatesRef.current.add(candidate)
       setSearching(true)
       const cards = await rawSearch(candidate)
       setSearching(false)
       if (cards.length) {
-        lastCandidateRef.current = candidate
-        setQuery(candidate)
-        setResults(cards)
-        setResultsPage(1)
-        setMatchedCandidate(candidate)
-        setScanLocked(true)
-        setScanStatus(`Matched "${candidate}". Scan paused so results stay stable.`)
+        lockResult(candidate, cards)
         return true
       }
     }
@@ -344,7 +355,21 @@ export default function CardScanner({ user, isDark = false, onToast, onCardAdded
     setScanStatus('Text found, but no card match yet. Move closer to the card name or number.')
     if (!quiet) onToast?.('Text found, but no card match yet.')
     return false
-  }, [onToast, rawSearch])
+  }, [onToast, rawSearch, setScanLocked])
+
+  // Upscale a canvas before Tesseract — 2× scale dramatically improves recognition
+  // of small text (collector numbers, set symbols) which are typically rendered at
+  // ~72 effective DPI on a phone camera; Tesseract was designed for 300 DPI.
+  function upscaleCanvas(src, scale = 2) {
+    const dst = document.createElement('canvas')
+    dst.width  = src.width  * scale
+    dst.height = src.height * scale
+    const ctx = dst.getContext('2d')
+    ctx.imageSmoothingEnabled = true
+    ctx.imageSmoothingQuality = 'high'
+    ctx.drawImage(src, 0, 0, dst.width, dst.height)
+    return dst
+  }
 
   // Preprocess a canvas for foil/holo cards: convert to high-contrast grayscale
   // so OCR can read text on reflective holographic surfaces
@@ -369,7 +394,7 @@ export default function CardScanner({ user, isDark = false, onToast, onCardAdded
   }
 
   const captureAndDetect = useCallback(async ({ quiet = false } = {}) => {
-    if (scanLocked) return
+    if (scanLockedRef.current) return  // use ref — always current, not a stale closure value
     if (detectingRef.current) return
     const video = videoRef.current
     const canvas = canvasRef.current
@@ -383,17 +408,17 @@ export default function CardScanner({ user, isDark = false, onToast, onCardAdded
     const ctx = canvas.getContext('2d')
     ctx.drawImage(video, 0, 0, vw, vh)
 
-    // Focused crops: top 20% for the Pokémon name (name + HP line lives here),
-    // bottom 12% for the collector number (nn/NNN printed at the bottom of the card).
-    // Tighter regions = less noise from attack text, faster Tesseract passes.
+    // Focused crops: top 25% for the Pokémon name (name + HP line lives here),
+    // bottom 15% for the collector number (nn/NNN printed at the bottom of the card).
+    // Slightly wider than the old 20%/12% to handle cards scanned at a slight angle.
     const nameCanvas = document.createElement('canvas')
     nameCanvas.width  = vw
-    nameCanvas.height = Math.round(vh * 0.20)
+    nameCanvas.height = Math.round(vh * 0.25)
     nameCanvas.getContext('2d').drawImage(video, 0, 0, vw, vh, 0, 0, vw, nameCanvas.height)
 
     const numCanvas = document.createElement('canvas')
     numCanvas.width  = vw
-    numCanvas.height = Math.round(vh * 0.12)
+    numCanvas.height = Math.round(vh * 0.15)
     numCanvas.getContext('2d').drawImage(video, 0, vh - numCanvas.height, vw, numCanvas.height, 0, 0, vw, numCanvas.height)
 
     // Preprocess the name crop for foil/holo resilience (grayscale + contrast boost).
@@ -405,30 +430,32 @@ export default function CardScanner({ user, isDark = false, onToast, onCardAdded
       let rawText = ''
       if (supportsTextDetection) {
         const detector = new window.TextDetector()
-        // 2 calls: preprocessed name crop (foil-safe) + original full frame (catches set/number info).
-        // Reduced from 4 parallel calls — each detect() is a native GPU pass, so halving the count
-        // meaningfully cuts frame processing time.
-        const [nameDets, fullDets] = await Promise.all([
+        // 3 parallel calls: preprocessed name crop (foil-safe), number strip (collector
+        // numbers like "90/102" are small and benefit from a dedicated crop), and the full
+        // frame as a catch-all for set names and other text.
+        const [nameDets, numDets, fullDets] = await Promise.all([
           detector.detect(procNameCanvas),
+          detector.detect(numCanvas),
           detector.detect(canvas),
         ])
         const nameText = nameDets.map(d => d.rawValue).filter(Boolean).join('\n')
+        const numText  = numDets.map(d => d.rawValue).filter(Boolean).join('\n')
         const fullText = fullDets.map(d => d.rawValue).filter(Boolean).join('\n')
-        rawText = nameText ? `${nameText}\n${fullText}` : fullText
+        rawText = [nameText, numText, fullText].filter(Boolean).join('\n')
       }
       let candidates = []
       if (!rawText.trim()) {
-        // Tesseract fallback: name crop first (fast — small area), then the number
-        // strip (also fast), then full card only if still nothing found.
+        // Tesseract fallback: upscale 2× before each pass — Tesseract was designed for
+        // 300 DPI scans and reads small card text much more reliably at double resolution.
         setScanStatus('Reading card name...')
-        const nameText = await readWithTesseract(procNameCanvas)
+        const nameText = await readWithTesseract(upscaleCanvas(procNameCanvas))
         setScanStatus('Reading collector number...')
-        const numText  = await readWithTesseract(numCanvas)
+        const numText  = await readWithTesseract(upscaleCanvas(numCanvas))
         rawText = [nameText, numText].filter(Boolean).join('\n')
         candidates = buildSearchCandidates(rawText)
         if (!candidates.length) {
           setScanStatus('Reading full card...')
-          const fullText = await readWithTesseract(preprocessCanvas(canvas))
+          const fullText = await readWithTesseract(upscaleCanvas(preprocessCanvas(canvas)))
           rawText = [rawText, fullText].filter(Boolean).join('\n')
           candidates = buildSearchCandidates(rawText)
         }
@@ -436,11 +463,16 @@ export default function CardScanner({ user, isDark = false, onToast, onCardAdded
         candidates = buildSearchCandidates(rawText)
       }
 
-      // Frame stability: skip processing if we just saw identical text and already have results
+      // Frame stability: skip processing if we just saw identical text and already have results.
+      // Uses resultsCountRef (not results.length) to avoid stale closure values.
       const normalised = rawText.replace(/\s+/g, ' ').trim()
-      if (normalised && normalised === lastRawTextRef.current && results.length > 0) {
+      if (normalised && normalised === lastRawTextRef.current && resultsCountRef.current > 0) {
         detectingRef.current = false
         return
+      }
+      // Text changed — clear the tried-candidates set so the new frame gets a clean slate
+      if (normalised !== lastRawTextRef.current) {
+        triedCandidatesRef.current.clear()
       }
       lastRawTextRef.current = normalised
 
@@ -457,7 +489,10 @@ export default function CardScanner({ user, isDark = false, onToast, onCardAdded
     } finally {
       detectingRef.current = false
     }
-  }, [readWithTesseract, results, scanLocked, searchCandidates, supportsTextDetection])
+  // scanLocked and results intentionally omitted — both are accessed via refs
+  // (scanLockedRef, resultsCountRef) so stale closure values are never a problem.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [readWithTesseract, searchCandidates, supportsTextDetection])
 
   useEffect(() => () => {
     stopCamera()
@@ -479,9 +514,10 @@ export default function CardScanner({ user, isDark = false, onToast, onCardAdded
     setCameraError('')
     setDetectedText('')
     setResults([])
+    resultsCountRef.current = 0
     setScanLocked(false)
     setMatchedCandidate('')
-    lastCandidateRef.current = ''
+    triedCandidatesRef.current.clear()
     if (!navigator.mediaDevices?.getUserMedia) {
       setCameraError('Camera access is not available in this browser.')
       return
@@ -517,8 +553,9 @@ export default function CardScanner({ user, isDark = false, onToast, onCardAdded
     setScanLocked(false)
     setMatchedCandidate('')
     setResults([])
+    resultsCountRef.current = 0
     setResultsPage(1)
-    lastCandidateRef.current = ''
+    triedCandidatesRef.current.clear()
     lastRawTextRef.current = ''
     setScanStatus(supportsTextDetection ? 'Scanning automatically...' : 'Scanning with fallback OCR...')
     captureAndDetect({ quiet: false })
@@ -528,10 +565,11 @@ export default function CardScanner({ user, isDark = false, onToast, onCardAdded
     setQuery('')
     setDetectedText('')
     setResults([])
+    resultsCountRef.current = 0
     setResultsPage(1)
     setScanLocked(false)
     setMatchedCandidate('')
-    lastCandidateRef.current = ''
+    triedCandidatesRef.current.clear()
     lastRawTextRef.current = ''
     setScanStatus(supportsTextDetection ? 'Ready for the next card.' : 'Ready for the next card with fallback OCR.')
   }
