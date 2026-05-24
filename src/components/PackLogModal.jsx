@@ -101,19 +101,19 @@ const PackNameRow = memo(function PackNameRow({ row, index, total, allSets, onUp
             placeholder={index === 0 ? 'Set name (e.g. Stellar Crown…)' : 'Another set…'}
             autoFocus={index === 0}
             autoComplete="off"
-            className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-pink-300"
+            className="w-full border border-gray-200 dark:border-gray-700 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-pink-300 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500"
           />
           {showSugg && sugg.length > 0 && (
-            <div className="absolute z-20 w-full mt-1 bg-white border border-gray-100 rounded-xl shadow-lg overflow-hidden">
+            <div className="absolute z-20 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-xl shadow-lg overflow-hidden">
               {sugg.map(s => (
                 <button
                   key={s.id}
                   onMouseDown={() => pickSet(s)}
-                  className="w-full flex items-center gap-2 px-3 py-2 hover:bg-pink-50 transition text-left"
+                  className="w-full flex items-center gap-2 px-3 py-2 hover:bg-pink-50 dark:hover:bg-gray-700 transition text-left"
                 >
                   <div className="flex-1 min-w-0">
-                    <div className="text-sm font-medium text-gray-700 truncate">{s.name}</div>
-                    <div className="text-xs text-gray-400">{s.series} · {s.releaseDate?.slice(0, 4)}</div>
+                    <div className="text-sm font-medium text-gray-700 dark:text-gray-100 truncate">{s.name}</div>
+                    <div className="text-xs text-gray-400 dark:text-gray-500">{s.series} · {s.releaseDate?.slice(0, 4)}</div>
                   </div>
                 </button>
               ))}
@@ -122,17 +122,17 @@ const PackNameRow = memo(function PackNameRow({ row, index, total, allSets, onUp
         </div>
 
         {/* Pack quantity stepper */}
-        <div className="flex items-center gap-0.5 flex-shrink-0 border border-gray-200 rounded-lg overflow-hidden">
+        <div className="flex items-center gap-0.5 flex-shrink-0 border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden bg-white dark:bg-gray-800">
           <button
             type="button"
             onClick={() => onUpdate({ qty: Math.max(1, qty - 1) })}
-            className="w-6 h-7 flex items-center justify-center text-gray-400 hover:bg-gray-50 text-sm leading-none transition"
+            className="w-6 h-7 flex items-center justify-center text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 text-sm leading-none transition"
           >−</button>
-          <span className="w-6 text-center text-xs font-semibold text-gray-600 tabular-nums">{qty}</span>
+          <span className="w-6 text-center text-xs font-semibold text-gray-600 dark:text-gray-300 tabular-nums">{qty}</span>
           <button
             type="button"
             onClick={() => onUpdate({ qty: qty + 1 })}
-            className="w-6 h-7 flex items-center justify-center text-gray-400 hover:bg-gray-50 text-sm leading-none transition"
+            className="w-6 h-7 flex items-center justify-center text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 text-sm leading-none transition"
           >+</button>
         </div>
 
@@ -351,18 +351,18 @@ export default function PackLogModal({ user, onClose, onSaved, onCardsSaved }) {
   return (
     <motion.div
       initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4"
       onClick={onClose}
     >
       <motion.div
         initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }}
-        className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-md max-h-[90vh] flex flex-col"
+        className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl p-6 w-full max-w-md max-h-[90vh] flex flex-col"
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}
         <div className="flex items-center justify-between mb-5">
           <div>
-            <h2 className="text-lg font-bold text-gray-700">🎴 Log a Pack</h2>
+            <h2 className="text-lg font-bold text-gray-700 dark:text-gray-100">🎴 Log a Pack</h2>
             {packRows.length > 1 && (
               <p className="text-xs text-violet-500 font-semibold mt-0.5">{countLabel} in this purchase</p>
             )}
@@ -374,7 +374,7 @@ export default function PackLogModal({ user, onClose, onSaved, onCardsSaved }) {
 
           {/* ── 1. Purchase type ────────────────────────────────────────── */}
           <div>
-            <label className="block text-xs font-semibold text-gray-500 mb-2">Purchase Type</label>
+            <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2">Purchase Type</label>
             <div className="flex flex-wrap gap-1.5">
               {PURCHASE_TYPES.map(t => (
                 <button
@@ -394,9 +394,9 @@ export default function PackLogModal({ user, onClose, onSaved, onCardsSaved }) {
 
           {/* ── 2. Pack name rows ───────────────────────────────────────── */}
           <div>
-            <label className="block text-xs font-semibold text-gray-500 mb-2">
+            <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2">
               Sets / Packs
-              <span className="ml-1 font-normal text-gray-400">— one per pack in your purchase</span>
+              <span className="ml-1 font-normal text-gray-400 dark:text-gray-500">— one per pack in your purchase</span>
             </label>
             <div className="space-y-2">
               {packRows.map((row, i) => (
@@ -454,7 +454,7 @@ export default function PackLogModal({ user, onClose, onSaved, onCardsSaved }) {
                 value={packPrice}
                 onChange={e => setPackPrice(e.target.value)}
                 placeholder={priceMode === 'per-item' ? 'Price per pack…' : 'Total paid…'}
-                className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-pink-300"
+                className="w-full border border-gray-200 dark:border-gray-700 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-pink-300 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500"
               />
               {/* Per-item auto-total preview */}
               {priceMode === 'per-item' && perItemPrice > 0 && totalPacks > 1 && (
@@ -473,7 +473,7 @@ export default function PackLogModal({ user, onClose, onSaved, onCardsSaved }) {
               )}
             </div>
             <div className="flex-1 relative">
-              <label className="block text-xs font-semibold text-gray-500 mb-1">Store (optional)</label>
+              <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1">Store (optional)</label>
               <input
                 type="text"
                 value={store}
@@ -481,10 +481,10 @@ export default function PackLogModal({ user, onClose, onSaved, onCardsSaved }) {
                 onFocus={() => setShowStoreSugg(true)}
                 onBlur={() => setTimeout(() => setShowStoreSugg(false), 150)}
                 placeholder="Target, eBay…"
-                className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-pink-300"
+                className="w-full border border-gray-200 dark:border-gray-700 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-pink-300 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500"
               />
               {showStoreSugg && recentStores.length > 0 && (
-                <div className="absolute z-20 w-full mt-1 bg-white border border-gray-100 rounded-xl shadow-lg overflow-hidden">
+                <div className="absolute z-20 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-xl shadow-lg overflow-hidden">
                   {recentStores
                     .filter(s => !store || s.toLowerCase().includes(store.toLowerCase()))
                     .map(s => (
@@ -492,7 +492,7 @@ export default function PackLogModal({ user, onClose, onSaved, onCardsSaved }) {
                         key={s}
                         type="button"
                         onMouseDown={() => { setStore(s); setShowStoreSugg(false) }}
-                        className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-pink-50 transition"
+                        className="w-full text-left px-3 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-pink-50 dark:hover:bg-gray-700 transition"
                       >
                         📍 {s}
                       </button>
@@ -504,7 +504,7 @@ export default function PackLogModal({ user, onClose, onSaved, onCardsSaved }) {
 
           {/* ── 4. Card search ───────────────────────────────────────────── */}
           <div>
-            <label className="block text-xs font-semibold text-gray-500 mb-1">Add Cards Pulled</label>
+            <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1">Add Cards Pulled</label>
 
             {/* Active set filter indicator — updates as user picks sets above */}
             {activeSetNames.length > 0 && (
@@ -531,7 +531,7 @@ export default function PackLogModal({ user, onClose, onSaved, onCardsSaved }) {
                     ? `Search in ${activeSetNames.length > 1 ? `${activeSetNames.length} sets` : activeSetNames[0]}…`
                     : 'Search Pokémon card name…'
                 }
-                className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-pink-300"
+                className="w-full border border-gray-200 dark:border-gray-700 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-pink-300 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500"
               />
               {searching && (
                 <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 animate-pulse">searching…</span>
@@ -539,12 +539,12 @@ export default function PackLogModal({ user, onClose, onSaved, onCardsSaved }) {
             </div>
 
             {cardResults.length > 0 && (
-              <div className="mt-2 border border-gray-100 rounded-xl overflow-hidden max-h-48 overflow-y-auto shadow-md">
+              <div className="mt-2 border border-gray-100 dark:border-gray-700 rounded-xl overflow-hidden max-h-48 overflow-y-auto shadow-md bg-white dark:bg-gray-800">
                 {cardResults.map(card => (
                   <button
                     key={card.id}
                     onClick={() => addCard(card)}
-                    className="w-full flex items-center gap-2 px-3 py-2 hover:bg-pink-50 transition text-left"
+                    className="w-full flex items-center gap-2 px-3 py-2 hover:bg-pink-50 dark:hover:bg-gray-700 transition text-left"
                   >
                     <img
                       src={card.image_small}
@@ -553,8 +553,8 @@ export default function PackLogModal({ user, onClose, onSaved, onCardsSaved }) {
                       onError={e => { e.currentTarget.src = CARD_BACK }}
                     />
                     <div className="flex-1 min-w-0">
-                      <div className="text-sm font-medium text-gray-700 truncate">{card.name}</div>
-                      <div className="text-xs text-gray-400">{card.set_name} · {card.id}</div>
+                      <div className="text-sm font-medium text-gray-700 dark:text-gray-100 truncate">{card.name}</div>
+                      <div className="text-xs text-gray-400 dark:text-gray-500">{card.set_name} · {card.id}</div>
                     </div>
                     {(card.best_market_price ?? 0) > 0 && (
                       <span className="text-xs font-semibold text-emerald-600 flex-shrink-0">${card.best_market_price.toFixed(2)}</span>
@@ -568,7 +568,7 @@ export default function PackLogModal({ user, onClose, onSaved, onCardsSaved }) {
           {/* ── 5. Cards pulled ─────────────────────────────────────────── */}
           {addedCards.length > 0 && (
             <div>
-              <div className="text-xs font-semibold text-gray-500 mb-2">Cards pulled ({addedCards.length})</div>
+              <div className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2">Cards pulled ({addedCards.length})</div>
               <div className="flex flex-wrap gap-2">
                 {addedCards.map(c => (
                   <div key={c._key} className="relative">
@@ -598,12 +598,12 @@ export default function PackLogModal({ user, onClose, onSaved, onCardsSaved }) {
         </div>
 
         {/* Value summary */}
-        <div className="mt-4 flex items-center justify-between text-sm border-t border-gray-100 pt-3">
-          <span className="text-gray-500">
+        <div className="mt-4 flex items-center justify-between text-sm border-t border-gray-100 dark:border-gray-700 pt-3">
+          <span className="text-gray-500 dark:text-gray-400">
             Paid: <strong className="text-rose-500">${finalPrice.toFixed(2)}</strong>
           </span>
           {totalValue > 0 && (
-            <span className="text-gray-500">
+            <span className="text-gray-500 dark:text-gray-400">
               Worth: <strong className="text-emerald-600">${totalValue.toFixed(2)}</strong>
             </span>
           )}
@@ -615,7 +615,7 @@ export default function PackLogModal({ user, onClose, onSaved, onCardsSaved }) {
         <div className="flex gap-2 mt-4">
           <button
             onClick={onClose}
-            className="flex-1 py-2.5 rounded-xl text-sm font-semibold border border-gray-200 text-gray-400 hover:bg-gray-50 transition"
+            className="flex-1 py-2.5 rounded-xl text-sm font-semibold border border-gray-200 dark:border-gray-700 text-gray-400 dark:text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-800 transition"
           >
             Cancel
           </button>
