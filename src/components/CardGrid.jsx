@@ -12,12 +12,56 @@ const CARD_BACK = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://w
 
 // ─── Sort options ─────────────────────────────────────────────────────────────
 export const SORT_OPTIONS = [
-  { id: 'oldest',    label: 'Release Date (Oldest)' },
-  { id: 'newest',    label: 'Release Date (Newest)' },
-  { id: 'alpha',     label: 'Alphabetical (A–Z)' },
-  { id: 'price-high', label: 'Price (High → Low)' },
-  { id: 'price-low',  label: 'Price (Low → High)' },
+  { id: 'oldest',       label: 'Release Date (Oldest)' },
+  { id: 'newest',       label: 'Release Date (Newest)' },
+  { id: 'alpha',        label: 'Alphabetical (A–Z)' },
+  { id: 'price-high',   label: 'Value (High → Low)' },
+  { id: 'price-low',    label: 'Value (Low → High)' },
+  { id: 'rarity-high',  label: 'Rarity (Rarest First)' },
+  { id: 'rarity-low',   label: 'Rarity (Common First)' },
 ]
+
+// Rarity tier ranking — higher number = rarer
+const RARITY_RANK = {
+  'Common':                    1,
+  'Uncommon':                  2,
+  'Promo':                     3,
+  'Rare':                      4,
+  'Rare Holo':                 5,
+  'Rare Prime':                6,
+  'Rare BREAK':                6,
+  'Rare ACE':                  6,
+  'Rare Holo EX':              7,
+  'Rare Holo GX':              7,
+  'Rare Holo V':               7,
+  'Rare Holo LV.X':            7,
+  'Rare Holo Star':            8,
+  'Rare Holo VMAX':            8,
+  'Rare Holo VSTAR':           8,
+  'Amazing Rare':              9,
+  'Radiant Rare':              9,
+  'Rare Prism Star':           9,
+  'Trainer Gallery Rare Holo': 9,
+  'Rare Shiny':                10,
+  'Rare Rainbow':              10,
+  'ACE SPEC Rare':             10,
+  'Double Rare':               10,
+  'Rare Ultra':                11,
+  'Ultra Rare':                11,
+  'Rare Shiny GX':             11,
+  'Classic Collection':        11,
+  'LEGEND':                    11,
+  'Rare Shining':              11,
+  'Shiny Rare':                11,
+  'Black White Rare':          11,
+  'Rare Secret':               12,
+  'Shiny Ultra Rare':          12,
+  'Illustration Rare':         13,
+  'Special Illustration Rare': 14,
+  'Hyper Rare':                15,
+  'Mega Hyper Rare':           15,
+  'MEGA_ATTACK_RARE':          15,
+}
 
 // Pick the best available market price across all TCGPlayer tiers.
 // Used for grid display / sort — the specific version price is shown separately in the modal.
@@ -87,6 +131,15 @@ function sortCards(cards, sort) {
       priced.sort((a, b) => getCardPrice(a) - getCardPrice(b))
     }
     return [...priced, ...unpriced]
+  }
+
+  if (sort === 'rarity-high' || sort === 'rarity-low') {
+    const getRank = c => RARITY_RANK[c.rarity] ?? 0
+    return arr.sort((a, b) =>
+      sort === 'rarity-high'
+        ? (getRank(b) - getRank(a)) || a.name.localeCompare(b.name)
+        : (getRank(a) - getRank(b)) || a.name.localeCompare(b.name)
+    )
   }
 
   if (sort === 'alpha') {
@@ -1139,7 +1192,9 @@ function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, onClearF
 
     setLoading(true)
 
-    const isPriceSort = sort === 'price-high' || sort === 'price-low'
+    const isPriceSort  = sort === 'price-high' || sort === 'price-low'
+    const isRaritySort = sort === 'rarity-high' || sort === 'rarity-low'
+    const isBigSort    = isPriceSort || isRaritySort
 
     try {
       const { cards: rawCards, totalPages: total } = await fetchCardsFromDb({
@@ -1169,8 +1224,8 @@ function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, onClearF
         keyList.push(key)
         cacheRef.current[key] = { rawCards, totalPages: total }
 
-        // Persist to localStorage so the next page load skips the network (non-price sorts only)
-        if (!isPriceSort) lsSet(key, { rawCards, totalPages: total })
+        // Persist to localStorage so the next page load skips the network (non-price/rarity sorts only)
+        if (!isBigSort) lsSet(key, { rawCards, totalPages: total })
       }
 
       setCards(sortCards(rawCards, sort))
@@ -1214,9 +1269,9 @@ function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, onClearF
       setTotalPages(cached.totalPages ?? 0)
       setLoading(false)
     } else {
-      // Check localStorage before hitting the network (non-price sorts only)
-      const isPriceSortNow = sortBy === 'price-high' || sortBy === 'price-low'
-      const lsCached = !isPriceSortNow ? lsGet(key) : null
+      // Check localStorage before hitting the network (non-price/rarity sorts only)
+      const isBigSortNow = sortBy === 'price-high' || sortBy === 'price-low' || sortBy === 'rarity-high' || sortBy === 'rarity-low'
+      const lsCached = !isBigSortNow ? lsGet(key) : null
       if (lsCached) {
         // Warm the in-memory cache from localStorage so subsequent filter switches are instant
         const keyList = cacheKeysRef.current

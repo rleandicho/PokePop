@@ -1531,7 +1531,7 @@ export default function HomePageEditorial({ user, profile, profileReady = false,
                 item={item}
                 isOpen={previewItemId === item.id}
                 onToggle={() => setPreviewItemId(p => p === item.id ? null : item.id)}
-                onOpenCard={setSelectedCard}
+                onOpenCard={() => setSelectedCard(item)}
               />
             ))}
           </div>

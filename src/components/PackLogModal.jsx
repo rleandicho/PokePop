@@ -160,6 +160,7 @@ export default function PackLogModal({ user, onClose, onSaved, onCardsSaved }) {
   const [purchaseType,  setPurchaseType]  = useState('Booster Pack')
   const [packRows,      setPackRows]      = useState([blankRow()])
   const [packPrice,     setPackPrice]     = useState('')
+  const [priceMode,     setPriceMode]     = useState('per-item') // 'per-item' | 'total'
   const [store,         setStore]         = useState('')
   const [cardSearch,    setCardSearch]    = useState('')
   const [cardResults,   setCardResults]   = useState([])
@@ -274,7 +275,7 @@ export default function PackLogModal({ user, onClose, onSaved, onCardsSaved }) {
   async function handleSave() {
     const filledRows = packRows.filter(r => r.name.trim())
     if (!filledRows.length) { setError('Enter at least one set or pack name.'); return }
-    const price = parseFloat(packPrice) || 0
+    const price = finalPrice
     setSaving(true)
     setError('')
 
@@ -342,8 +343,10 @@ export default function PackLogModal({ user, onClose, onSaved, onCardsSaved }) {
     onClose()
   }
 
-  const totalPacks = packRows.reduce((sum, r) => sum + (r.qty ?? 1), 0)
-  const countLabel = totalPacks === 1 ? '1 pack' : `${totalPacks} packs`
+  const totalPacks   = packRows.reduce((sum, r) => sum + (r.qty ?? 1), 0)
+  const countLabel   = totalPacks === 1 ? '1 pack' : `${totalPacks} packs`
+  const perItemPrice = parseFloat(packPrice) || 0
+  const finalPrice   = priceMode === 'per-item' ? perItemPrice * totalPacks : perItemPrice
 
   return (
     <motion.div
@@ -425,16 +428,40 @@ export default function PackLogModal({ user, onClose, onSaved, onCardsSaved }) {
           {/* ── 3. Price + Store ─────────────────────────────────────────── */}
           <div className="flex gap-3">
             <div className="flex-1">
-              <label className="block text-xs font-semibold text-gray-500 mb-1">Total paid ($)</label>
+              {/* Price mode toggle */}
+              <div className="flex items-center gap-1 mb-1">
+                <button
+                  type="button"
+                  onClick={() => setPriceMode('per-item')}
+                  className={`px-2 py-0.5 rounded-full text-[11px] font-semibold border transition
+                    ${priceMode === 'per-item'
+                      ? 'bg-pink-400 border-pink-400 text-white'
+                      : 'border-gray-200 text-gray-400 hover:border-pink-300'}`}
+                >Per pack</button>
+                <button
+                  type="button"
+                  onClick={() => setPriceMode('total')}
+                  className={`px-2 py-0.5 rounded-full text-[11px] font-semibold border transition
+                    ${priceMode === 'total'
+                      ? 'bg-pink-400 border-pink-400 text-white'
+                      : 'border-gray-200 text-gray-400 hover:border-pink-300'}`}
+                >Total</button>
+              </div>
               <input
                 type="number"
                 min="0"
                 step="0.01"
                 value={packPrice}
                 onChange={e => setPackPrice(e.target.value)}
-                placeholder="4.99"
+                placeholder={priceMode === 'per-item' ? 'Price per pack…' : 'Total paid…'}
                 className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-pink-300"
               />
+              {/* Per-item auto-total preview */}
+              {priceMode === 'per-item' && perItemPrice > 0 && totalPacks > 1 && (
+                <p className="mt-0.5 text-[11px] text-violet-500 font-medium">
+                  ${perItemPrice.toFixed(2)} × {totalPacks} = <strong>${finalPrice.toFixed(2)}</strong> total
+                </p>
+              )}
               {lastPrice != null && !packPrice && (
                 <button
                   type="button"
@@ -573,7 +600,7 @@ export default function PackLogModal({ user, onClose, onSaved, onCardsSaved }) {
         {/* Value summary */}
         <div className="mt-4 flex items-center justify-between text-sm border-t border-gray-100 pt-3">
           <span className="text-gray-500">
-            Paid: <strong className="text-rose-500">${(parseFloat(packPrice) || 0).toFixed(2)}</strong>
+            Paid: <strong className="text-rose-500">${finalPrice.toFixed(2)}</strong>
           </span>
           {totalValue > 0 && (
             <span className="text-gray-500">

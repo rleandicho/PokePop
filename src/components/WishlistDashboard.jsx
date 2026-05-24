@@ -42,6 +42,35 @@ function getPriceInfo(item) {
   return { value: 0, label: '', source: null }
 }
 
+// ─── Collection sort ─────────────────────────────────────────────────────────
+// Rarity tier ranking — higher = rarer (mirrors CardGrid's RARITY_RANK)
+const COLL_RARITY_RANK = {
+  'Common':                    1,  'Uncommon':                  2,  'Promo':                     3,
+  'Rare':                      4,  'Rare Holo':                 5,  'Rare Prime':                6,
+  'Rare BREAK':                6,  'Rare ACE':                  6,  'Rare Holo EX':              7,
+  'Rare Holo GX':              7,  'Rare Holo V':               7,  'Rare Holo LV.X':            7,
+  'Rare Holo Star':            8,  'Rare Holo VMAX':            8,  'Rare Holo VSTAR':           8,
+  'Amazing Rare':              9,  'Radiant Rare':              9,  'Rare Prism Star':           9,
+  'Trainer Gallery Rare Holo': 9,  'Rare Shiny':               10,  'Rare Rainbow':             10,
+  'ACE SPEC Rare':            10,  'Double Rare':              10,  'Rare Ultra':               11,
+  'Ultra Rare':               11,  'Rare Shiny GX':            11,  'Classic Collection':       11,
+  'LEGEND':                   11,  'Rare Shining':             11,  'Shiny Rare':               11,
+  'Black White Rare':         11,  'Rare Secret':              12,  'Shiny Ultra Rare':         12,
+  'Illustration Rare':        13,  'Special Illustration Rare':14,  'Hyper Rare':               15,
+  'Mega Hyper Rare':          15,  'MEGA_ATTACK_RARE':         15,
+}
+
+function sortCollectionItems(items, sort) {
+  const arr = [...items]
+  if (sort === 'oldest')      return arr.reverse()
+  if (sort === 'alpha')       return arr.sort((a, b) => (a.name ?? '').localeCompare(b.name ?? ''))
+  if (sort === 'value-high')  return arr.sort((a, b) => getDisplayPrice(b) - getDisplayPrice(a))
+  if (sort === 'value-low')   return arr.sort((a, b) => getDisplayPrice(a) - getDisplayPrice(b))
+  if (sort === 'rarity-high') return arr.sort((a, b) => ((COLL_RARITY_RANK[b.rarity] ?? 0) - (COLL_RARITY_RANK[a.rarity] ?? 0)) || (a.name ?? '').localeCompare(b.name ?? ''))
+  if (sort === 'rarity-low')  return arr.sort((a, b) => ((COLL_RARITY_RANK[a.rarity] ?? 0) - (COLL_RARITY_RANK[b.rarity] ?? 0)) || (a.name ?? '').localeCompare(b.name ?? ''))
+  return arr  // 'newest' — already ordered by created_at desc from DB
+}
+
 // ─── Count-up hook ────────────────────────────────────────────────────────────
 function useCountUp(target, duration = 1200) {
   const [value, setValue] = useState(0)
@@ -1454,7 +1483,7 @@ export default function WishlistDashboard({ user, profile, onToast, onGoExplore,
   const [collectionPage, setCollectionPage] = useState(1)
   const [wishlistPage,   setWishlistPage]   = useState(1)
   const [cardSearch,     setCardSearch]     = useState('')
-  const [cardSort,       setCardSort]       = useState('newest')  // 'newest' | 'oldest'
+  const [cardSort,       setCardSort]       = useState('newest')  // 'newest' | 'oldest' | 'alpha' | 'value-high' | 'value-low' | 'rarity-high' | 'rarity-low'
   const [showDupes,      setShowDupes]      = useState(true)   // true = one tile per copy; false = one tile per card
   const [virtualSlots,   setVirtualSlots]   = useState({})     // virtualCopyId → slot_index (persists across re-renders)
   const [tagFilter,     setTagFilter]     = useState(null)  // null = all, string = specific tag
@@ -1479,6 +1508,7 @@ export default function WishlistDashboard({ user, profile, onToast, onGoExplore,
   const [packCount,      setPackCount]      = useState(0)      // total individual packs opened
   const [packLogs,       setPackLogs]       = useState([])     // recent pack log history
   const [packLogOpen,    setPackLogOpen]    = useState(false)  // history modal open
+  const [packDrilldown,  setPackDrilldown]  = useState(null)   // { kind: 'type'|'set', value: string } | null
   const [packModalOpen,  setPackModalOpen]  = useState(false)  // log-a-pack modal open
   const [historyCard,    setHistoryCard]    = useState(null)   // card preview from pack history
   const [tradeDropdownId, setTradeDropdownId] = useState(null) // rowId with trade/sale dropdown open
@@ -1621,7 +1651,7 @@ export default function WishlistDashboard({ user, profile, onToast, onGoExplore,
     if (cardIds.length) {
       const { data: metaRows } = await supabase
         .from('tcg_cards')
-        .select('id, set_name, number')
+        .select('id, set_name, number, rarity')
         .in('id', cardIds)
       if (metaRows?.length) {
         const metaMap = Object.fromEntries(metaRows.map(r => [r.id, r]))
@@ -1629,6 +1659,7 @@ export default function WishlistDashboard({ user, profile, onToast, onGoExplore,
           ...i,
           set_name:    metaMap[i.card_id]?.set_name    ?? null,
           card_number: metaMap[i.card_id]?.number      ?? null,
+          rarity:      metaMap[i.card_id]?.rarity      ?? null,
         })))
       } else {
         setItems(rawItems)
@@ -1734,7 +1765,7 @@ export default function WishlistDashboard({ user, profile, onToast, onGoExplore,
     // Pack investment total
     const { data: packData } = await supabase
       .from('pack_logs')
-      .select('id, pack_name, packs, opened_at, pack_price, total_value, cards, store')
+      .select('id, pack_name, pack_type, packs, opened_at, pack_price, total_value, cards, store')
       .eq('user_id', user.id)
       .order('opened_at', { ascending: false })
     const logs = packData ?? []
@@ -1885,7 +1916,7 @@ export default function WishlistDashboard({ user, profile, onToast, onGoExplore,
     const q = cardSearch.trim().toLowerCase()
     let filtered = q ? ownedItemsList.filter(i => i.name?.toLowerCase().includes(q)) : ownedItemsList
     if (tagFilter) filtered = filtered.filter(i => (i.tags ?? []).includes(tagFilter))
-    return cardSort === 'oldest' ? [...filtered].reverse() : filtered
+    return sortCollectionItems(filtered, cardSort)
   }, [ownedItemsList, cardSearch, cardSort, tagFilter])
 
   // Expand each owned item by its quantity so that quantity=3 shows as 3 tiles.
@@ -1954,7 +1985,7 @@ export default function WishlistDashboard({ user, profile, onToast, onGoExplore,
     const q = cardSearch.trim().toLowerCase()
     let filtered = q ? wishlistItemsList.filter(i => i.name?.toLowerCase().includes(q)) : wishlistItemsList
     if (tagFilter) filtered = filtered.filter(i => (i.tags ?? []).includes(tagFilter))
-    return cardSort === 'oldest' ? [...filtered].reverse() : filtered
+    return sortCollectionItems(filtered, cardSort)
   }, [wishlistItemsList, cardSearch, cardSort, tagFilter])
 
   async function saveTags(rowId, tags) {
@@ -3734,17 +3765,22 @@ export default function WishlistDashboard({ user, profile, onToast, onGoExplore,
           {/* Sort toggle + Dupes toggle */}
           <div className="flex items-center justify-between gap-2">
             {/* Left — sort pills */}
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-1 flex-wrap">
               <span className="text-xs font-medium" style={{ color: 'var(--app-text)', opacity: 0.6 }}>Sort:</span>
               {[
-                { id: 'newest', label: 'Newest first' },
-                { id: 'oldest', label: 'Oldest first' },
+                { id: 'newest',      label: 'Newest' },
+                { id: 'oldest',      label: 'Oldest' },
+                { id: 'alpha',       label: 'A–Z' },
+                { id: 'value-high',  label: 'Value ↓' },
+                { id: 'value-low',   label: 'Value ↑' },
+                { id: 'rarity-high', label: 'Rarest' },
+                { id: 'rarity-low',  label: 'Common' },
               ].map(opt => (
                 <motion.button
                   key={opt.id}
                   whileTap={{ scale: 0.95 }}
                   onClick={() => { setCardSort(opt.id); setCollectionPage(1); setWishlistPage(1) }}
-                  className={`text-xs font-semibold px-3 py-1 rounded-full border transition-all
+                  className={`text-xs font-semibold px-2.5 py-1 rounded-full border transition-all
                     ${cardSort === opt.id
                       ? 'bg-pink-400 text-white border-pink-400'
                       : 'bg-white/60 text-gray-500 border-gray-200 hover:bg-white/80'
@@ -4788,7 +4824,7 @@ export default function WishlistDashboard({ user, profile, onToast, onGoExplore,
           <motion.div
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
             className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm px-4"
-            onClick={() => setPackLogOpen(false)}
+            onClick={() => { setPackLogOpen(false); setPackDrilldown(null) }}
           >
             <motion.div
               initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }}
@@ -4796,13 +4832,69 @@ export default function WishlistDashboard({ user, profile, onToast, onGoExplore,
               onClick={e => e.stopPropagation()}
             >
               <div className="flex items-center justify-between mb-4">
-                <h2 className="text-base font-bold text-gray-700 dark:text-gray-100">🎴 Pack History</h2>
-                <button onClick={() => setPackLogOpen(false)} className="text-gray-400 hover:text-gray-600 text-xl leading-none">×</button>
+                <div>
+                  <h2 className="text-base font-bold text-gray-700 dark:text-gray-100">🎴 Pack History</h2>
+                  {packDrilldown && (
+                    <p className="text-[11px] text-pink-500 font-semibold mt-0.5">
+                      Filtered: {packDrilldown.value} ·{' '}
+                      <button onClick={() => setPackDrilldown(null)} className="underline hover:no-underline">clear</button>
+                    </p>
+                  )}
+                </div>
+                <button onClick={() => { setPackLogOpen(false); setPackDrilldown(null) }} className="text-gray-400 hover:text-gray-600 text-xl leading-none">×</button>
               </div>
               <div className="mb-3 text-sm text-gray-500 dark:text-gray-400">
                 Total invested: <span className="font-bold text-pink-500">${packInvested.toFixed(2)}</span>
               </div>
-              {/* Packs-per-set breakdown */}
+              {/* Purchase type breakout — clickable to drilldown */}
+              {packLogs.length > 0 && (() => {
+                const typeTotals = {}
+                packLogs.forEach(log => {
+                  const type  = log.pack_type || 'Other'
+                  const count = Array.isArray(log.packs)
+                    ? log.packs.reduce((s, p) => s + (p.qty ?? 1), 0)
+                    : 1
+                  if (!typeTotals[type]) typeTotals[type] = { count: 0, spent: 0 }
+                  typeTotals[type].count += count
+                  typeTotals[type].spent += log.pack_price || 0
+                })
+                const typeEntries = Object.entries(typeTotals).sort((a, b) => b[1].count - a[1].count)
+                if (!typeEntries.length) return null
+                const maxCount = typeEntries[0][1].count
+                const activeType = packDrilldown?.kind === 'type' ? packDrilldown.value : null
+                return (
+                  <div className="mb-3 border border-gray-200 dark:border-gray-700 rounded-xl p-3 bg-gray-50 dark:bg-gray-800">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wide">By purchase type</div>
+                      {activeType && (
+                        <button onClick={() => setPackDrilldown(null)} className="text-[10px] text-pink-400 hover:text-pink-600 font-semibold">Show all ✕</button>
+                      )}
+                    </div>
+                    <div className="space-y-1.5">
+                      {typeEntries.map(([type, { count, spent }]) => {
+                        const isActive = activeType === type
+                        return (
+                          <button
+                            key={type}
+                            onClick={() => setPackDrilldown(isActive ? null : { kind: 'type', value: type })}
+                            className={`w-full flex items-center gap-2 rounded-lg px-1 py-0.5 transition-colors text-left
+                              ${isActive ? 'bg-violet-100 dark:bg-violet-900/40' : 'hover:bg-gray-100 dark:hover:bg-gray-700'}`}
+                          >
+                            <div className="flex-1 text-xs text-gray-700 dark:text-gray-200 truncate font-medium">{type}</div>
+                            <div className="text-xs font-bold text-violet-500 dark:text-violet-400 tabular-nums">{count}</div>
+                            <div className="text-[11px] text-gray-400 tabular-nums">${spent.toFixed(0)}</div>
+                            <div className="w-16 h-1.5 bg-gray-200 dark:bg-gray-600 rounded-full overflow-hidden">
+                              <div className="h-full bg-gradient-to-r from-violet-400 to-pink-400 rounded-full"
+                                style={{ width: `${Math.min(100, (count / maxCount) * 100)}%` }} />
+                            </div>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )
+              })()}
+              {/* Packs-per-set breakdown — clickable to drilldown */}
               {packLogs.length > 0 && (() => {
                 const setTotals = {}
                 packLogs.forEach(log => {
@@ -4814,22 +4906,34 @@ export default function WishlistDashboard({ user, profile, onToast, onGoExplore,
                 })
                 const entries = Object.entries(setTotals).sort((a, b) => b[1] - a[1])
                 if (!entries.length) return null
+                const activeSet = packDrilldown?.kind === 'set' ? packDrilldown.value : null
                 return (
                   <div className="mb-3 border border-gray-200 dark:border-gray-700 rounded-xl p-3 bg-gray-50 dark:bg-gray-800">
-                    <div className="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2">Packs opened by set</div>
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wide">Packs opened by set</div>
+                      {activeSet && (
+                        <button onClick={() => setPackDrilldown(null)} className="text-[10px] text-pink-400 hover:text-pink-600 font-semibold">Show all ✕</button>
+                      )}
+                    </div>
                     <div className="space-y-1 max-h-28 overflow-y-auto">
-                      {entries.map(([name, count]) => (
-                        <div key={name} className="flex items-center gap-2">
-                          <div className="flex-1 text-xs text-gray-700 dark:text-gray-200 truncate">{name}</div>
-                          <div className="text-xs font-bold text-pink-500 dark:text-pink-400 tabular-nums">{count}</div>
-                          <div className="w-20 h-1.5 bg-gray-200 dark:bg-gray-600 rounded-full overflow-hidden">
-                            <div
-                              className="h-full bg-gradient-to-r from-pink-400 to-violet-400 rounded-full"
-                              style={{ width: `${Math.min(100, (count / entries[0][1]) * 100)}%` }}
-                            />
-                          </div>
-                        </div>
-                      ))}
+                      {entries.map(([name, count]) => {
+                        const isActive = activeSet === name
+                        return (
+                          <button
+                            key={name}
+                            onClick={() => setPackDrilldown(isActive ? null : { kind: 'set', value: name })}
+                            className={`w-full flex items-center gap-2 rounded-lg px-1 py-0.5 transition-colors text-left
+                              ${isActive ? 'bg-pink-100 dark:bg-pink-900/40' : 'hover:bg-gray-100 dark:hover:bg-gray-700'}`}
+                          >
+                            <div className="flex-1 text-xs text-gray-700 dark:text-gray-200 truncate font-medium">{name}</div>
+                            <div className="text-xs font-bold text-pink-500 dark:text-pink-400 tabular-nums">{count}</div>
+                            <div className="w-20 h-1.5 bg-gray-200 dark:bg-gray-600 rounded-full overflow-hidden">
+                              <div className="h-full bg-gradient-to-r from-pink-400 to-violet-400 rounded-full"
+                                style={{ width: `${Math.min(100, (count / entries[0][1]) * 100)}%` }} />
+                            </div>
+                          </button>
+                        )
+                      })}
                     </div>
                   </div>
                 )
@@ -4838,7 +4942,17 @@ export default function WishlistDashboard({ user, profile, onToast, onGoExplore,
                 <p className="text-sm text-gray-400 text-center py-8">No packs logged yet.<br/>Hit "Log a Pack" to start tracking!</p>
               ) : (
                 <div className="overflow-y-auto flex-1 space-y-2 pr-1">
-                  {packLogs.map(log => (
+                  {(packDrilldown
+                    ? packLogs.filter(log => {
+                        if (packDrilldown.kind === 'type') return (log.pack_type || 'Other') === packDrilldown.value
+                        if (packDrilldown.kind === 'set') {
+                          const rows = log.packs?.length > 0 ? log.packs : (log.pack_name ? [{ name: log.pack_name }] : [])
+                          return rows.some(p => p.name === packDrilldown.value)
+                        }
+                        return true
+                      })
+                    : packLogs
+                  ).map(log => (
                     <div key={log.id} className="border border-gray-100 dark:border-gray-700 rounded-xl p-3 flex items-start gap-3">
                       <div className="text-2xl">🎴</div>
                       <div className="flex-1 min-w-0">

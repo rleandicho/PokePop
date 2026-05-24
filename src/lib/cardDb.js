@@ -177,7 +177,8 @@ function normaliseCard(row) {
 // ── Main query function ───────────────────────────────────────────────────────
 export async function fetchCardsFromDb({ vibe, search, exactName, setQuery, sort, page = 1, pageSize, langFilter = null } = {}) {
   const isPriceSort   = sort === 'price-high' || sort === 'price-low'
-  const effectiveSize = isPriceSort ? PRICE_PAGE_SIZE : (pageSize ?? PAGE_SIZE)
+  const isRaritySort  = sort === 'rarity-high' || sort === 'rarity-low'
+  const effectiveSize = (isPriceSort || isRaritySort) ? PRICE_PAGE_SIZE : (pageSize ?? PAGE_SIZE)
   const from          = (page - 1) * effectiveSize
   const to            = from + effectiveSize - 1
 
@@ -290,6 +291,9 @@ export async function fetchCardsFromDb({ vibe, search, exactName, setQuery, sort
   if (isPriceSort) {
     // Sort by best available price, nulls last
     q = q.order('best_market_price', { ascending: sort === 'price-low', nullsFirst: false })
+  } else if (isRaritySort) {
+    // Client-side rarity ranking — fetch by newest release so same-rarity cards are newest-first
+    q = q.order('release_date', { ascending: false }).order('number', { ascending: true })
   } else if (search && search.trim() && sort === 'newest') {
     // When searching, group same-Pokémon cards together across all languages
     // instead of burying older-release languages (e.g. Japanese) on later pages
