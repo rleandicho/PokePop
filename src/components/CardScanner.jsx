@@ -31,24 +31,37 @@ function cleanOcrLine(line) {
     .trim()
 }
 
+// Words that are ALWAYS noise — they never appear as a standalone card name
+// and filtering them regardless of context is safe.
+const ALWAYS_NOISY = new Set([
+  'trad', 'train', 'traine', 'trainer', 'support', 'supporter',
+  'pokemon', 'pokmon', 'weakness', 'resistance', 'retreat',
+  'ability', 'attack', 'damage', 'during', 'your', 'turn',
+  'flip', 'coin', 'heads', 'tails', 'apply',
+])
+
+// Words that are noisy when they appear ALONE (single-word candidate) but are
+// legitimate parts of multi-word Trainer card names: "Energy Search", "Switch",
+// "Rare Candy", "Ultra Ball" etc. — only block when wordCount === 1.
+const CONTEXT_NOISY_SOLO = new Set([
+  'item', 'stadium', 'energy', 'basic', 'stage', 'card', 'cards',
+  'place', 'discard', 'switch', 'attach', 'shuffle', 'search',
+])
+
 function isNoisyCandidate(candidate) {
   const c = candidate.toLowerCase().replace(/[^a-z0-9]/g, '')
   if (!c) return true
   if (/^\d+$/.test(c)) return false
   if (/^[a-z]{2,6}\d{2,4}$/i.test(candidate)) return false
 
-  const noisyWords = new Set([
-    'trad', 'train', 'traine', 'trainer', 'support', 'supporter',
-    'item', 'stadium', 'energy', 'basic', 'stage', 'card', 'cards',
-    'pokemon', 'pokmon', 'weakness', 'resistance', 'retreat',
-    'ability', 'attack', 'damage', 'during', 'your', 'turn',
-    // attack verbs / damage words that appear in attack text
-    'place', 'discard', 'switch', 'attach', 'shuffle', 'search',
-    'flip', 'coin', 'heads', 'tails', 'apply',
-  ])
-
-  if (noisyWords.has(c)) return true
+  if (ALWAYS_NOISY.has(c)) return true
   if (/^tra[a-z]{0,4}$/.test(c)) return true
+
+  // Context-noisy words: only block when the entire candidate is that one word.
+  // "Energy Search" (wordCount=2) passes; bare "Energy" (wordCount=1) is blocked.
+  const wordCount = candidate.trim().split(/\s+/).filter(Boolean).length
+  if (wordCount === 1 && CONTEXT_NOISY_SOLO.has(c)) return true
+
   // Short names (≤4 chars) are noisy — except for real Pokémon with short names
   const shortAllowlist = new Set(['mew', 'muk', 'jynx', 'hooh', 'abra', 'onix', 'seel'])
   if (c.length <= 4 && !shortAllowlist.has(c)) return true
@@ -95,6 +108,19 @@ function buildSearchCandidates(text) {
     }
   }
 
+  // Trainer card heuristic: Trainer cards print the sub-type ("Item", "Supporter",
+  // "Stadium") on a line by itself below the artwork. The line immediately BEFORE
+  // that in the raw OCR output is almost always the card name.
+  // e.g.  rawLines = ["Energy Search", "Item", ...]  → tier1 gets "Energy Search"
+  //        rawLines = ["Switch", "Item", ...]          → tier1 gets "Switch"
+  const trainerTypeIdx = rawLines.findIndex(line => /^(item|supporter|stadium)$/i.test(line.trim()))
+  if (trainerTypeIdx > 0) {
+    const trainerNameLine = cleanOcrLine(rawLines[trainerTypeIdx - 1])
+    if (trainerNameLine && !isNoisyCandidate(trainerNameLine)) {
+      tier1.push(trainerNameLine)
+    }
+  }
+
   for (const line of lines) {
     // Promo set codes like "SVP039", "MEP033", "PR-SW001"
     const promoNumber = line.match(/\b[A-Z]{2,6}[-_]?\d{2,4}\b/i)?.[0]
@@ -112,7 +138,7 @@ function buildSearchCandidates(text) {
     const likelyName = line
       .replace(/\b\d{1,3}\s*\/\s*\d{1,3}\b/g, ' ')
       .replace(/\b\d{1,3}\b/g, ' ')
-      .replace(/\b(?:Basic|Stage\s*\d?|Trainer|Supporter|Item|Stadium|Energy|Pokemon|Pokémon|Trad|Train|Traine)\b/gi, ' ')
+      .replace(/\b(?:Basic|Stage\s*\d?|Trainer|Supporter|Item|Stadium|Pokemon|Pokémon|Trad|Train|Traine)\b/gi, ' ')
       .replace(/\s+/g, ' ')
       .trim()
 
@@ -122,6 +148,19 @@ function buildSearchCandidates(text) {
       // Also try without suffix (e.g. "Charizard ex" → "Charizard")
       const baseName = likelyName.replace(/\b(?:ex|EX|GX|V|VMAX|VSTAR|GMAX)\b/g, '').trim()
       if (baseName && baseName !== likelyName) names.push(baseName)
+    }
+  }
+
+  // Consecutive-line pairs: OCR sometimes splits a two-word Trainer name across
+  // separate lines (e.g. "Energy" on one line, "Search" on the next). Combining
+  // adjacent cleaned lines recovers "Energy Search", "Rare Candy", etc.
+  for (let i = 0; i < lines.length - 1; i++) {
+    const pair = `${lines[i]} ${lines[i + 1]}`.replace(/\s+/g, ' ').trim()
+    if (pair.length >= 4 && pair.length <= 32) {
+      const pairCleaned = cleanOcrLine(pair)
+      if (pairCleaned && !isNoisyCandidate(pairCleaned)) {
+        tier3.push(pairCleaned)
+      }
     }
   }
 
@@ -371,8 +410,11 @@ export default function CardScanner({ user, isDark = false, onToast, onCardAdded
     return dst
   }
 
-  // Preprocess a canvas for foil/holo cards: convert to high-contrast grayscale
-  // so OCR can read text on reflective holographic surfaces
+  // Preprocess a canvas for OCR: convert to high-contrast grayscale.
+  // For foil/holo Pokémon cards (light background, dark text) this is a standard
+  // contrast boost. For Trainer cards with dark colored banners (blue/purple/green)
+  // the text is white-on-dark — we auto-detect this and invert before contrasting
+  // so Tesseract always gets dark text on a light background.
   function preprocessCanvas(src) {
     const dst = document.createElement('canvas')
     dst.width  = src.width
@@ -381,11 +423,24 @@ export default function CardScanner({ user, isDark = false, onToast, onCardAdded
     ctx.drawImage(src, 0, 0)
     const imageData = ctx.getImageData(0, 0, dst.width, dst.height)
     const data = imageData.data
+
+    // Sample average luminance from the top ~35% of the crop (the name banner area).
+    // If the average is below 100 we assume a dark background (Trainer card style)
+    // and invert the image so white text becomes dark — what Tesseract expects.
+    let lumSum = 0
+    const sampleRows = Math.min(Math.floor(dst.height * 0.35), 60)
+    const samplePixels = dst.width * sampleRows
+    for (let i = 0; i < samplePixels * 4; i += 4) {
+      lumSum += 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2]
+    }
+    const avgLum = samplePixels > 0 ? lumSum / samplePixels : 128
+    const isDarkBackground = avgLum < 100
+
     for (let i = 0; i < data.length; i += 4) {
-      // Luminance-weighted grayscale
-      const gray = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2]
-      // Apply contrast stretch: push mid-tones toward black/white
-      // Factor 1.8 gives strong contrast without fully crushing shadows
+      let gray = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2]
+      // Invert dark backgrounds so white-on-dark text becomes black-on-white
+      if (isDarkBackground) gray = 255 - gray
+      // Contrast stretch: push mid-tones toward black/white (factor 1.8)
       const contrasted = Math.max(0, Math.min(255, 128 + (gray - 128) * 1.8))
       data[i] = data[i + 1] = data[i + 2] = contrasted
     }
@@ -430,15 +485,16 @@ export default function CardScanner({ user, isDark = false, onToast, onCardAdded
       let rawText = ''
       if (supportsTextDetection) {
         const detector = new window.TextDetector()
-        // 3 parallel calls: preprocessed name crop (foil-safe), number strip (collector
-        // numbers like "90/102" are small and benefit from a dedicated crop), and the full
-        // frame as a catch-all for set names and other text.
-        const [nameDets, numDets, fullDets] = await Promise.all([
+        // 4 parallel calls: preprocessed name crop (foil/Trainer safe after inversion),
+        // raw color name crop (Chrome's TextDetector handles color natively — extra signal
+        // for Trainer card dark banners), number strip, and full frame as catch-all.
+        const [nameDets, rawNameDets, numDets, fullDets] = await Promise.all([
           detector.detect(procNameCanvas),
+          detector.detect(nameCanvas),
           detector.detect(numCanvas),
           detector.detect(canvas),
         ])
-        const nameText = nameDets.map(d => d.rawValue).filter(Boolean).join('\n')
+        const nameText = [...nameDets, ...rawNameDets].map(d => d.rawValue).filter(Boolean).join('\n')
         const numText  = numDets.map(d => d.rawValue).filter(Boolean).join('\n')
         const fullText = fullDets.map(d => d.rawValue).filter(Boolean).join('\n')
         rawText = [nameText, numText, fullText].filter(Boolean).join('\n')
