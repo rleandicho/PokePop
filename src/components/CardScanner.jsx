@@ -66,6 +66,13 @@ function isNoisyCandidate(candidate) {
   const shortAllowlist = new Set(['mew', 'muk', 'jynx', 'hooh', 'abra', 'onix', 'seel'])
   if (c.length <= 4 && !shortAllowlist.has(c)) return true
 
+  // Multi-word strings where every word is ≤ 3 characters are OCR noise
+  // (e.g. "ir ay a oh", "a a b c") — no real card name has all-short words.
+  // Filtering these prevents garbled Tesseract output from blocking the
+  // full-card fallback scan that has better context for Trainer cards.
+  const words = candidate.trim().split(/\s+/).filter(Boolean)
+  if (words.length > 1 && words.every(w => w.replace(/[^a-z0-9]/gi, '').length <= 3)) return true
+
   // G-Max / V-Max / Max attacks (e.g. "G-Max Pump", "Max Geist") — always attack names, not Pokémon names
   if (/^g[\s-]?max\b/i.test(candidate)) return true
   if (/^v[\s-]?max\b/i.test(candidate)) return true
@@ -519,19 +526,21 @@ export default function CardScanner({ user, isDark = false, onToast, onCardAdded
         // Tesseract fallback: upscale 2× before each pass — Tesseract was designed for
         // 300 DPI scans and reads small card text much more reliably at double resolution.
         //
-        // Run TWO passes on the name crop:
-        //   Pass 1 (PSM.SINGLE_LINE): auto-preprocessed — handles dark/light backgrounds,
-        //     holofoil noise. PSM.SINGLE_LINE is better than SPARSE_TEXT for a name banner
-        //     because it tells Tesseract the whole crop is one horizontal text line.
-        //   Pass 2 (PSM.SINGLE_LINE): raw color nameCanvas — white text on colored Trainer
-        //     banners (blue/teal/purple) converts to ~134 luminance via Tesseract's internal
-        //     grayscale, giving high natural contrast without any preprocessing artifacts.
-        //     This often outperforms our preprocessed version on dark banner Trainer cards.
+        // Run TWO passes on the name crop, both with the default PSM.SPARSE_TEXT:
+        //   Pass 1: auto-preprocessed (luminance-based inversion for dark/light backgrounds)
+        //   Pass 2: raw color nameCanvas — white text on colored Trainer banners (blue/teal)
+        //     converts to ~134 luminance via Tesseract's internal grayscale conversion,
+        //     giving natural contrast without preprocessing artifacts.
+        //
+        // PSM.SPARSE_TEXT (not SINGLE_LINE): the name crop contains background above the
+        // card, the banner, and part of the artwork — it is NOT a single text line.
+        // SPARSE_TEXT lets Tesseract find text regions independently, so "Energy" and
+        // "Search" are detected as separate fragments and then joined by our line-pair
+        // combination into the correct multi-word candidate "Energy Search".
         setScanStatus('Reading card name...')
-        const { PSM } = await import('tesseract.js')
         const [nameText, nameTextRaw] = await Promise.all([
-          readWithTesseract(upscaleCanvas(procNameCanvas), PSM.SINGLE_LINE),
-          readWithTesseract(upscaleCanvas(nameCanvas), PSM.SINGLE_LINE),
+          readWithTesseract(upscaleCanvas(procNameCanvas)),
+          readWithTesseract(upscaleCanvas(nameCanvas)),
         ])
         setScanStatus('Reading collector number...')
         const numText  = await readWithTesseract(upscaleCanvas(numCanvas))
