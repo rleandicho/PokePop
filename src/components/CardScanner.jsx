@@ -246,14 +246,22 @@ export default function CardScanner({ user, isDark = false, onToast, onCardAdded
     } catch {}
   }, [])
 
-  const readWithTesseract = useCallback(async (canvas) => {
+  const readWithTesseract = useCallback(async (canvas, psm = null) => {
     const { createWorker, PSM } = await import('tesseract.js')
     if (!workerRef.current) {
       setScanStatus('Loading OCR engine...')
       workerRef.current = await createWorker('eng', 1, { logger: () => {} })
       await workerRef.current.setParameters({ tessedit_pageseg_mode: PSM.SPARSE_TEXT })
     }
+    // Temporarily switch PSM if requested, then restore SPARSE_TEXT afterwards.
+    // The worker is single-threaded so there's no race — all calls queue through it.
+    if (psm !== null) {
+      await workerRef.current.setParameters({ tessedit_pageseg_mode: psm })
+    }
     const { data } = await workerRef.current.recognize(canvas)
+    if (psm !== null) {
+      await workerRef.current.setParameters({ tessedit_pageseg_mode: PSM.SPARSE_TEXT })
+    }
     return data?.text ?? ''
   }, [])
 
@@ -511,19 +519,23 @@ export default function CardScanner({ user, isDark = false, onToast, onCardAdded
         // Tesseract fallback: upscale 2× before each pass — Tesseract was designed for
         // 300 DPI scans and reads small card text much more reliably at double resolution.
         //
-        // Run TWO passes on the name crop in parallel:
-        //   Pass 1: auto-preprocessed (luminance-based inversion for dark banners)
-        //   Pass 2: force-inverted (catches Trainer cards where auto-detect was borderline)
-        // Combining both ensures we always read white-on-dark AND dark-on-light text
-        // regardless of whether the threshold guess was correct.
+        // Run TWO passes on the name crop:
+        //   Pass 1 (PSM.SINGLE_LINE): auto-preprocessed — handles dark/light backgrounds,
+        //     holofoil noise. PSM.SINGLE_LINE is better than SPARSE_TEXT for a name banner
+        //     because it tells Tesseract the whole crop is one horizontal text line.
+        //   Pass 2 (PSM.SINGLE_LINE): raw color nameCanvas — white text on colored Trainer
+        //     banners (blue/teal/purple) converts to ~134 luminance via Tesseract's internal
+        //     grayscale, giving high natural contrast without any preprocessing artifacts.
+        //     This often outperforms our preprocessed version on dark banner Trainer cards.
         setScanStatus('Reading card name...')
-        const [nameText, nameTextInv] = await Promise.all([
-          readWithTesseract(upscaleCanvas(procNameCanvas)),
-          readWithTesseract(upscaleCanvas(preprocessCanvas(nameCanvas, true))),
+        const { PSM } = await import('tesseract.js')
+        const [nameText, nameTextRaw] = await Promise.all([
+          readWithTesseract(upscaleCanvas(procNameCanvas), PSM.SINGLE_LINE),
+          readWithTesseract(upscaleCanvas(nameCanvas), PSM.SINGLE_LINE),
         ])
         setScanStatus('Reading collector number...')
         const numText  = await readWithTesseract(upscaleCanvas(numCanvas))
-        rawText = [nameText, nameTextInv, numText].filter(Boolean).join('\n')
+        rawText = [nameText, nameTextRaw, numText].filter(Boolean).join('\n')
         candidates = buildSearchCandidates(rawText)
         if (!candidates.length) {
           setScanStatus('Reading full card...')
