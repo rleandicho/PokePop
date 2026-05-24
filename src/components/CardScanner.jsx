@@ -413,9 +413,13 @@ export default function CardScanner({ user, isDark = false, onToast, onCardAdded
   // Preprocess a canvas for OCR: convert to high-contrast grayscale.
   // For foil/holo Pokémon cards (light background, dark text) this is a standard
   // contrast boost. For Trainer cards with dark colored banners (blue/purple/green)
-  // the text is white-on-dark — we auto-detect this and invert before contrasting
-  // so Tesseract always gets dark text on a light background.
-  function preprocessCanvas(src) {
+  // the text is white-on-dark — we auto-detect this (or force-invert) and invert
+  // before contrasting so Tesseract always gets dark text on a light background.
+  //
+  // forceInvert=true skips luminance sampling and always inverts — used to run a
+  // second Tesseract pass so we catch Trainer banners even when the auto-detect
+  // threshold is borderline.
+  function preprocessCanvas(src, forceInvert = false) {
     const dst = document.createElement('canvas')
     dst.width  = src.width
     dst.height = src.height
@@ -425,16 +429,19 @@ export default function CardScanner({ user, isDark = false, onToast, onCardAdded
     const data = imageData.data
 
     // Sample average luminance from the top ~35% of the crop (the name banner area).
-    // If the average is below 100 we assume a dark background (Trainer card style)
-    // and invert the image so white text becomes dark — what Tesseract expects.
-    let lumSum = 0
-    const sampleRows = Math.min(Math.floor(dst.height * 0.35), 60)
-    const samplePixels = dst.width * sampleRows
-    for (let i = 0; i < samplePixels * 4; i += 4) {
-      lumSum += 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2]
+    // Threshold raised to 120 — Trainer card blue/teal/purple banners typically read
+    // as 100–120, which was previously slipping under the old 100 cutoff.
+    let isDarkBackground = forceInvert
+    if (!forceInvert) {
+      let lumSum = 0
+      const sampleRows = Math.min(Math.floor(dst.height * 0.35), 60)
+      const samplePixels = dst.width * sampleRows
+      for (let i = 0; i < samplePixels * 4; i += 4) {
+        lumSum += 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2]
+      }
+      const avgLum = samplePixels > 0 ? lumSum / samplePixels : 128
+      isDarkBackground = avgLum < 120
     }
-    const avgLum = samplePixels > 0 ? lumSum / samplePixels : 128
-    const isDarkBackground = avgLum < 100
 
     for (let i = 0; i < data.length; i += 4) {
       let gray = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2]
@@ -463,12 +470,12 @@ export default function CardScanner({ user, isDark = false, onToast, onCardAdded
     const ctx = canvas.getContext('2d')
     ctx.drawImage(video, 0, 0, vw, vh)
 
-    // Focused crops: top 25% for the Pokémon name (name + HP line lives here),
+    // Focused crops: top 30% for the Pokémon/Trainer name (wider than the old 25%
+    // so the full name banner is captured even when the card isn't perfectly centered),
     // bottom 15% for the collector number (nn/NNN printed at the bottom of the card).
-    // Slightly wider than the old 20%/12% to handle cards scanned at a slight angle.
     const nameCanvas = document.createElement('canvas')
     nameCanvas.width  = vw
-    nameCanvas.height = Math.round(vh * 0.25)
+    nameCanvas.height = Math.round(vh * 0.30)
     nameCanvas.getContext('2d').drawImage(video, 0, 0, vw, vh, 0, 0, vw, nameCanvas.height)
 
     const numCanvas = document.createElement('canvas')
@@ -503,11 +510,20 @@ export default function CardScanner({ user, isDark = false, onToast, onCardAdded
       if (!rawText.trim()) {
         // Tesseract fallback: upscale 2× before each pass — Tesseract was designed for
         // 300 DPI scans and reads small card text much more reliably at double resolution.
+        //
+        // Run TWO passes on the name crop in parallel:
+        //   Pass 1: auto-preprocessed (luminance-based inversion for dark banners)
+        //   Pass 2: force-inverted (catches Trainer cards where auto-detect was borderline)
+        // Combining both ensures we always read white-on-dark AND dark-on-light text
+        // regardless of whether the threshold guess was correct.
         setScanStatus('Reading card name...')
-        const nameText = await readWithTesseract(upscaleCanvas(procNameCanvas))
+        const [nameText, nameTextInv] = await Promise.all([
+          readWithTesseract(upscaleCanvas(procNameCanvas)),
+          readWithTesseract(upscaleCanvas(preprocessCanvas(nameCanvas, true))),
+        ])
         setScanStatus('Reading collector number...')
         const numText  = await readWithTesseract(upscaleCanvas(numCanvas))
-        rawText = [nameText, numText].filter(Boolean).join('\n')
+        rawText = [nameText, nameTextInv, numText].filter(Boolean).join('\n')
         candidates = buildSearchCandidates(rawText)
         if (!candidates.length) {
           setScanStatus('Reading full card...')
