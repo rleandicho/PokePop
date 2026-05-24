@@ -21,57 +21,57 @@ const PRICE_TTL_MS    = 24 * 60 * 60 * 1000  // 24 hours
 // Promo set name fragments — mirrors AestheticFilter's PROMO_QUERY logic
 const PROMO_NAME_FRAGMENTS = ['%Promo%', '%POP Series%', '%McDonald%']
 const SEARCH_SET_ALIASES = [
-  { match: /^(trick\s*(or|&)?\s*(treat|trade)|trick\s*or\s*treat|trick\s*or\s*trade|trickortreat|trickortrade)$/i, setIds: [‘trt22’, ‘trt23’, ‘trt24’] },
-  { match: /^trt22$/i, setIds: [‘trt22’] },
-  { match: /^trt23$/i, setIds: [‘trt23’] },
-  { match: /^trt24$/i, setIds: [‘trt24’] },
-  { match: /^(toys?\s*r\s*us|toysrus)$/i, setIds: [‘toysrus’] },
-  { match: /^(build\s*a\s*bear|buildabear|build-a-bear)$/i, setIds: [‘buildabear’] },
+  { match: /^(trick\s*(or|&)?\s*(treat|trade)|trick\s*or\s*treat|trick\s*or\s*trade|trickortreat|trickortrade)$/i, setIds: ['trt22', 'trt23', 'trt24'] },
+  { match: /^trt22$/i, setIds: ['trt22'] },
+  { match: /^trt23$/i, setIds: ['trt23'] },
+  { match: /^trt24$/i, setIds: ['trt24'] },
+  { match: /^(toys?\s*r\s*us|toysrus)$/i, setIds: ['toysrus'] },
+  { match: /^(build\s*a\s*bear|buildabear|build-a-bear)$/i, setIds: ['buildabear'] },
 ]
 
 // Art-style keyword aliases — map descriptive terms to specific query filters.
 // Each entry applies a custom Supabase filter rather than a set-ID list.
 const SEARCH_STYLE_ALIASES = [
   {
-    // “clay”, “clay art”, “clay cards”, “clay style”
+    // "clay", "clay art", "clay cards", "clay style"
     // Yuka Morii is the iconic Pokemon card artist who creates her art
-    // from real polymer clay sculptures — she is THE “clay art” artist.
+    // from real polymer clay sculptures — she is THE "clay art" artist.
     match: /^clay(\s+(art|cards?|style))?$/i,
-    apply: q => q.ilike(‘artist’, ‘%Yuka Morii%’),
+    apply: q => q.ilike('artist', '%Yuka Morii%'),
   },
   {
-    // “crochet”, “crochet art”, “crochet cards”, “crochet style”
+    // "crochet", "crochet art", "crochet cards", "crochet style"
     // Asako Ito is the Pokemon TCG artist known for her distinctive
     // crochet/amigurumi textile art style.
     match: /^crochet(\s+(art|cards?|style))?$/i,
-    apply: q => q.ilike(‘artist’, ‘%Asako Ito%’),
+    apply: q => q.ilike('artist', '%Asako Ito%'),
   },
   {
-    // “cg”, “cg art”, “3d”, “3d art”, “digital art”, “digital cards”
+    // "cg", "cg art", "3d", "3d art", "digital art", "digital cards"
     match: /^(cg(\s+(art|cards?|style))?|3d(\s+(art|cards?|style))?|digital(\s+(art|cards?))?)$/i,
-    apply: q => q.or(‘artist.ilike.%5ban Graphics%,artist.ilike.%CG Works%,artist.ilike.%CR CG%’),
+    apply: q => q.or('artist.ilike.%5ban Graphics%,artist.ilike.%CG Works%,artist.ilike.%CR CG%'),
   },
   {
-    // “felt”, “felt hat”, “felt art”
+    // "felt", "felt hat", "felt art"
     match: /^felt(\s+(hat|art|cards?))?$/i,
-    apply: q => q.ilike(‘name’, ‘%Felt%’),
+    apply: q => q.ilike('name', '%Felt%'),
   },
 ]
 
 function resolveSearchAlias(search) {
   const normalized = search
     .trim()
-    .replace(/[“”]/g, ‘”’)
-    .replace(/[‘’]/g, “’”)
-    .replace(/[‘”]/g, ‘’)
-    .replace(/[-_]+/g, ‘ ‘)
-    .replace(/\s+/g, ‘ ‘)
+    .replace(/[""]/g, '"')
+    .replace(/['']/g, "'")
+    .replace(/['"]/g, '')
+    .replace(/[-_]+/g, ' ')
+    .replace(/\s+/g, ' ')
 
   const setAlias = SEARCH_SET_ALIASES.find(a => a.match.test(normalized))
-  if (setAlias) return { type: ‘setIds’, value: setAlias.setIds }
+  if (setAlias) return { type: 'setIds', value: setAlias.setIds }
 
   const styleAlias = SEARCH_STYLE_ALIASES.find(a => a.match.test(normalized))
-  if (styleAlias) return { type: ‘style’, apply: styleAlias.apply }
+  if (styleAlias) return { type: 'style', apply: styleAlias.apply }
 
   return null
 }
