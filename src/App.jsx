@@ -550,7 +550,7 @@ export default function App() {
             { id: 'home',    label: 'Home',    icon: '⌂', active: false,       onClick: goHome },
             { id: 'browse',  label: 'Browse',  icon: '▤', active: !isWishlist && !isScanner, onClick: () => handleVibeChange('all') },
             { id: 'scanner', label: 'Scan',    icon: '▣', active: isScanner,   onClick: () => handleNavigate('scanner') },
-            { id: 'library', label: 'Library', icon: '⊞', active: isWishlist,  onClick: () => { if (!user) return; handleNavigate('wishlist', wishlistTab) } },
+            { id: 'library', label: 'My Profile', icon: '⊞', active: isWishlist,  onClick: () => { if (!user) return; handleNavigate('wishlist', wishlistTab) } },
           ].map(tab => (
             <button key={tab.id} onClick={tab.onClick} style={{
               display: 'flex', flexDirection: 'column', alignItems: 'center',

@@ -384,12 +384,12 @@ function VibeTile({ vibe, compact = false, onClick }) {
   )
 }
 
-function BottomNav({ T, user, onNavigate, onRequestSignIn }) {
+function BottomNav({ T, user, onNavigate, onRequestSignIn, isDark }) {
   const items = [
-    { id: 'home',     label: 'Home',    icon: '⌂',  authRequired: false },
-    { id: 'all',      label: 'Browse',  icon: '▤',  authRequired: false },
-    { id: 'scanner',  label: 'Scanner', icon: '▣',  authRequired: false },
-    { id: 'wishlist', label: 'Library', icon: '⊞',  authRequired: true  },
+    { id: 'home',     label: 'Home',       icon: '⌂', active: true,  authRequired: false },
+    { id: 'all',      label: 'Browse',     icon: '▤', active: false, authRequired: false },
+    { id: 'scanner',  label: 'Scan',       icon: '▣', active: false, authRequired: false },
+    { id: 'wishlist', label: 'My Profile', icon: '⊞', active: false, authRequired: true  },
   ]
   return (
     <div style={{
@@ -397,8 +397,8 @@ function BottomNav({ T, user, onNavigate, onRequestSignIn }) {
       background: T.navBg,
       backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
       borderTop: `1px solid ${T.border}`,
-      padding: '10px 20px',
-      paddingBottom: 'calc(20px + env(safe-area-inset-bottom, 0px))',
+      paddingTop: 8,
+      paddingBottom: 'calc(8px + env(safe-area-inset-bottom, 0px))',
       display: 'flex', justifyContent: 'space-around',
     }}>
       {items.map(it => (
@@ -406,21 +406,13 @@ function BottomNav({ T, user, onNavigate, onRequestSignIn }) {
           if (it.authRequired && !user) { onRequestSignIn?.(); return }
           onNavigate(it.id)
         }} style={{
-          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 3,
-          color: it.id === 'home' ? T.brand : T.ink2,
-          fontSize: 10, lineHeight: 1, cursor: 'pointer', flex: 1,
-          background: 'none', border: 'none', fontFamily: T.fontSans,
+          display: 'flex', flexDirection: 'column', alignItems: 'center',
+          gap: 3, flex: 1, background: 'none', border: 'none', cursor: 'pointer',
+          color: it.active ? (isDark ? '#c084fc' : '#ec4899') : (isDark ? '#5b5072' : '#9ca3af'),
+          fontSize: 10, lineHeight: 1, padding: '2px 0', fontFamily: T.fontSans,
         }}>
-          <span style={{
-            width: 22,
-            height: 22,
-            display: 'grid',
-            placeItems: 'center',
-            fontSize: 18,
-            lineHeight: 1,
-            fontWeight: it.id === 'scanner' ? 800 : 400,
-          }}>{it.icon}</span>
-          <span style={{ lineHeight: 1.1 }}>{it.label}</span>
+          <span style={{ fontSize: 18, lineHeight: 1 }}>{it.icon}</span>
+          <span style={{ lineHeight: 1.2 }}>{it.label}</span>
         </button>
       ))}
     </div>
@@ -1553,7 +1545,7 @@ export default function HomePageEditorial({ user, profile, profileReady = false,
           />
         </div>
       )}
-      <BottomNav T={T} user={user} onNavigate={onNavigate} onRequestSignIn={() => setShowMiniAuth(true)} />
+      <BottomNav T={T} isDark={isDark} user={user} onNavigate={onNavigate} onRequestSignIn={() => setShowMiniAuth(true)} />
     </div>
   )
 
