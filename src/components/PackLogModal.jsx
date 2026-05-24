@@ -101,10 +101,10 @@ const PackNameRow = memo(function PackNameRow({ row, index, total, allSets, onUp
             placeholder={index === 0 ? 'Set name (e.g. Stellar Crown…)' : 'Another set…'}
             autoFocus={index === 0}
             autoComplete="off"
-            className="w-full border border-gray-200 dark:border-gray-700 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-pink-300 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500"
+            className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-pink-300 bg-white"
           />
           {showSugg && sugg.length > 0 && (
-            <div className="absolute z-20 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-xl shadow-lg overflow-hidden">
+            <div className="pack-log-dropdown absolute z-20 w-full mt-1 bg-white border border-gray-100 rounded-xl shadow-lg overflow-hidden">
               {sugg.map(s => (
                 <button
                   key={s.id}
@@ -122,17 +122,17 @@ const PackNameRow = memo(function PackNameRow({ row, index, total, allSets, onUp
         </div>
 
         {/* Pack quantity stepper */}
-        <div className="flex items-center gap-0.5 flex-shrink-0 border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden bg-white dark:bg-gray-800">
+        <div className="flex items-center gap-0.5 flex-shrink-0 border border-gray-200 rounded-lg overflow-hidden bg-white">
           <button
             type="button"
             onClick={() => onUpdate({ qty: Math.max(1, qty - 1) })}
-            className="w-6 h-7 flex items-center justify-center text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 text-sm leading-none transition"
+            className="w-6 h-7 flex items-center justify-center text-gray-400 hover:bg-gray-50 text-sm leading-none transition"
           >−</button>
-          <span className="w-6 text-center text-xs font-semibold text-gray-600 dark:text-gray-300 tabular-nums">{qty}</span>
+          <span className="w-6 text-center text-xs font-semibold text-gray-600 tabular-nums">{qty}</span>
           <button
             type="button"
             onClick={() => onUpdate({ qty: qty + 1 })}
-            className="w-6 h-7 flex items-center justify-center text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 text-sm leading-none transition"
+            className="w-6 h-7 flex items-center justify-center text-gray-400 hover:bg-gray-50 text-sm leading-none transition"
           >+</button>
         </div>
 
@@ -356,7 +356,7 @@ export default function PackLogModal({ user, onClose, onSaved, onCardsSaved }) {
     >
       <motion.div
         initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }}
-        className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl p-6 w-full max-w-md max-h-[90vh] flex flex-col"
+        className="bg-white pack-log-modal-card rounded-2xl shadow-2xl p-6 w-full max-w-md max-h-[90vh] flex flex-col"
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}
@@ -454,7 +454,7 @@ export default function PackLogModal({ user, onClose, onSaved, onCardsSaved }) {
                 value={packPrice}
                 onChange={e => setPackPrice(e.target.value)}
                 placeholder={priceMode === 'per-item' ? 'Price per pack…' : 'Total paid…'}
-                className="w-full border border-gray-200 dark:border-gray-700 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-pink-300 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500"
+                className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-pink-300 bg-white"
               />
               {/* Per-item auto-total preview */}
               {priceMode === 'per-item' && perItemPrice > 0 && totalPacks > 1 && (
@@ -481,10 +481,10 @@ export default function PackLogModal({ user, onClose, onSaved, onCardsSaved }) {
                 onFocus={() => setShowStoreSugg(true)}
                 onBlur={() => setTimeout(() => setShowStoreSugg(false), 150)}
                 placeholder="Target, eBay…"
-                className="w-full border border-gray-200 dark:border-gray-700 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-pink-300 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500"
+                className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-pink-300 bg-white"
               />
               {showStoreSugg && recentStores.length > 0 && (
-                <div className="absolute z-20 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-xl shadow-lg overflow-hidden">
+                <div className="pack-log-dropdown absolute z-20 w-full mt-1 bg-white border border-gray-100 rounded-xl shadow-lg overflow-hidden">
                   {recentStores
                     .filter(s => !store || s.toLowerCase().includes(store.toLowerCase()))
                     .map(s => (
@@ -531,7 +531,7 @@ export default function PackLogModal({ user, onClose, onSaved, onCardsSaved }) {
                     ? `Search in ${activeSetNames.length > 1 ? `${activeSetNames.length} sets` : activeSetNames[0]}…`
                     : 'Search Pokémon card name…'
                 }
-                className="w-full border border-gray-200 dark:border-gray-700 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-pink-300 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500"
+                className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-pink-300 bg-white"
               />
               {searching && (
                 <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 animate-pulse">searching…</span>
@@ -539,7 +539,7 @@ export default function PackLogModal({ user, onClose, onSaved, onCardsSaved }) {
             </div>
 
             {cardResults.length > 0 && (
-              <div className="mt-2 border border-gray-100 dark:border-gray-700 rounded-xl overflow-hidden max-h-48 overflow-y-auto shadow-md bg-white dark:bg-gray-800">
+              <div className="pack-log-dropdown mt-2 border border-gray-100 rounded-xl overflow-hidden max-h-48 overflow-y-auto shadow-md bg-white">
                 {cardResults.map(card => (
                   <button
                     key={card.id}

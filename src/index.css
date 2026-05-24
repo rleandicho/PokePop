@@ -376,3 +376,13 @@ body {
 .dark-theme .text-sky-600 {
   color: #7dd3fc !important;
 }
+
+/* Pack log modal — must be fully opaque regardless of dark-theme bg-white override */
+.dark-theme .pack-log-modal-card {
+  background-color: rgb(25, 20, 39) !important;
+}
+.dark-theme .pack-log-modal-card input,
+.dark-theme .pack-log-modal-card .pack-log-dropdown {
+  background-color: rgb(34, 26, 52) !important;
+  color: #f3e8ff !important;
+}
