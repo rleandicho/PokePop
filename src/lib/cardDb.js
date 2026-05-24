@@ -40,6 +40,13 @@ const SEARCH_STYLE_ALIASES = [
     apply: q => q.ilike(‘artist’, ‘%Yuka Morii%’),
   },
   {
+    // “crochet”, “crochet art”, “crochet cards”, “crochet style”
+    // Asako Ito is the Pokemon TCG artist known for her distinctive
+    // crochet/amigurumi textile art style.
+    match: /^crochet(\s+(art|cards?|style))?$/i,
+    apply: q => q.ilike(‘artist’, ‘%Asako Ito%’),
+  },
+  {
     // “cg”, “cg art”, “3d”, “3d art”, “digital art”, “digital cards”
     match: /^(cg(\s+(art|cards?|style))?|3d(\s+(art|cards?|style))?|digital(\s+(art|cards?))?)$/i,
     apply: q => q.or(‘artist.ilike.%5ban Graphics%,artist.ilike.%CG Works%,artist.ilike.%CR CG%’),
