@@ -21,24 +21,52 @@ const PRICE_TTL_MS    = 24 * 60 * 60 * 1000  // 24 hours
 // Promo set name fragments — mirrors AestheticFilter's PROMO_QUERY logic
 const PROMO_NAME_FRAGMENTS = ['%Promo%', '%POP Series%', '%McDonald%']
 const SEARCH_SET_ALIASES = [
-  { match: /^(trick\s*(or|&)?\s*(treat|trade)|trick\s*or\s*treat|trick\s*or\s*trade|trickortreat|trickortrade)$/i, setIds: ['trt22', 'trt23', 'trt24'] },
-  { match: /^trt22$/i, setIds: ['trt22'] },
-  { match: /^trt23$/i, setIds: ['trt23'] },
-  { match: /^trt24$/i, setIds: ['trt24'] },
-  { match: /^(toys?\s*r\s*us|toysrus)$/i, setIds: ['toysrus'] },
-  { match: /^(build\s*a\s*bear|buildabear|build-a-bear)$/i, setIds: ['buildabear'] },
+  { match: /^(trick\s*(or|&)?\s*(treat|trade)|trick\s*or\s*treat|trick\s*or\s*trade|trickortreat|trickortrade)$/i, setIds: [‘trt22’, ‘trt23’, ‘trt24’] },
+  { match: /^trt22$/i, setIds: [‘trt22’] },
+  { match: /^trt23$/i, setIds: [‘trt23’] },
+  { match: /^trt24$/i, setIds: [‘trt24’] },
+  { match: /^(toys?\s*r\s*us|toysrus)$/i, setIds: [‘toysrus’] },
+  { match: /^(build\s*a\s*bear|buildabear|build-a-bear)$/i, setIds: [‘buildabear’] },
 ]
 
-function resolveSearchSetAlias(search) {
+// Art-style keyword aliases — map descriptive terms to specific query filters.
+// Each entry applies a custom Supabase filter rather than a set-ID list.
+const SEARCH_STYLE_ALIASES = [
+  {
+    // “clay”, “clay art”, “clay cards”, “clay style”
+    // Yuka Morii is the iconic Pokemon card artist who creates her art
+    // from real polymer clay sculptures — she is THE “clay art” artist.
+    match: /^clay(\s+(art|cards?|style))?$/i,
+    apply: q => q.ilike(‘artist’, ‘%Yuka Morii%’),
+  },
+  {
+    // “cg”, “cg art”, “3d”, “3d art”, “digital art”, “digital cards”
+    match: /^(cg(\s+(art|cards?|style))?|3d(\s+(art|cards?|style))?|digital(\s+(art|cards?))?)$/i,
+    apply: q => q.or(‘artist.ilike.%5ban Graphics%,artist.ilike.%CG Works%,artist.ilike.%CR CG%’),
+  },
+  {
+    // “felt”, “felt hat”, “felt art”
+    match: /^felt(\s+(hat|art|cards?))?$/i,
+    apply: q => q.ilike(‘name’, ‘%Felt%’),
+  },
+]
+
+function resolveSearchAlias(search) {
   const normalized = search
     .trim()
-    .replace(/[“”]/g, '"')
-    .replace(/[‘’]/g, "'")
-    .replace(/['"]/g, '')
-    .replace(/[-_]+/g, ' ')
-    .replace(/\s+/g, ' ')
+    .replace(/[“”]/g, ‘”’)
+    .replace(/[‘’]/g, “’”)
+    .replace(/[‘”]/g, ‘’)
+    .replace(/[-_]+/g, ‘ ‘)
+    .replace(/\s+/g, ‘ ‘)
 
-  return SEARCH_SET_ALIASES.find(alias => alias.match.test(normalized))?.setIds ?? null
+  const setAlias = SEARCH_SET_ALIASES.find(a => a.match.test(normalized))
+  if (setAlias) return { type: ‘setIds’, value: setAlias.setIds }
+
+  const styleAlias = SEARCH_STYLE_ALIASES.find(a => a.match.test(normalized))
+  if (styleAlias) return { type: ‘style’, apply: styleAlias.apply }
+
+  return null
 }
 
 // ── Vibe → Supabase filter definitions ───────────────────────────────────────
@@ -247,7 +275,7 @@ export async function fetchCardsFromDb({ vibe, search, exactName, setQuery, sort
     q = q.ilike('name', exactName)
   } else if (search && search.trim()) {
     const s = search.trim()
-    const aliasSetIds = resolveSearchSetAlias(s)
+    const alias = resolveSearchAlias(s)
 
     // Card ID: setId-number, e.g. "swshp-SWSH094", "sv3pt5-144", "base1-4"
     // Right part must contain at least one digit to distinguish from Pokémon names like "Ho-Oh"
@@ -259,8 +287,10 @@ export async function fetchCardsFromDb({ vibe, search, exactName, setQuery, sort
     // Pure number: 1–4 digits only, e.g. "4", "94", "094"
     const pureNumMatch = !cardIdMatch && !promoNumMatch && s.match(/^\d{1,4}$/)
 
-    if (aliasSetIds) {
-      q = q.in('set_id', aliasSetIds)
+    if (alias?.type === 'setIds') {
+      q = q.in('set_id', alias.value)
+    } else if (alias?.type === 'style') {
+      q = alias.apply(q)
     } else if (cardIdMatch) {
       // Case-insensitive exact ID match (ilike without wildcards = case-insensitive =)
       q = q.ilike('id', s)
@@ -278,10 +308,10 @@ export async function fetchCardsFromDb({ vibe, search, exactName, setQuery, sort
       } else {
         // Normalize hyphens to spaces ("felt-hat-pikachu" → "felt hat pikachu"),
         // then split into words. All words must match somewhere (AND semantics),
-        // each word may appear in name, english_name, or set_name (OR within word).
+        // each word may appear in name, english_name, set_name, or artist (OR within word).
         const words = s.replace(/-/g, ' ').trim().split(/\s+/).filter(Boolean)
         for (const word of words) {
-          q = q.or(`name.ilike.%${word}%,english_name.ilike.%${word}%,set_name.ilike.%${word}%`)
+          q = q.or(`name.ilike.%${word}%,english_name.ilike.%${word}%,set_name.ilike.%${word}%,artist.ilike.%${word}%`)
         }
       }
     }
