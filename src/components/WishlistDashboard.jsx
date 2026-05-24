@@ -4843,105 +4843,112 @@ export default function WishlistDashboard({ user, profile, onToast, onGoExplore,
                 </div>
                 <button onClick={() => { setPackLogOpen(false); setPackDrilldown(null) }} className="text-gray-400 hover:text-gray-600 text-xl leading-none">×</button>
               </div>
-              <div className="mb-3 text-sm text-gray-500 dark:text-gray-400">
+              <div className="mb-2 text-sm text-gray-500 dark:text-gray-400">
                 Total invested: <span className="font-bold text-pink-500">${packInvested.toFixed(2)}</span>
               </div>
-              {/* Purchase type breakout — clickable to drilldown */}
-              {packLogs.length > 0 && (() => {
-                const typeTotals = {}
-                packLogs.forEach(log => {
-                  const type  = log.pack_type || 'Other'
-                  const count = Array.isArray(log.packs)
-                    ? log.packs.reduce((s, p) => s + (p.qty ?? 1), 0)
-                    : 1
-                  if (!typeTotals[type]) typeTotals[type] = { count: 0, spent: 0 }
-                  typeTotals[type].count += count
-                  typeTotals[type].spent += log.pack_price || 0
-                })
-                const typeEntries = Object.entries(typeTotals).sort((a, b) => b[1].count - a[1].count)
-                if (!typeEntries.length) return null
-                const maxCount = typeEntries[0][1].count
-                const activeType = packDrilldown?.kind === 'type' ? packDrilldown.value : null
-                return (
-                  <div className="mb-3 border border-gray-200 dark:border-gray-700 rounded-xl p-3 bg-gray-50 dark:bg-gray-800">
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wide">By purchase type</div>
-                      {activeType && (
-                        <button onClick={() => setPackDrilldown(null)} className="text-[10px] text-pink-400 hover:text-pink-600 font-semibold">Show all ✕</button>
-                      )}
-                    </div>
-                    <div className="space-y-1.5">
-                      {typeEntries.map(([type, { count, spent }]) => {
-                        const isActive = activeType === type
-                        return (
-                          <button
-                            key={type}
-                            onClick={() => setPackDrilldown(isActive ? null : { kind: 'type', value: type })}
-                            className={`w-full flex items-center gap-2 rounded-lg px-1 py-0.5 transition-colors text-left
-                              ${isActive ? 'bg-violet-100 dark:bg-violet-900/40' : 'hover:bg-gray-100 dark:hover:bg-gray-700'}`}
-                          >
-                            <div className="flex-1 text-xs text-gray-700 dark:text-gray-200 truncate font-medium">{type}</div>
-                            <div className="text-xs font-bold text-violet-500 dark:text-violet-400 tabular-nums">{count}</div>
-                            <div className="text-[11px] text-gray-400 tabular-nums">${spent.toFixed(0)}</div>
-                            <div className="w-16 h-1.5 bg-gray-200 dark:bg-gray-600 rounded-full overflow-hidden">
-                              <div className="h-full bg-gradient-to-r from-violet-400 to-pink-400 rounded-full"
-                                style={{ width: `${Math.min(100, (count / maxCount) * 100)}%` }} />
-                            </div>
-                          </button>
-                        )
-                      })}
-                    </div>
-                  </div>
-                )
-              })()}
-              {/* Packs-per-set breakdown — clickable to drilldown */}
-              {packLogs.length > 0 && (() => {
-                const setTotals = {}
-                packLogs.forEach(log => {
-                  const rows = log.packs?.length > 0 ? log.packs : (log.pack_name ? [{ name: log.pack_name, qty: 1 }] : [])
-                  rows.forEach(p => {
-                    if (!p.name) return
-                    setTotals[p.name] = (setTotals[p.name] ?? 0) + (p.qty ?? 1)
+
+              {/* ── Single scrollable area: charts + log entries ────────── */}
+              <div className="overflow-y-auto flex-1 pr-1 space-y-3">
+
+                {/* Purchase type breakout — clickable to drilldown */}
+                {packLogs.length > 0 && (() => {
+                  const typeTotals = {}
+                  packLogs.forEach(log => {
+                    const type  = log.pack_type || 'Other'
+                    const count = Array.isArray(log.packs)
+                      ? log.packs.reduce((s, p) => s + (p.qty ?? 1), 0)
+                      : 1
+                    if (!typeTotals[type]) typeTotals[type] = { count: 0, spent: 0 }
+                    typeTotals[type].count += count
+                    typeTotals[type].spent += log.pack_price || 0
                   })
-                })
-                const entries = Object.entries(setTotals).sort((a, b) => b[1] - a[1])
-                if (!entries.length) return null
-                const activeSet = packDrilldown?.kind === 'set' ? packDrilldown.value : null
-                return (
-                  <div className="mb-3 border border-gray-200 dark:border-gray-700 rounded-xl p-3 bg-gray-50 dark:bg-gray-800">
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wide">Packs opened by set</div>
-                      {activeSet && (
-                        <button onClick={() => setPackDrilldown(null)} className="text-[10px] text-pink-400 hover:text-pink-600 font-semibold">Show all ✕</button>
-                      )}
+                  const typeEntries = Object.entries(typeTotals).sort((a, b) => b[1].count - a[1].count)
+                  if (!typeEntries.length) return null
+                  const maxCount = typeEntries[0][1].count
+                  const activeType = packDrilldown?.kind === 'type' ? packDrilldown.value : null
+                  return (
+                    <div className="border border-gray-200 dark:border-gray-700 rounded-xl p-3 bg-gray-50 dark:bg-gray-800">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wide">By purchase type</div>
+                        {activeType && (
+                          <button onClick={() => setPackDrilldown(null)} className="text-[10px] text-pink-400 hover:text-pink-600 font-semibold">Show all ✕</button>
+                        )}
+                      </div>
+                      <div className="space-y-1.5">
+                        {typeEntries.map(([type, { count, spent }]) => {
+                          const isActive = activeType === type
+                          return (
+                            <button
+                              key={type}
+                              onClick={() => setPackDrilldown(isActive ? null : { kind: 'type', value: type })}
+                              className={`w-full flex items-center gap-2 rounded-lg px-1 py-0.5 transition-colors text-left
+                                ${isActive ? 'bg-violet-100 dark:bg-violet-900/40' : 'hover:bg-gray-100 dark:hover:bg-gray-700'}`}
+                            >
+                              <div className="flex-1 text-xs text-gray-700 dark:text-gray-200 truncate font-medium">{type}</div>
+                              <div className="text-xs font-bold text-violet-500 dark:text-violet-400 tabular-nums">{count}</div>
+                              <div className="text-[11px] text-gray-400 tabular-nums">${spent.toFixed(0)}</div>
+                              <div className="w-16 h-1.5 bg-gray-200 dark:bg-gray-600 rounded-full overflow-hidden">
+                                <div className="h-full bg-gradient-to-r from-violet-400 to-pink-400 rounded-full"
+                                  style={{ width: `${Math.min(100, (count / maxCount) * 100)}%` }} />
+                              </div>
+                            </button>
+                          )
+                        })}
+                      </div>
                     </div>
-                    <div className="space-y-1 max-h-28 overflow-y-auto">
-                      {entries.map(([name, count]) => {
-                        const isActive = activeSet === name
-                        return (
-                          <button
-                            key={name}
-                            onClick={() => setPackDrilldown(isActive ? null : { kind: 'set', value: name })}
-                            className={`w-full flex items-center gap-2 rounded-lg px-1 py-0.5 transition-colors text-left
-                              ${isActive ? 'bg-pink-100 dark:bg-pink-900/40' : 'hover:bg-gray-100 dark:hover:bg-gray-700'}`}
-                          >
-                            <div className="flex-1 text-xs text-gray-700 dark:text-gray-200 truncate font-medium">{name}</div>
-                            <div className="text-xs font-bold text-pink-500 dark:text-pink-400 tabular-nums">{count}</div>
-                            <div className="w-20 h-1.5 bg-gray-200 dark:bg-gray-600 rounded-full overflow-hidden">
-                              <div className="h-full bg-gradient-to-r from-pink-400 to-violet-400 rounded-full"
-                                style={{ width: `${Math.min(100, (count / entries[0][1]) * 100)}%` }} />
-                            </div>
-                          </button>
-                        )
-                      })}
+                  )
+                })()}
+
+                {/* Packs-per-set breakdown — clickable to drilldown */}
+                {packLogs.length > 0 && (() => {
+                  const setTotals = {}
+                  packLogs.forEach(log => {
+                    const rows = log.packs?.length > 0 ? log.packs : (log.pack_name ? [{ name: log.pack_name, qty: 1 }] : [])
+                    rows.forEach(p => {
+                      if (!p.name) return
+                      setTotals[p.name] = (setTotals[p.name] ?? 0) + (p.qty ?? 1)
+                    })
+                  })
+                  const entries = Object.entries(setTotals).sort((a, b) => b[1] - a[1])
+                  if (!entries.length) return null
+                  const activeSet = packDrilldown?.kind === 'set' ? packDrilldown.value : null
+                  return (
+                    <div className="border border-gray-200 dark:border-gray-700 rounded-xl p-3 bg-gray-50 dark:bg-gray-800">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wide">Packs opened by set</div>
+                        {activeSet && (
+                          <button onClick={() => setPackDrilldown(null)} className="text-[10px] text-pink-400 hover:text-pink-600 font-semibold">Show all ✕</button>
+                        )}
+                      </div>
+                      <div className="space-y-1">
+                        {entries.map(([name, count]) => {
+                          const isActive = activeSet === name
+                          return (
+                            <button
+                              key={name}
+                              onClick={() => setPackDrilldown(isActive ? null : { kind: 'set', value: name })}
+                              className={`w-full flex items-center gap-2 rounded-lg px-1 py-0.5 transition-colors text-left
+                                ${isActive ? 'bg-pink-100 dark:bg-pink-900/40' : 'hover:bg-gray-100 dark:hover:bg-gray-700'}`}
+                            >
+                              <div className="flex-1 text-xs text-gray-700 dark:text-gray-200 truncate font-medium">{name}</div>
+                              <div className="text-xs font-bold text-pink-500 dark:text-pink-400 tabular-nums">{count}</div>
+                              <div className="w-20 h-1.5 bg-gray-200 dark:bg-gray-600 rounded-full overflow-hidden">
+                                <div className="h-full bg-gradient-to-r from-pink-400 to-violet-400 rounded-full"
+                                  style={{ width: `${Math.min(100, (count / entries[0][1]) * 100)}%` }} />
+                              </div>
+                            </button>
+                          )
+                        })}
+                      </div>
                     </div>
-                  </div>
-                )
-              })()}
-              {packLogs.length === 0 ? (
-                <p className="text-sm text-gray-400 text-center py-8">No packs logged yet.<br/>Hit "Log a Pack" to start tracking!</p>
-              ) : (
-                <div className="overflow-y-auto flex-1 space-y-2 pr-1">
+                  )
+                })()}
+
+                {/* Log entries */}
+                {packLogs.length === 0 ? (
+                  <p className="text-sm text-gray-400 text-center py-8">No packs logged yet.<br/>Hit "Log a Pack" to start tracking!</p>
+                ) : (
+                  <div className="space-y-2">
                   {(packDrilldown
                     ? packLogs.filter(log => {
                         if (packDrilldown.kind === 'type') return (log.pack_type || 'Other') === packDrilldown.value
@@ -5005,6 +5012,9 @@ export default function WishlistDashboard({ user, profile, onToast, onGoExplore,
                   ))}
                 </div>
               )}
+
+              </div>{/* end unified scroll area */}
+
               <button
                 onClick={() => { setPackLogOpen(false); setPackModalOpen(true) }}
                 className="mt-4 w-full py-2.5 rounded-xl text-sm font-semibold bg-gradient-to-r from-pink-400 to-violet-400 text-white hover:opacity-90 transition"
