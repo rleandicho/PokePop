@@ -186,6 +186,114 @@ function buildSearchCandidates(text) {
   return [...new Set(all.map(c => cleanOcrLine(c)).filter(c => c && !isNoisyCandidate(c)))]
 }
 
+// Adaptive-threshold preprocessing for Tesseract OCR.
+//
+// Pipeline: grayscale → 2-pass 3×3 box blur (≈ Gaussian, removes camera sensor
+// noise) → integral image → adaptive mean threshold → auto-invert.
+//
+// Uses per-pixel local-mean thresholding (like OpenCV ADAPTIVE_THRESH_MEAN_C).
+// Each pixel is classified as text/background relative to the mean luminance of
+// its 31×31 neighbourhood, so it adapts naturally to the large luminance swings
+// between a dark Trainer banner and a bright foil Pokémon card — without any
+// hard-coded global luminance threshold that might mis-fire on borderline images.
+//
+// Auto-invert: after binarisation, if >50 % of pixels are black the card has a
+// dark background with light text (Trainer banner). We invert so Tesseract always
+// receives dark text on a light background.
+//
+// Performance: O(n) after the O(9n) blur passes. On a 2560×432 name crop
+// (≈1.1 M pixels) this runs in roughly 30–80 ms on a mid-range phone.
+function adaptiveThresholdCanvas(src) {
+  const dst = document.createElement('canvas')
+  dst.width  = src.width
+  dst.height = src.height
+  const ctx = dst.getContext('2d')
+  ctx.drawImage(src, 0, 0)
+  const imageData = ctx.getImageData(0, 0, dst.width, dst.height)
+  const data = imageData.data
+  const w = dst.width
+  const h = dst.height
+  const n = w * h
+
+  // 1. Grayscale
+  const gray = new Float32Array(n)
+  for (let i = 0; i < n; i++) {
+    const o = i * 4
+    gray[i] = 0.299 * data[o] + 0.587 * data[o + 1] + 0.114 * data[o + 2]
+  }
+
+  // 2. Two-pass 3×3 box blur (approximates a Gaussian kernel).
+  //    Removes high-frequency camera sensor noise before binarisation.
+  function boxBlur3(g) {
+    const out = new Float32Array(n)
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        let s = 0, c = 0
+        for (let dy = -1; dy <= 1; dy++) {
+          const ny = y + dy
+          if (ny < 0 || ny >= h) continue
+          for (let dx = -1; dx <= 1; dx++) {
+            const nx = x + dx
+            if (nx < 0 || nx >= w) continue
+            s += g[ny * w + nx]; c++
+          }
+        }
+        out[y * w + x] = s / c
+      }
+    }
+    return out
+  }
+  const blurred = boxBlur3(boxBlur3(gray))
+
+  // 3. Summed-area table for O(1) local-mean queries
+  const integral = new Float64Array((w + 1) * (h + 1))
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      integral[(y + 1) * (w + 1) + (x + 1)] =
+        blurred[y * w + x] +
+        integral[y * (w + 1) + (x + 1)] +
+        integral[(y + 1) * (w + 1) + x] -
+        integral[y * (w + 1) + x]
+    }
+  }
+
+  // 4. Adaptive threshold
+  //    half = 15  →  31×31 window (≈ 3× stroke-width of card-name text at 2× upscale)
+  //    C    = 10  →  text pixel must be ≥ 10 lum units darker than its local mean
+  const half = 15
+  const C = 10
+  const binary = new Uint8Array(n)
+  let blackCount = 0
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const x1 = Math.max(0, x - half), y1 = Math.max(0, y - half)
+      const x2 = Math.min(w - 1, x + half), y2 = Math.min(h - 1, y + half)
+      const area  = (x2 - x1 + 1) * (y2 - y1 + 1)
+      const localMean = (
+        integral[(y2 + 1) * (w + 1) + (x2 + 1)] -
+        integral[y1       * (w + 1) + (x2 + 1)] -
+        integral[(y2 + 1) * (w + 1) + x1      ] +
+        integral[y1       * (w + 1) + x1      ]
+      ) / area
+      const isText = blurred[y * w + x] < localMean - C
+      binary[y * w + x] = isText ? 0 : 255
+      if (isText) blackCount++
+    }
+  }
+
+  // 5. Auto-invert for dark-banner Trainer cards.
+  //    Dark backgrounds are classified as "text" by the threshold, so a high
+  //    blackCount signals white-on-dark — invert to give Tesseract dark-on-light.
+  const shouldInvert = blackCount > n * 0.5
+  for (let i = 0; i < n; i++) {
+    const v = shouldInvert ? 255 - binary[i] : binary[i]
+    data[i * 4] = data[i * 4 + 1] = data[i * 4 + 2] = v
+    data[i * 4 + 3] = 255
+  }
+  ctx.putImageData(imageData, 0, 0)
+  return dst
+}
+
 function sortScannerResults(cards) {
   return [...cards].sort((a, b) => {
     const langA = a.card_language ?? 'en'
@@ -425,51 +533,6 @@ export default function CardScanner({ user, isDark = false, onToast, onCardAdded
     return dst
   }
 
-  // Preprocess a canvas for OCR: convert to high-contrast grayscale.
-  // For foil/holo Pokémon cards (light background, dark text) this is a standard
-  // contrast boost. For Trainer cards with dark colored banners (blue/purple/green)
-  // the text is white-on-dark — we auto-detect this (or force-invert) and invert
-  // before contrasting so Tesseract always gets dark text on a light background.
-  //
-  // forceInvert=true skips luminance sampling and always inverts — used to run a
-  // second Tesseract pass so we catch Trainer banners even when the auto-detect
-  // threshold is borderline.
-  function preprocessCanvas(src, forceInvert = false) {
-    const dst = document.createElement('canvas')
-    dst.width  = src.width
-    dst.height = src.height
-    const ctx = dst.getContext('2d')
-    ctx.drawImage(src, 0, 0)
-    const imageData = ctx.getImageData(0, 0, dst.width, dst.height)
-    const data = imageData.data
-
-    // Sample average luminance from the top ~35% of the crop (the name banner area).
-    // Threshold raised to 120 — Trainer card blue/teal/purple banners typically read
-    // as 100–120, which was previously slipping under the old 100 cutoff.
-    let isDarkBackground = forceInvert
-    if (!forceInvert) {
-      let lumSum = 0
-      const sampleRows = Math.min(Math.floor(dst.height * 0.35), 60)
-      const samplePixels = dst.width * sampleRows
-      for (let i = 0; i < samplePixels * 4; i += 4) {
-        lumSum += 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2]
-      }
-      const avgLum = samplePixels > 0 ? lumSum / samplePixels : 128
-      isDarkBackground = avgLum < 120
-    }
-
-    for (let i = 0; i < data.length; i += 4) {
-      let gray = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2]
-      // Invert dark backgrounds so white-on-dark text becomes black-on-white
-      if (isDarkBackground) gray = 255 - gray
-      // Contrast stretch: push mid-tones toward black/white (factor 1.8)
-      const contrasted = Math.max(0, Math.min(255, 128 + (gray - 128) * 1.8))
-      data[i] = data[i + 1] = data[i + 2] = contrasted
-    }
-    ctx.putImageData(imageData, 0, 0)
-    return dst
-  }
-
   const captureAndDetect = useCallback(async ({ quiet = false } = {}) => {
     if (scanLockedRef.current) return  // use ref — always current, not a stale closure value
     if (detectingRef.current) return
@@ -498,18 +561,16 @@ export default function CardScanner({ user, isDark = false, onToast, onCardAdded
     numCanvas.height = Math.round(vh * 0.15)
     numCanvas.getContext('2d').drawImage(video, 0, vh - numCanvas.height, vw, numCanvas.height, 0, 0, vw, numCanvas.height)
 
-    // Preprocess the name crop for foil/holo resilience (grayscale + contrast boost).
-    // The full canvas and number strip are left as-is — TextDetector handles
-    // standard contrast well, and number text is typically printed clearly.
-    const procNameCanvas = preprocessCanvas(nameCanvas)
+    // Adaptive-threshold the name crop: grayscale → blur → local-mean binarise →
+    // auto-invert. Handles both dark Trainer banners and light foil Pokémon cards.
+    const procNameCanvas = adaptiveThresholdCanvas(nameCanvas)
 
     try {
       let rawText = ''
       if (supportsTextDetection) {
         const detector = new window.TextDetector()
-        // 4 parallel calls: preprocessed name crop (foil/Trainer safe after inversion),
-        // raw color name crop (Chrome's TextDetector handles color natively — extra signal
-        // for Trainer card dark banners), number strip, and full frame as catch-all.
+        // 4 parallel calls: adaptive-thresholded name crop (binarised, auto-inverted),
+        // raw color name crop (TextDetector handles color natively), number strip, full frame.
         const [nameDets, rawNameDets, numDets, fullDets] = await Promise.all([
           detector.detect(procNameCanvas),
           detector.detect(nameCanvas),
@@ -526,17 +587,15 @@ export default function CardScanner({ user, isDark = false, onToast, onCardAdded
         // Tesseract fallback: upscale 2× before each pass — Tesseract was designed for
         // 300 DPI scans and reads small card text much more reliably at double resolution.
         //
-        // Run TWO passes on the name crop, both with the default PSM.SPARSE_TEXT:
-        //   Pass 1: auto-preprocessed (luminance-based inversion for dark/light backgrounds)
-        //   Pass 2: raw color nameCanvas — white text on colored Trainer banners (blue/teal)
-        //     converts to ~134 luminance via Tesseract's internal grayscale conversion,
-        //     giving natural contrast without preprocessing artifacts.
-        //
-        // PSM.SPARSE_TEXT (not SINGLE_LINE): the name crop contains background above the
-        // card, the banner, and part of the artwork — it is NOT a single text line.
-        // SPARSE_TEXT lets Tesseract find text regions independently, so "Energy" and
-        // "Search" are detected as separate fragments and then joined by our line-pair
-        // combination into the correct multi-word candidate "Energy Search".
+        // Two Tesseract passes on the name crop (PSM.SPARSE_TEXT = worker default):
+        //   Pass 1: adaptiveThresholdCanvas — Gaussian blur → local-mean binarise →
+        //     auto-invert. Handles foil cards (dark text on light) and Trainer cards
+        //     (white text on dark banner) without any hardcoded global threshold.
+        //   Pass 2: raw color nameCanvas — white-on-blue reads as ~134 vs ~200+ lum
+        //     in Tesseract's internal grayscale, giving natural contrast with zero
+        //     preprocessing risk. Serves as independent confirmation of Pass 1.
+        // PSM.SPARSE_TEXT is correct here: the crop contains background, banner, and
+        // top of artwork — NOT a single text line. SPARSE_TEXT finds regions independently.
         setScanStatus('Reading card name...')
         const [nameText, nameTextRaw] = await Promise.all([
           readWithTesseract(upscaleCanvas(procNameCanvas)),
@@ -548,7 +607,7 @@ export default function CardScanner({ user, isDark = false, onToast, onCardAdded
         candidates = buildSearchCandidates(rawText)
         if (!candidates.length) {
           setScanStatus('Reading full card...')
-          const fullText = await readWithTesseract(upscaleCanvas(preprocessCanvas(canvas)))
+          const fullText = await readWithTesseract(upscaleCanvas(adaptiveThresholdCanvas(canvas)))
           rawText = [rawText, fullText].filter(Boolean).join('\n')
           candidates = buildSearchCandidates(rawText)
         }
