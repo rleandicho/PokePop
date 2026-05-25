@@ -18,7 +18,8 @@
     "source-artofpkm": "node scripts/source-artofpkm-images.mjs",
     "import-pkmncards": "node scripts/import-pkmncards.mjs",
     "import-special-promos": "node scripts/import-special-promos.mjs",
-    "import-missing-energies": "node scripts/import-missing-energies.mjs"
+    "import-missing-energies": "node scripts/import-missing-energies.mjs",
+    "seed-tcgdex-prices": "node scripts/seed-tcgdex-prices.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.102.1",
