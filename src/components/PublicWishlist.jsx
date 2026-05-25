@@ -696,7 +696,7 @@ export default function PublicWishlist() {
               <>
                 <AnimatePresence mode="wait">
                   <motion.div
-                    key={cardSearch ? 'search' : `${shopMode ? 'shop' : 'full'}-${collectionPage}`}
+                    key={`${shopMode ? 'shop' : 'full'}-${collectionPage}`}
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
                     exit={{ opacity: 0 }}
