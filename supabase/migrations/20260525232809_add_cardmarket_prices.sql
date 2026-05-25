@@ -9,7 +9,10 @@ ALTER TABLE tcg_prices
 -- Recreate the view to expose the new columns and include cardmarket_avg
 -- in the best_market_price COALESCE fallback chain.
 DROP VIEW IF EXISTS tcg_cards_with_price;
-CREATE VIEW tcg_cards_with_price AS
+-- security_invoker = true: view runs as the querying user, not the creator.
+-- Prevents the SECURITY DEFINER advisory warning and correctly enforces RLS
+-- policies on tcg_cards and tcg_prices for the calling role.
+CREATE VIEW tcg_cards_with_price WITH (security_invoker = true) AS
 SELECT
   c.id,
   c.name,
