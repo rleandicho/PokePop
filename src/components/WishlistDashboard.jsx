@@ -171,7 +171,9 @@ function ShowcaseCard({ item, badge, borderColor, delay, onCardClick }) {
         <img src={item.image} alt={item.name} className={`w-12 rounded-xl shadow-md border-2 ${borderColor}`}
              onError={e => { e.currentTarget.src = CARD_BACK }} />
       </div>
-      <p className="text-[10px] font-bold text-gray-600 text-center w-12 truncate">{item.name}</p>
+      <p className="text-[10px] font-bold text-gray-600 text-center w-12 truncate">
+        {item.card_language && item.card_language !== 'en' && item.english_name ? item.english_name : item.name}
+      </p>
     </motion.div>
   )
 }
@@ -1176,7 +1178,14 @@ function WishlistCardModal({
         <img src={item.image} alt={item.name} className="w-full rounded-2xl mb-4 shadow-md"
              onError={e => { e.currentTarget.src = CARD_BACK }} />
 
-        <h2 className="text-xl font-bold text-pink-500 mb-0.5">{item.name}</h2>
+        {item.card_language && item.card_language !== 'en' && item.english_name ? (
+          <>
+            <h2 className="text-xl font-bold text-pink-500 mb-0">{item.english_name}</h2>
+            <p className="text-sm text-gray-400 mb-0.5">{item.name}</p>
+          </>
+        ) : (
+          <h2 className="text-xl font-bold text-pink-500 mb-0.5">{item.name}</h2>
+        )}
         <p className="text-sm text-gray-400 mb-3">
           {item.owned ? '📦 In your Collection' : '💖 On your Wishlist'}
         </p>
@@ -1651,15 +1660,17 @@ export default function WishlistDashboard({ user, profile, onToast, onGoExplore,
     if (cardIds.length) {
       const { data: metaRows } = await supabase
         .from('tcg_cards')
-        .select('id, set_name, number, rarity')
+        .select('id, set_name, number, rarity, english_name, card_language')
         .in('id', cardIds)
       if (metaRows?.length) {
         const metaMap = Object.fromEntries(metaRows.map(r => [r.id, r]))
         setItems(rawItems.map(i => ({
           ...i,
-          set_name:    metaMap[i.card_id]?.set_name    ?? null,
-          card_number: metaMap[i.card_id]?.number      ?? null,
-          rarity:      metaMap[i.card_id]?.rarity      ?? null,
+          set_name:      metaMap[i.card_id]?.set_name      ?? null,
+          card_number:   metaMap[i.card_id]?.number        ?? null,
+          rarity:        metaMap[i.card_id]?.rarity        ?? null,
+          english_name:  metaMap[i.card_id]?.english_name  ?? null,
+          card_language: metaMap[i.card_id]?.card_language ?? 'en',
         })))
       } else {
         setItems(rawItems)
@@ -3192,7 +3203,14 @@ export default function WishlistDashboard({ user, profile, onToast, onGoExplore,
       </div>
 
       <div className="p-2 text-center">
-        <p className="text-sm font-bold text-gray-700 truncate">{item.name}</p>
+        {item.card_language && item.card_language !== 'en' && item.english_name ? (
+          <>
+            <p className="text-sm font-bold text-gray-700 truncate">{item.english_name}</p>
+            <p className="text-[10px] text-gray-400 truncate">{item.name}</p>
+          </>
+        ) : (
+          <p className="text-sm font-bold text-gray-700 truncate">{item.name}</p>
+        )}
         {(item.set_name || item.card_number) && (
           <p className="text-[10px] text-gray-400 truncate mb-0.5">
             {[item.set_name, item.card_number ? `#${item.card_number}` : null].filter(Boolean).join(' · ')}
@@ -4491,7 +4509,9 @@ export default function WishlistDashboard({ user, profile, onToast, onGoExplore,
                             className="w-full"
                             onError={e => { e.currentTarget.src = CARD_BACK }}
                           />
-                          <p className="text-[9px] font-semibold text-gray-600 truncate px-1 py-0.5 text-center">{item.name}</p>
+                          <p className="text-[9px] font-semibold text-gray-600 truncate px-1 py-0.5 text-center">
+                            {item.card_language && item.card_language !== 'en' && item.english_name ? item.english_name : item.name}
+                          </p>
                         </button>
                       ))}
                     </div>

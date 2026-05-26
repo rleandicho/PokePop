@@ -90,9 +90,9 @@ function tierLabel(key) {
 
 // Cache key includes sort so each sort+filter combo has its own cache slot.
 // Switching sorts never re-uses data fetched under a different sort's API ordering.
-// v2: rebuilt after price-sort ordering fix (oldest-first for both price directions).
+// v3: cache bust after ja-M5 image backfill.
 function buildCacheKey(vibe, search, setQuery, sort, langFilter) {
-  return `v2|${vibe ?? ''}|${search ?? ''}|${setQuery ?? ''}|${sort ?? ''}|${langFilter ?? 'all'}`
+  return `v3|${vibe ?? ''}|${search ?? ''}|${setQuery ?? ''}|${sort ?? ''}|${langFilter ?? 'all'}`
 }
 
 // ─── localStorage card cache ──────────────────────────────────────────────────
@@ -593,7 +593,14 @@ function CardModal({ card, user, onToast, onClose, saveCard, collectionIds, owne
         <img src={imgSrc} alt={card.name}
              className="w-full rounded-2xl mb-4 shadow-md"
              onError={e => { e.currentTarget.src = CARD_BACK }} />
-        <h2 className="text-xl font-bold text-pink-500 mb-0.5">{card.name}</h2>
+        {card.card_language && card.card_language !== 'en' && card.english_name ? (
+          <>
+            <h2 className="text-xl font-bold text-pink-500 mb-0">{card.english_name}</h2>
+            <p className="text-sm text-gray-400 mb-0.5">{card.name}</p>
+          </>
+        ) : (
+          <h2 className="text-xl font-bold text-pink-500 mb-0.5">{card.name}</h2>
+        )}
         <p className="text-sm text-gray-400 mb-2">
           {card.set?.name && card.set?.id ? (
             <button
@@ -1023,9 +1030,13 @@ const CardTile = memo(function CardTile({ card, inList, isOwned, myLangs, quickA
         onError={e => { e.currentTarget.src = CARD_BACK }}
       />
       <div className="p-2 text-center">
-        <p className="text-sm font-bold text-gray-700 truncate">{card.name}</p>
-        {card.card_language && card.card_language !== 'en' && card.english_name && (
-          <p className="text-[10px] text-sky-500 truncate font-medium">{card.english_name}</p>
+        {card.card_language && card.card_language !== 'en' && card.english_name ? (
+          <>
+            <p className="text-sm font-bold text-gray-700 truncate">{card.english_name}</p>
+            <p className="text-[10px] text-gray-400 truncate">{card.name}</p>
+          </>
+        ) : (
+          <p className="text-sm font-bold text-gray-700 truncate">{card.name}</p>
         )}
         {card.set?.name && card.set?.id ? (
           <button
