@@ -38,6 +38,76 @@ const LANG_LABELS = {
 // Ordered list of known language prefixes (longest first to avoid zh matching zh-tw)
 const LANG_PREFIXES = ['zh-tw', 'zh-cn', 'zh', 'ja', 'fr', 'de', 'it', 'pt', 'ko', 'es']
 
+// English translations for foreign-language set names, keyed by set ID
+const SET_EN_NAMES = {
+  // ── Japanese MEGA series ─────────────────────────────────────────────────
+  'ja-M5':   'Abyss Eye',
+  'ja-M3':   'Nihil Zero',
+  'ja-M1S':  'Mega Symphonia',
+  // ── Japanese Scarlet & Violet ────────────────────────────────────────────
+  'ja-SV11B': 'Black Bolt',
+  'ja-SV11W': 'White Flare',
+  'ja-SV10':  'Glory of Team Rocket',
+  'ja-SV9a':  'Sizzling Showdown',
+  'ja-SV9':   'Battle Partners',
+  'ja-SV8a':  'Terastal Festival ex',
+  'ja-SV8':   'Super Electric Breaker',
+  'ja-SV7a':  'Paradise Dragona',
+  'ja-SVLS':  'Starter Set Stellar: Ceruledge ex',
+  'ja-SVLN':  'Starter Set Stellar: Sylveon ex',
+  'ja-SVK':   'Deck Build Box: Stellar Miracle',
+  'ja-SV7':   'Stellar Miracle',
+  'ja-SV6':   'Mask of Change',
+  'ja-SV5a':  'Crimson Haze',
+  'ja-SV5K':  'Wild Force',
+  'ja-SV4a':  'Raging Surf',
+  'ja-SV4K':  'Ancient Roar',
+  'ja-SV4M':  'Future Flash',
+  'ja-SV3a':  'Raging Surf',
+  'ja-SV3':   'Ruler of the Black Flame',
+  'ja-SV2a':  'Pokémon Card 151',
+  'ja-SV2P':  'Snow Hazard',
+  'ja-SV2D':  'Clay Burst',
+  'ja-SV1S':  'Scarlet ex',
+  'ja-SV1V':  'Violet ex',
+  // ── Japanese Sword & Shield ──────────────────────────────────────────────
+  'ja-S12a':  'VSTAR Universe',
+  'ja-S12':   'Paradigm Trigger',
+  'ja-S9a':   'Battle Region',
+  'ja-S9':    'Star Birth',
+  // ── Japanese PCG (ex era) ────────────────────────────────────────────────
+  'ja-PCG9':  'Offense and Defense of the Furthest Ends',
+  'ja-PCG8':  'Crystal of the Phantom',
+  'ja-PCG7':  'Holon Phantom',
+  'ja-PCG6':  'Holon Research Tower',
+  'ja-PCG5':  "Illusion's Forest",
+  'ja-PCG4':  'Golden Sky, Silvery Ocean',
+  'ja-PCG3':  'Rocket Gang Strikes Back',
+  'ja-PCG2':  'Blue Sky Stream',
+  'ja-PCG1':  'Legendary Flight',
+  // ── Japanese e-series (ADV era) ──────────────────────────────────────────
+  'ja-E5':    'Mysterious Mountains',
+  'ja-E4':    'Split Earth',
+  'ja-E3':    'Wind from the Sea',
+  'ja-E2':    'The Town on No Map',
+  'ja-E1':    'Base Expansion Pack',
+  // ── Japanese Neo ─────────────────────────────────────────────────────────
+  'ja-neo4':  'Darkness, and to Light...',
+  'ja-neo3':  'Awakening Legends',
+  'ja-neo2':  'Beyond the Ancient Ruins...',
+  'ja-neo1':  'Gold, Silver, to a New World...',
+  // ── Japanese Original (PMCG) ─────────────────────────────────────────────
+  'ja-PMCG1': 'Expansion Pack',
+  'ja-PMCG2': 'Pokémon Jungle',
+  'ja-PMCG3': 'Mystery of the Fossils',
+  'ja-PMCG4': 'Team Rocket',
+  'ja-PMCG5': "Leader's Stadium",
+  'ja-PMCG6': 'Challenge from the Darkness',
+  // ── Japanese Web / VS ────────────────────────────────────────────────────
+  'ja-web1':  'Pokémon Card★web',
+  'ja-VS1':   'Pokémon Card★VS',
+}
+
 function getLangFromSetId(setId) {
   for (const prefix of LANG_PREFIXES) {
     if (setId.startsWith(prefix + '-')) return prefix
@@ -304,7 +374,14 @@ function AestheticFilter({ active, onChange, setQuery, onSetQuery }) {
                                     : 'bg-white/70 text-gray-600 border-white/60 hover:bg-pink-50 hover:text-pink-700 hover:border-pink-200'
                                   }`}
                               >
-                                <div className="font-semibold leading-tight truncate">{set.name}</div>
+                                {SET_EN_NAMES[set.id] ? (
+                                  <>
+                                    <div className="font-semibold leading-tight truncate">{SET_EN_NAMES[set.id]}</div>
+                                    <div className="text-[10px] opacity-50 truncate leading-tight">{set.name}</div>
+                                  </>
+                                ) : (
+                                  <div className="font-semibold leading-tight truncate">{set.name}</div>
+                                )}
                                 {set.releaseDate && (
                                   <div className="text-[10px] opacity-60 mt-0.5">{set.releaseDate.slice(0, 4)}</div>
                                 )}

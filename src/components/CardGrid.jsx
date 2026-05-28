@@ -90,9 +90,9 @@ function tierLabel(key) {
 
 // Cache key includes sort so each sort+filter combo has its own cache slot.
 // Switching sorts never re-uses data fetched under a different sort's API ordering.
-// v3: cache bust after ja-M5 image backfill.
+// v4: cache bust after ja-M1S and ja-M3 image backfill.
 function buildCacheKey(vibe, search, setQuery, sort, langFilter) {
-  return `v3|${vibe ?? ''}|${search ?? ''}|${setQuery ?? ''}|${sort ?? ''}|${langFilter ?? 'all'}`
+  return `v4|${vibe ?? ''}|${search ?? ''}|${setQuery ?? ''}|${sort ?? ''}|${langFilter ?? 'all'}`
 }
 
 // ─── localStorage card cache ──────────────────────────────────────────────────

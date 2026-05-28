@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback, memo } from 'react'
 import { useParams, Link } from 'react-router-dom'
 
 const CARD_BACK = 'https://images.pokemontcg.io/cardback.jpg'
@@ -70,6 +70,134 @@ function PaginationBar({ currentPage, totalPages, onPageChange }) {
 
 // ─── Pagination constant ──────────────────────────────────────────────────────
 const ITEMS_PER_PAGE = 20
+
+// ─── Price helper (module-level — pure, no closure deps) ─────────────────────
+function getPriceInfo(item) {
+  if (item.manual_price) return { value: item.manual_price, label: '',    isManual: true  }
+  if (item.market_price) return { value: item.market_price, label: '',    isManual: false }
+  if (item.mid_price)    return { value: item.mid_price,    label: 'Mid', isManual: false }
+  if (item.low_price)    return { value: item.low_price,    label: 'Low', isManual: false }
+  return { value: 0, label: '', isManual: false }
+}
+
+// ─── Card tile (module-level memo — stable identity prevents keyboard dismissal)
+const PublicCardTile = memo(function PublicCardTile({
+  item,
+  themeMode,
+  viewerOwnedIds,
+  viewerWishlistIds,
+  savingCardId,
+  isOwnProfile,
+  canAdd,
+  shopMode,
+  onCardClick,
+  onAddToWishlist,
+}) {
+  const iViewerOwned    = viewerOwnedIds.has(item.card_id)
+  const iViewerWishlist = !iViewerOwned && viewerWishlistIds.has(item.card_id)
+  const isSaving        = savingCardId === item.card_id
+
+  const tileBg = themeMode === 'dark'
+    ? (item.owned ? 'bg-emerald-900/40 border-emerald-700/50' : 'bg-violet-900/40 border-violet-700/50')
+    : (item.owned ? 'bg-emerald-50/95 border-emerald-200'     : 'bg-violet-50/92 border-violet-200')
+
+  const displayName = (item.card_language && item.card_language !== 'en' && item.english_name)
+    ? item.english_name
+    : item.name
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 16 }}
+      animate={{ opacity: 1, y: 0 }}
+      className={`rounded-2xl overflow-hidden shadow-md flex flex-col border ${tileBg} cursor-pointer`}
+      onClick={() => onCardClick(item)}
+    >
+      <div className="relative">
+        <img src={item.image} alt={displayName} className="w-full" loading="lazy"
+             onError={e => { e.currentTarget.src = CARD_BACK }} />
+        {item.owned && (item.quantity || 1) > 1 && (
+          <span className="absolute bottom-1.5 right-1.5 text-[11px] font-bold bg-emerald-500 text-white
+                           px-1.5 py-0.5 rounded-full shadow leading-none">
+            ×{item.quantity}
+          </span>
+        )}
+        {iViewerOwned && (
+          <span className="absolute top-1.5 left-1.5 text-[9px] font-bold bg-emerald-500/90 text-white
+                           px-1.5 py-0.5 rounded-full shadow-sm leading-none">✅ I own this</span>
+        )}
+        {iViewerWishlist && (
+          <span className="absolute top-1.5 left-1.5 text-[9px] font-bold bg-violet-500/90 text-white
+                           px-1.5 py-0.5 rounded-full shadow-sm leading-none">💖 My wishlist</span>
+        )}
+      </div>
+      <div className="p-2 text-center flex flex-col flex-1">
+        {item.card_language && item.card_language !== 'en' && item.english_name ? (
+          <>
+            <p className="text-sm font-bold text-gray-700 truncate">{item.english_name}</p>
+            <p className="text-[10px] text-gray-400 truncate">{item.name}</p>
+          </>
+        ) : (
+          <p className="text-sm font-bold text-gray-700 truncate">{item.name}</p>
+        )}
+        {(() => {
+          const { value: p, label, isManual } = getPriceInfo(item)
+          return p > 0 ? (
+            <div className="flex items-center justify-center gap-1 mb-1 flex-wrap">
+              <span className={`text-xs font-semibold px-2 py-0.5 rounded-full
+                ${isManual ? 'text-violet-600 bg-violet-100' : 'text-pink-600 bg-pink-100'}`}>
+                ${p.toFixed(2)}{label ? ` (${label})` : ''}
+              </span>
+              {isManual && (
+                <span className="text-[9px] font-semibold text-violet-500 bg-violet-50 border border-violet-200 px-1.5 py-0.5 rounded-full leading-none">
+                  ✏️ Custom
+                </span>
+              )}
+            </div>
+          ) : (
+            <p className="text-xs font-medium text-gray-300 bg-gray-100 px-2 py-0.5
+                           rounded-full inline-block mb-1 mx-auto">---</p>
+          )
+        })()}
+        {item.owned && (
+          <span className="block text-xs text-emerald-600 font-semibold mt-0.5">✅ Owned</span>
+        )}
+        {canAdd && !iViewerOwned && !iViewerWishlist && (
+          <div className="mt-auto pt-2 flex gap-1" onClick={e => e.stopPropagation()}>
+            <button
+              onClick={() => onAddToWishlist(item, false)}
+              disabled={isSaving}
+              className="flex-1 text-[10px] font-semibold py-1 rounded-xl
+                         bg-violet-100 hover:bg-violet-200 text-violet-700 transition-colors disabled:opacity-50"
+            >
+              {isSaving ? '…' : '💖 Want'}
+            </button>
+            <button
+              onClick={() => onAddToWishlist(item, true)}
+              disabled={isSaving}
+              className="flex-1 text-[10px] font-semibold py-1 rounded-xl
+                         bg-emerald-100 hover:bg-emerald-200 text-emerald-700 transition-colors disabled:opacity-50"
+            >
+              {isSaving ? '…' : '✅ Have'}
+            </button>
+          </div>
+        )}
+        {shopMode && item.owned && (
+          <a
+            href={`https://www.tcgplayer.com/search/all/product?q=${encodeURIComponent(displayName)}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={e => e.stopPropagation()}
+            className="mt-auto pt-2 block w-full text-xs font-bold text-white
+                       py-1.5 rounded-xl transition-all hover:opacity-90 active:scale-95"
+            style={{ background: 'linear-gradient(135deg, #0070f3, #00a8cc)' }}
+          >
+            🛒 Buy on TCGPlayer
+          </a>
+        )}
+      </div>
+    </motion.div>
+  )
+})
 
 // ─── Three showcase panels side-by-side ──────────────────────────────────────
 function ShowcasePanels({ items, onCardClick }) {
@@ -274,7 +402,7 @@ export default function PublicWishlist() {
   }
 
   // ── Add a card from someone's collection/wishlist to my own wishlist ────
-  async function addToMyWishlist(item, asOwned = false) {
+  const addToMyWishlist = useCallback(async function addToMyWishlist(item, asOwned = false) {
     if (!viewer) return
     setSavingCardId(item.card_id)
 
@@ -326,7 +454,7 @@ export default function PublicWishlist() {
       setMiniToast(asOwned ? 'Added to your Collection! ✨' : 'Added to your Wishlist! 💖')
       setTimeout(() => setMiniToast(''), 2500)
     }
-  }
+  }, [viewer, userId])
 
   // ── Shared shell ──────────────────────────────────────────────────────────
   function Shell({ children }) {
@@ -381,14 +509,6 @@ export default function PublicWishlist() {
   function getDisplayPrice(item) {
     return item.manual_price || item.market_price || item.mid_price || item.low_price || 0
   }
-  // Returns { value, label, isManual } so CardTile can show price source hints
-  function getPriceInfo(item) {
-    if (item.manual_price) return { value: item.manual_price, label: '',    isManual: true  }
-    if (item.market_price) return { value: item.market_price, label: '',    isManual: false }
-    if (item.mid_price)    return { value: item.mid_price,    label: 'Mid', isManual: false }
-    if (item.low_price)    return { value: item.low_price,    label: 'Low', isManual: false }
-    return { value: 0, label: '', isManual: false }
-  }
 
   // ── Derived values ────────────────────────────────────────────────────────
   const collectionItems   = items.filter(i => i.owned)
@@ -399,112 +519,13 @@ export default function PublicWishlist() {
   const canFollow         = viewer && !isOwnProfile
 
   const searchQ = cardSearch.trim().toLowerCase()
-  const filteredCollection = searchQ ? collectionItems.filter(i => i.name?.toLowerCase().includes(searchQ)) : collectionItems
-  const filteredWishlist   = searchQ ? wishlistItems.filter(i => i.name?.toLowerCase().includes(searchQ))  : wishlistItems
+  const matchesSearch = (i) => !searchQ || i.name?.toLowerCase().includes(searchQ) || i.english_name?.toLowerCase().includes(searchQ)
+  const filteredCollection = collectionItems.filter(matchesSearch)
+  const filteredWishlist   = wishlistItems.filter(matchesSearch)
 
   const visibleCollection = shopMode
     ? filteredCollection.filter(i => getDisplayPrice(i) > 0)
     : filteredCollection
-
-  // ── Card tile ─────────────────────────────────────────────────────────────
-  function CardTile({ item }) {
-    const iViewerOwned    = viewerOwnedIds.has(item.card_id)
-    const iViewerWishlist = !iViewerOwned && viewerWishlistIds.has(item.card_id)
-    const isSaving        = savingCardId === item.card_id
-    const canAdd          = viewer && !isOwnProfile && !iViewerOwned && !iViewerWishlist
-
-    const tileBg     = themeMode === 'dark'
-      ? (item.owned ? 'bg-emerald-900/40 border-emerald-700/50' : 'bg-violet-900/40 border-violet-700/50')
-      : (item.owned ? 'bg-emerald-50/95 border-emerald-200'     : 'bg-violet-50/92 border-violet-200')
-
-    return (
-      <motion.div
-        initial={{ opacity: 0, y: 16 }}
-        animate={{ opacity: 1, y: 0 }}
-        className={`rounded-2xl overflow-hidden shadow-md flex flex-col border ${tileBg} cursor-pointer`}
-        onClick={() => setSelectedShowcaseItem(item)}
-      >
-        <div className="relative">
-          <img src={item.image} alt={item.name} className="w-full" loading="lazy"
-               onError={e => { e.currentTarget.src = CARD_BACK }} />
-          {item.owned && (item.quantity || 1) > 1 && (
-            <span className="absolute bottom-1.5 right-1.5 text-[11px] font-bold bg-emerald-500 text-white
-                             px-1.5 py-0.5 rounded-full shadow leading-none">
-              ×{item.quantity}
-            </span>
-          )}
-          {/* Viewer comparison badge */}
-          {iViewerOwned && (
-            <span className="absolute top-1.5 left-1.5 text-[9px] font-bold bg-emerald-500/90 text-white
-                             px-1.5 py-0.5 rounded-full shadow-sm leading-none">✅ I own this</span>
-          )}
-          {iViewerWishlist && (
-            <span className="absolute top-1.5 left-1.5 text-[9px] font-bold bg-violet-500/90 text-white
-                             px-1.5 py-0.5 rounded-full shadow-sm leading-none">💖 My wishlist</span>
-          )}
-        </div>
-        <div className="p-2 text-center flex flex-col flex-1">
-          <p className="text-sm font-bold text-gray-700 truncate">{item.name}</p>
-          {(() => {
-            const { value: p, label, isManual } = getPriceInfo(item)
-            return p > 0 ? (
-              <div className="flex items-center justify-center gap-1 mb-1 flex-wrap">
-                <span className={`text-xs font-semibold px-2 py-0.5 rounded-full
-                  ${isManual ? 'text-violet-600 bg-violet-100' : 'text-pink-600 bg-pink-100'}`}>
-                  ${p.toFixed(2)}{label ? ` (${label})` : ''}
-                </span>
-                {isManual && (
-                  <span className="text-[9px] font-semibold text-violet-500 bg-violet-50 border border-violet-200 px-1.5 py-0.5 rounded-full leading-none">
-                    ✏️ Custom
-                  </span>
-                )}
-              </div>
-            ) : (
-              <p className="text-xs font-medium text-gray-300 bg-gray-100 px-2 py-0.5
-                             rounded-full inline-block mb-1 mx-auto">---</p>
-            )
-          })()}
-          {item.owned && (
-            <span className="block text-xs text-emerald-600 font-semibold mt-0.5">✅ Owned</span>
-          )}
-          {/* Add to my collection/wishlist buttons */}
-          {canAdd && (
-            <div className="mt-auto pt-2 flex gap-1" onClick={e => e.stopPropagation()}>
-              <button
-                onClick={() => addToMyWishlist(item, false)}
-                disabled={isSaving}
-                className="flex-1 text-[10px] font-semibold py-1 rounded-xl
-                           bg-violet-100 hover:bg-violet-200 text-violet-700 transition-colors disabled:opacity-50"
-              >
-                {isSaving ? '…' : '💖 Want'}
-              </button>
-              <button
-                onClick={() => addToMyWishlist(item, true)}
-                disabled={isSaving}
-                className="flex-1 text-[10px] font-semibold py-1 rounded-xl
-                           bg-emerald-100 hover:bg-emerald-200 text-emerald-700 transition-colors disabled:opacity-50"
-              >
-                {isSaving ? '…' : '✅ Have'}
-              </button>
-            </div>
-          )}
-          {shopMode && item.owned && (
-            <a
-              href={`https://www.tcgplayer.com/search/all/product?q=${encodeURIComponent(item.name)}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              onClick={e => e.stopPropagation()}
-              className="mt-auto pt-2 block w-full text-xs font-bold text-white
-                         py-1.5 rounded-xl transition-all hover:opacity-90 active:scale-95"
-              style={{ background: 'linear-gradient(135deg, #0070f3, #00a8cc)' }}
-            >
-              🛒 Buy on TCGPlayer
-            </a>
-          )}
-        </div>
-      </motion.div>
-    )
-  }
 
   return (
     <Shell>
@@ -704,7 +725,19 @@ export default function PublicWishlist() {
                     className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 p-4"
                   >
                     {collectionSlice.map(item => (
-                      <CardTile key={item.card_id} item={item} />
+                      <PublicCardTile
+                        key={item.card_id}
+                        item={item}
+                        themeMode={themeMode}
+                        viewerOwnedIds={viewerOwnedIds}
+                        viewerWishlistIds={viewerWishlistIds}
+                        savingCardId={savingCardId}
+                        isOwnProfile={isOwnProfile}
+                        canAdd={!!(viewer && !isOwnProfile)}
+                        shopMode={shopMode}
+                        onCardClick={setSelectedShowcaseItem}
+                        onAddToWishlist={addToMyWishlist}
+                      />
                     ))}
                   </motion.div>
                 </AnimatePresence>
@@ -755,7 +788,19 @@ export default function PublicWishlist() {
                     className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 p-4"
                   >
                     {wishlistSlice.map(item => (
-                      <CardTile key={item.card_id} item={item} />
+                      <PublicCardTile
+                        key={item.card_id}
+                        item={item}
+                        themeMode={themeMode}
+                        viewerOwnedIds={viewerOwnedIds}
+                        viewerWishlistIds={viewerWishlistIds}
+                        savingCardId={savingCardId}
+                        isOwnProfile={isOwnProfile}
+                        canAdd={!!(viewer && !isOwnProfile)}
+                        shopMode={shopMode}
+                        onCardClick={setSelectedShowcaseItem}
+                        onAddToWishlist={addToMyWishlist}
+                      />
                     ))}
                   </motion.div>
                 </AnimatePresence>
