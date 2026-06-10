@@ -20,7 +20,9 @@
     "import-special-promos": "node scripts/import-special-promos.mjs",
     "import-missing-energies": "node scripts/import-missing-energies.mjs",
     "seed-tcgdex-prices": "node scripts/seed-tcgdex-prices.mjs",
-    "import-abyss-eye": "node scripts/import-abyss-eye.mjs"
+    "import-abyss-eye": "node scripts/import-abyss-eye.mjs",
+    "import-ninja-spinner": "node scripts/import-ninja-spinner.mjs",
+    "import-gem-packs": "node scripts/import-gem-packs.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.102.1",
