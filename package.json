@@ -22,7 +22,8 @@
     "seed-tcgdex-prices": "node scripts/seed-tcgdex-prices.mjs",
     "import-abyss-eye": "node scripts/import-abyss-eye.mjs",
     "import-ninja-spinner": "node scripts/import-ninja-spinner.mjs",
-    "import-gem-packs": "node scripts/import-gem-packs.mjs"
+    "import-gem-packs": "node scripts/import-gem-packs.mjs",
+    "import-mep-series2": "node scripts/import-mep-series2.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.102.1",

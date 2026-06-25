@@ -391,7 +391,8 @@ export default function App() {
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
                   <nav className="hidden sm:flex" style={{ gap: 2, alignItems: 'center' }}>
                     {[
-                      { label: 'Browse',        active: !isWishlist && !isScanner, onClick: () => handleNavigate('all') },
+                      { label: 'Home',          active: isHome,                                 onClick: goHome },
+                      { label: 'Browse',        active: !isWishlist && !isScanner && !isHome,   onClick: () => handleNavigate('all') },
                       { label: 'My Collection', active: isWishlist && wishlistTab !== 'binder', onClick: () => handleNavigate('wishlist', 'collection') },
                       { label: 'My Binder',     active: isWishlist && wishlistTab === 'binder', onClick: () => handleNavigate('wishlist', 'binder') },
                     ].map(({ label, active, onClick }) => (

@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" width="400" height="400">
+  <!-- Background -->
+  <rect width="400" height="400" fill="#FFD1DC" rx="40"/>
+  <!-- Pokéball shadow -->
+  <circle cx="202" cy="202" r="122" fill="rgba(0,0,0,0.12)"/>
+  <!-- Pokéball outer -->
+  <circle cx="200" cy="200" r="120" fill="#1a1a1a"/>
+  <!-- Red top half -->
+  <path d="M80 200 A120 120 0 0 1 320 200 Z" fill="#E3350D"/>
+  <!-- White bottom half -->
+  <path d="M80 200 A120 120 0 0 0 320 200 Z" fill="#ffffff"/>
+  <!-- Center band -->
+  <rect x="80" y="190" width="240" height="20" fill="#1a1a1a"/>
+  <!-- Center button outer -->
+  <circle cx="200" cy="200" r="34" fill="#1a1a1a"/>
+  <!-- Center button white -->
+  <circle cx="200" cy="200" r="26" fill="#ffffff"/>
+  <!-- Center button highlight -->
+  <circle cx="191" cy="191" r="9" fill="rgba(255,255,255,0.5)"/>
+  <!-- App name -->
+  <text x="200" y="360" font-family="Georgia, serif" font-size="36" font-weight="bold"
+        fill="#c0406a" text-anchor="middle" letter-spacing="2">Poképop</text>
+</svg>

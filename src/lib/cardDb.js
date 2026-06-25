@@ -213,7 +213,11 @@ function normaliseCard(row) {
 export async function fetchCardsFromDb({ vibe, search, exactName, setQuery, sort, page = 1, pageSize, langFilter = null } = {}) {
   const isPriceSort   = sort === 'price-high' || sort === 'price-low'
   const isRaritySort  = sort === 'rarity-high' || sort === 'rarity-low'
-  const effectiveSize = (isPriceSort || isRaritySort) ? PRICE_PAGE_SIZE : (pageSize ?? PAGE_SIZE)
+  const isNumberSort  = sort === 'number'
+  // Number sort must fetch all cards at once so the client-side compareCardNumbers()
+  // can order them correctly across the full set — paginating in DB text order and
+  // locally resorting 20-card chunks would leave cards stranded across pages.
+  const effectiveSize = (isPriceSort || isRaritySort || isNumberSort) ? PRICE_PAGE_SIZE : (pageSize ?? PAGE_SIZE)
   const from          = (page - 1) * effectiveSize
   const to            = from + effectiveSize - 1
 
@@ -325,7 +329,11 @@ export async function fetchCardsFromDb({ vibe, search, exactName, setQuery, sort
   }
 
   // ── Apply sort + pagination ──────────────────────────────────
-  if (isPriceSort) {
+  if (isNumberSort) {
+    // Fetch in DB text order; all cards land in a single page (PRICE_PAGE_SIZE)
+    // and CardGrid's compareCardNumbers() does the correct numeric client sort.
+    q = q.order('number', { ascending: true })
+  } else if (isPriceSort) {
     // Sort by best available price, nulls last
     q = q.order('best_market_price', { ascending: sort === 'price-low', nullsFirst: false })
   } else if (isRaritySort) {

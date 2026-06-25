@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, memo } from 'react'
+import { useState, useEffect, useCallback, useRef, memo, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { supabase } from '../lib/supabase'
 import { fetchCardsFromDb, refreshPriceIfStale } from '../lib/cardDb.js'
@@ -12,6 +12,7 @@ const CARD_BACK = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://w
 
 // ─── Sort options ─────────────────────────────────────────────────────────────
 export const SORT_OPTIONS = [
+  { id: 'number',       label: 'Card Number' },
   { id: 'oldest',       label: 'Release Date (Oldest)' },
   { id: 'newest',       label: 'Release Date (Newest)' },
   { id: 'alpha',        label: 'Alphabetical (A–Z)' },
@@ -20,6 +21,19 @@ export const SORT_OPTIONS = [
   { id: 'rarity-high',  label: 'Rarity (Rarest First)' },
   { id: 'rarity-low',   label: 'Rarity (Common First)' },
 ]
+
+// Natural card-number comparator: handles "001", "10", "TG01", "GG26", "2201" etc.
+// Cards with a letter prefix (e.g. TG, GG, SWSH) sort after purely-numeric cards,
+// matching how physical sets are ordered (base set → trainer gallery → promos).
+function compareCardNumbers(a = '', b = '') {
+  const parse = n => {
+    const m = n.match(/^([A-Za-z]*)(\d+)(.*)$/)
+    return m ? { prefix: m[1].toUpperCase(), n: parseInt(m[2], 10), suffix: m[3] } : { prefix: n, n: 0, suffix: '' }
+  }
+  const pa = parse(a), pb = parse(b)
+  if (pa.prefix !== pb.prefix) return pa.prefix.localeCompare(pb.prefix)
+  return pa.n - pb.n || pa.suffix.localeCompare(pb.suffix)
+}
 
 // Rarity tier ranking — higher number = rarer
 const RARITY_RANK = {
@@ -63,6 +77,11 @@ const RARITY_RANK = {
   'MEGA_ATTACK_RARE':          15,
 }
 
+// Rarities eligible for a Reverse Holo variant.
+// Short codes (C/U/R) used in Japanese/Chinese sets; long names in English/Western sets.
+// High-rarity cards (RR, AR, SR, SAR, UR, RRR) are not printed as RH.
+const RH_ELIGIBLE = new Set(['C', 'U', 'R', 'Common', 'Uncommon', 'Rare', 'Rare Holo'])
+
 // Pick the best available market price across all TCGPlayer tiers.
 // Used for grid display / sort — the specific version price is shown separately in the modal.
 function getBestPrice(prices = {}) {
@@ -90,9 +109,9 @@ function tierLabel(key) {
 
 // Cache key includes sort so each sort+filter combo has its own cache slot.
 // Switching sorts never re-uses data fetched under a different sort's API ordering.
-// v4: cache bust after ja-M1S and ja-M3 image backfill.
+// v5: cache bust — number sort now fetches full set before client-sort.
 function buildCacheKey(vibe, search, setQuery, sort, langFilter) {
-  return `v4|${vibe ?? ''}|${search ?? ''}|${setQuery ?? ''}|${sort ?? ''}|${langFilter ?? 'all'}`
+  return `v5|${vibe ?? ''}|${search ?? ''}|${setQuery ?? ''}|${sort ?? ''}|${langFilter ?? 'all'}`
 }
 
 // ─── localStorage card cache ──────────────────────────────────────────────────
@@ -100,7 +119,7 @@ function buildCacheKey(vibe, search, setQuery, sort, langFilter) {
 // Price sorts are skipped — too many rows for reliable localStorage storage.
 // v2: card data now sourced from Supabase (different shape — invalidates v1 entries)
 // v4: pokellector image URLs — busts any cached entries with stale Limitless CDN URLs
-const LS_PREFIX = 'pokepop_cards_v4|'
+const LS_PREFIX = 'pokepop_cards_v5|'
 const LS_TTL    = 60 * 60 * 1000  // 1 hour — card data rarely changes within a session
 
 function lsGet(key) {
@@ -121,6 +140,10 @@ function lsSet(key, data) {
 
 function sortCards(cards, sort) {
   const arr = [...cards]
+
+  if (sort === 'number') {
+    return arr.sort((a, b) => compareCardNumbers(a.number, b.number))
+  }
 
   if (sort === 'price-high' || sort === 'price-low') {
     const priced   = arr.filter(c => getCardPrice(c) > 0)
@@ -611,7 +634,9 @@ function CardModal({ card, user, onToast, onClose, saveCard, collectionIds, owne
               {card.set.name}
             </button>
           ) : card.set?.name}
-          {card.rarity && <> · {card.rarity}</>}
+          {card.rarity && (
+            <> · {card._isRH ? `${card.rarity} · Reverse Holofoil` : card.rarity}</>
+          )}
         </p>
 
         {/* ── Condition — shown early for owned cards ── */}
@@ -974,14 +999,33 @@ function CardModal({ card, user, onToast, onClose, saveCard, collectionIds, owne
 // quickAdd/quickRemove are useCallback-stable so memo comparisons hold.
 const LANG_FLAG_MAP = { japanese:'🇯🇵', korean:'🇰🇷', chinese_t:'🇹🇼', chinese_s:'🇨🇳', french:'🇫🇷', german:'🇩🇪', italian:'🇮🇹', spanish:'🇪🇸', portuguese:'🇧🇷', thai:'🇹🇭', indonesian:'🇮🇩', russian:'🇷🇺' }
 
-const CardTile = memo(function CardTile({ card, inList, isOwned, myLangs, quickAdd, quickRemove, setSelected, onSetQuery }) {
+const CardTile = memo(function CardTile({
+  card, inList, isOwned, myLangs, quickAdd, quickRemove, setSelected, onSetQuery,
+  // RH variant props — only passed when browsing a specific set
+  isRH, rhInList, rhIsOwned, quickAddRH, quickRemoveRH,
+}) {
   const [ownedQty, setOwnedQty] = useState(1)
+
+  // For RH tiles use RH state; for base tiles use standard props
+  const effectiveInList  = isRH ? (rhInList  ?? false) : inList
+  const effectiveIsOwned = isRH ? (rhIsOwned ?? false) : isOwned
+
+  // Build top-left badge
+  let badgeLabel, badgeCls
+  if (isRH) {
+    if (effectiveIsOwned)    { badgeLabel = '✨ RH ✅'; badgeCls = 'bg-emerald-500/90 text-white' }
+    else if (effectiveInList){ badgeLabel = '✨ RH 💖'; badgeCls = 'bg-violet-500/90 text-white'  }
+    else                     { badgeLabel = '✨ RH';    badgeCls = 'bg-purple-400/80 text-white'  }
+  } else if (effectiveInList) {
+    badgeLabel = effectiveIsOwned ? '✅ Owned' : '💖 Wishlist'
+    badgeCls   = effectiveIsOwned ? 'bg-emerald-500/90 text-white' : 'bg-violet-500/90 text-white'
+  }
 
   return (
     <motion.div
       className={`cursor-pointer rounded-2xl overflow-hidden shadow-md relative ${
-        isOwned ? 'tile-owned' : inList ? 'tile-wishlist' : 'tile-default'
-      }`}
+        effectiveIsOwned ? 'tile-owned' : effectiveInList ? 'tile-wishlist' : 'tile-default'
+      }${isRH ? ' ring-1 ring-purple-200' : ''}`}
       style={{
         userSelect: 'none', WebkitUserSelect: 'none', WebkitTouchCallout: 'none', touchAction: 'manipulation',
       }}
@@ -989,15 +1033,14 @@ const CardTile = memo(function CardTile({ card, inList, isOwned, myLangs, quickA
       whileHover={{ scale: 1.04 }}
       onClick={() => setSelected(card)}
     >
-      {inList && (
+      {badgeLabel && (
         <span className={`absolute top-1.5 left-1.5 z-10 text-[9px] font-bold
-                          px-1.5 py-0.5 rounded-full leading-tight shadow-sm
-                          ${isOwned ? 'bg-emerald-500/90 text-white' : 'bg-violet-500/90 text-white'}`}>
-          {isOwned ? '✅ Owned' : '💖 Wishlist'}
+                          px-1.5 py-0.5 rounded-full leading-tight shadow-sm ${badgeCls}`}>
+          {badgeLabel}
         </span>
       )}
-      {/* Language variant flags — shown when the card is saved in multiple languages */}
-      {myLangs && myLangs.length > 1 && (
+      {/* Language variant flags — only on base card tiles */}
+      {!isRH && myLangs && myLangs.length > 1 && (
         <div className="absolute top-6 left-1.5 z-10 flex flex-col gap-0.5">
           {myLangs.filter(l => l !== 'english').map(lang => (
             <span key={lang} className="text-[11px] leading-none drop-shadow-sm"
@@ -1005,13 +1048,13 @@ const CardTile = memo(function CardTile({ card, inList, isOwned, myLangs, quickA
           ))}
         </div>
       )}
-      {inList && (
+      {effectiveInList && (
         <button
-          onClick={e => quickRemove(e, card)}
+          onClick={e => isRH ? quickRemoveRH(e, card) : quickRemove(e, card)}
           className="absolute top-1.5 right-1.5 z-10 w-6 h-6 rounded-full flex items-center
                      justify-center text-xs font-bold shadow-sm transition-colors leading-none
                      bg-white/80 hover:bg-red-400 hover:text-white text-red-400"
-          title="Remove from Collection"
+          title="Remove"
         >
           −
         </button>
@@ -1022,13 +1065,22 @@ const CardTile = memo(function CardTile({ card, inList, isOwned, myLangs, quickA
           {{ zh:'🇨🇳 ZH', ja:'🇯🇵 JA', ko:'🇰🇷 KO', fr:'🇫🇷 FR', de:'🇩🇪 DE' }[card.card_language] ?? card.card_language.toUpperCase()}
         </span>
       )}
-      <img
-        src={card.images?.small || CARD_BACK}
-        alt={card.name}
-        className="w-full"
-        loading="lazy"
-        onError={e => { e.currentTarget.src = CARD_BACK }}
-      />
+      {/* Image with diagonal white streak overlay for RH tiles */}
+      <div className="relative">
+        <img
+          src={card.images?.small || CARD_BACK}
+          alt={card.name}
+          className="w-full"
+          loading="lazy"
+          onError={e => { e.currentTarget.src = CARD_BACK }}
+        />
+        {isRH && (
+          <div
+            className="absolute inset-0 pointer-events-none"
+            style={{ background: 'linear-gradient(125deg, transparent 28%, rgba(255,255,255,0.82) 44%, rgba(255,255,255,0.95) 50%, rgba(255,255,255,0.82) 56%, transparent 72%)' }}
+          />
+        )}
+      </div>
       <div className="p-2 text-center">
         {card.card_language && card.card_language !== 'en' && card.english_name ? (
           <>
@@ -1050,47 +1102,43 @@ const CardTile = memo(function CardTile({ card, inList, isOwned, myLangs, quickA
           <p className="text-xs text-gray-400 truncate">{card.set?.name}</p>
         )}
         <VariantBadges card={card} />
-        <PriceTag card={card} />
-        {(isOwned || !inList) && (
+        {!isRH && <PriceTag card={card} />}
+        {(effectiveIsOwned || !effectiveInList) && (
           <div onClick={e => e.stopPropagation()}>
             <QuantityStepper value={ownedQty} onChange={setOwnedQty} compact />
           </div>
         )}
-        {isOwned && (
+        {effectiveIsOwned && (
           <button
-            onClick={e => quickAdd(e, card, true, ownedQty)}
+            onClick={e => isRH ? quickAddRH(e, card, true, ownedQty) : quickAdd(e, card, true, ownedQty)}
             className="w-full mt-1 text-[10px] font-semibold py-1 rounded-xl
                        bg-emerald-100 hover:bg-emerald-200 text-emerald-700 transition-colors"
-            title="Add more copies to Collection"
           >
             + {ownedQty} Cop{ownedQty === 1 ? 'y' : 'ies'}
           </button>
         )}
-        {inList && !isOwned && (
+        {effectiveInList && !effectiveIsOwned && (
           <button
-            onClick={e => quickAdd(e, card, true, 1)}
+            onClick={e => isRH ? quickAddRH(e, card, true, 1) : quickAdd(e, card, true, 1)}
             className="w-full mt-1 text-[10px] font-semibold py-1 rounded-xl
                        bg-emerald-100 hover:bg-emerald-200 text-emerald-700 transition-colors"
-            title="Move to Collection"
           >
             ✅ Move to Collection
           </button>
         )}
-        {!inList && (
+        {!effectiveInList && (
           <div className="flex gap-1 mt-1.5" onClick={e => e.stopPropagation()}>
             <button
-              onClick={e => quickAdd(e, card, false)}
+              onClick={e => isRH ? quickAddRH(e, card, false) : quickAdd(e, card, false)}
               className="flex-1 text-[10px] font-semibold py-1 rounded-xl
                          bg-violet-100 hover:bg-violet-200 text-violet-700 transition-colors"
-              title="Add to Wishlist"
             >
               💖 Wishlist
             </button>
             <button
-              onClick={e => quickAdd(e, card, true, ownedQty)}
+              onClick={e => isRH ? quickAddRH(e, card, true, ownedQty) : quickAdd(e, card, true, ownedQty)}
               className="flex-1 text-[10px] font-semibold py-1 rounded-xl
                          bg-emerald-100 hover:bg-emerald-200 text-emerald-700 transition-colors"
-              title="Add to Collection"
             >
               ✨ Owned
             </button>
@@ -1113,6 +1161,10 @@ function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, onClearF
   const [selected, setSelected] = useState(null)
   const [langFilter, setLangFilter] = useState('en')  // null = all languages; 'en','ja','zh-tw',etc
 
+  // Reverse-holo tracking — populated when browsing a specific set while logged in
+  const [rhCollectionIds, setRhCollectionIds] = useState(new Set())
+  const [rhOwnedIds,      setRhOwnedIds]      = useState(new Set())
+
   // Auto-switch language filter when a set with a non-English ID is selected.
   // e.g. setQuery = "set.id:ja-SV3" → setLangFilter('ja')
   useEffect(() => {
@@ -1126,6 +1178,35 @@ function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, onClearF
     }
     setLangFilter('en')   // English set — reset
   }, [setQuery])
+
+  // Always force card-number sort when entering a specific set view.
+  // Without this, manually switching to 'newest' then clicking a set would
+  // keep 'newest' active and serve DB text-ordered numbers (1, 10, 100, 11, 2…).
+  useEffect(() => {
+    if (setQuery?.match(/^set\.id:\S+$/)) {
+      onSortChange('number')
+    }
+  }, [setQuery]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Load all Reverse Holo editions the logged-in user owns/has wishlisted.
+  // User-scoped (not set-scoped) so RH tiles everywhere reflect accurate state.
+  useEffect(() => {
+    if (!user) {
+      setRhCollectionIds(new Set())
+      setRhOwnedIds(new Set())
+      return
+    }
+    supabase
+      .from('wishlists')
+      .select('card_id, owned')
+      .eq('user_id', user.id)
+      .eq('edition', 'reverseHolofoil')
+      .then(({ data }) => {
+        if (!data) return
+        setRhCollectionIds(new Set(data.map(r => r.card_id)))
+        setRhOwnedIds(new Set(data.filter(r => r.owned).map(r => r.card_id)))
+      })
+  }, [user?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Lazy price refresh — fires when a card modal opens.
   // Silently fetches a fresh price from pokemontcg.io if the stored price is > 24h old,
@@ -1205,7 +1286,7 @@ function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, onClearF
 
     const isPriceSort  = sort === 'price-high' || sort === 'price-low'
     const isRaritySort = sort === 'rarity-high' || sort === 'rarity-low'
-    const isBigSort    = isPriceSort || isRaritySort
+    const isBigSort    = isPriceSort || isRaritySort || sort === 'number'
 
     try {
       const { cards: rawCards, totalPages: total } = await fetchCardsFromDb({
@@ -1281,7 +1362,7 @@ function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, onClearF
       setLoading(false)
     } else {
       // Check localStorage before hitting the network (non-price/rarity sorts only)
-      const isBigSortNow = sortBy === 'price-high' || sortBy === 'price-low' || sortBy === 'rarity-high' || sortBy === 'rarity-low'
+      const isBigSortNow = sortBy === 'price-high' || sortBy === 'price-low' || sortBy === 'rarity-high' || sortBy === 'rarity-low' || sortBy === 'number'
       const lsCached = !isBigSortNow ? lsGet(key) : null
       if (lsCached) {
         // Warm the in-memory cache from localStorage so subsequent filter switches are instant
@@ -1331,6 +1412,7 @@ function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, onClearF
         .select('owned, quantity')
         .eq('user_id', user.id)
         .eq('card_id', card.id)
+        .eq('edition', edition || 'unspecified')
         .eq('language', language || 'english')
         .maybeSingle()
 
@@ -1387,6 +1469,44 @@ function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, onClearF
     if (!error) { onCardRemoved?.(card.id); onToast('Removed from Collection 🗑️') }
   }, [user, onCardRemoved, onToast]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Reverse-holo quick-add: saves as edition='reverseHolofoil' and updates local RH state
+  const quickAddRH = useCallback(async (e, card, owned, quantity = 1) => {
+    e.stopPropagation()
+    if (!user) { onToast('Login to save cards 💖'); return }
+    const { error, toast } = await saveCard(card, owned, quantity, 'reverseHolofoil')
+    if (!error) {
+      setRhCollectionIds(prev => new Set([...prev, card.id]))
+      if (owned) setRhOwnedIds(prev => new Set([...prev, card.id]))
+      onToast(toast)
+    }
+  }, [user, saveCard, onToast]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const quickRemoveRH = useCallback(async (e, card) => {
+    e.stopPropagation()
+    if (!user) return
+    const { error } = await supabase
+      .from('wishlists')
+      .delete()
+      .eq('user_id', user.id)
+      .eq('card_id', card.id)
+      .eq('edition', 'reverseHolofoil')
+    if (!error) {
+      setRhCollectionIds(prev => { const n = new Set(prev); n.delete(card.id); return n })
+      setRhOwnedIds(prev => { const n = new Set(prev); n.delete(card.id); return n })
+      onToast('Reverse Holo removed 🗑️')
+    }
+  }, [user, onToast]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Inject a Reverse Holo tile after every RH-eligible card, regardless of view.
+  // This applies when browsing vibes, searching by name, or browsing a specific set.
+  const displayCards = useMemo(() => {
+    return cards.flatMap(card =>
+      RH_ELIGIBLE.has(card.rarity)
+        ? [card, { ...card, _isRH: true, _rhKey: `${card.id}::rh` }]
+        : [card]
+    )
+  }, [cards])
+
   if (!activeVibe && !setQuery && !effectiveSearch) {
     return (
       <p className="text-center text-pink-300 font-semibold mt-16 text-lg">
@@ -1431,9 +1551,9 @@ function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, onClearF
         initial="hidden" animate="show"
         variants={{ hidden: {}, show: { transition: { staggerChildren: 0.02 } } }}
       >
-        {cards.map(card => (
+        {displayCards.map(card => (
           <CardTile
-            key={card.id}
+            key={card._isRH ? card._rhKey : card.id}
             card={card}
             inList={collectionIds?.has(card.id) ?? false}
             isOwned={ownedIds?.has(card.id) ?? false}
@@ -1442,18 +1562,23 @@ function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, onClearF
             quickRemove={quickRemove}
             setSelected={setSelected}
             onSetQuery={onSetQuery}
+            isRH={card._isRH ?? false}
+            rhInList={rhCollectionIds.has(card.id)}
+            rhIsOwned={rhOwnedIds.has(card.id)}
+            quickAddRH={quickAddRH}
+            quickRemoveRH={quickRemoveRH}
           />
         ))}
       </motion.div>
 
-      {loading && cards.length === 0 && (
+      {loading && displayCards.length === 0 && (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 p-4">
           {Array.from({ length: 10 }).map((_, i) => <CardSkeleton key={i} />)}
         </div>
       )}
 
 
-{loading && cards.length > 0 && (
+{loading && displayCards.length > 0 && (
         <div className="flex justify-center py-8">
           <motion.div
             className="w-10 h-10 rounded-full border-4 border-pink-300 border-t-pink-500"

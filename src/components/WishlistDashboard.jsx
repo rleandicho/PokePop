@@ -3699,7 +3699,7 @@ export default function WishlistDashboard({ user, profile, onToast, onGoExplore,
                     onClick={() => setValueChartOpen(true)} trend={valueTrend} />
           <StatCard icon="🎴" label="Packs Deep"            value={totalPacksOpened} color="lilac" suffix=" packs" decimals={0}
                     onClick={() => { setSetCollectionOpen(true); setSetCollectionTab('english'); loadSetCollection() }} />
-          <StatCard icon="💸" label="Total Invested"       value={packInvested}    color="pink"  prefix="$" decimals={2} onClick={() => setPackLogOpen(true)} />
+          <StatCard icon="🃏" label="Total Cards"           value={totalCopies}     color="pink"  suffix=" cards" decimals={0} onClick={() => setPackLogOpen(true)} />
           <StatCard icon="✅" label="Progress"             value={totalCount > 0 ? Math.round((ownedCount / totalCount) * 100) : 0} color="lilac" suffix="%" />
           <StatCard icon="💰" label="Total Sales"          value={salesTotal}      color="mint"  prefix="$" decimals={2} onClick={openSalesHistory} />
           <StatCard icon="🤝" label="Cards Traded"         value={tradeCount}      color="pink"  onClick={openTradesHistory} />
