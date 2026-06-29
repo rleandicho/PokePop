@@ -1165,18 +1165,23 @@ function CardGrid({ activeVibe, search, setQuery, sortBy, onSortChange, onClearF
   const [rhCollectionIds, setRhCollectionIds] = useState(new Set())
   const [rhOwnedIds,      setRhOwnedIds]      = useState(new Set())
 
-  // Auto-switch language filter when a set with a non-English ID is selected.
-  // e.g. setQuery = "set.id:ja-SV3" → setLangFilter('ja')
+  // Auto-switch language filter when a specific set is selected.
+  // Foreign sets (any non-English prefix) → null (global) so all cards in that
+  // set are visible regardless of their stored card_language value.
+  // English sets → 'en' to restore the default English-only browse.
   useEffect(() => {
     if (!setQuery) return
     const m = setQuery.match(/^set\.id:(\S+)$/)
     if (!m) return
     const setId = m[1]
-    const LANG_PREFIXES = ['zh-tw', 'zh-cn', 'zh', 'ko', 'ja', 'fr', 'de', 'it', 'pt', 'es']
-    for (const prefix of LANG_PREFIXES) {
-      if (setId.startsWith(prefix + '-')) { setLangFilter(prefix); return }
+    const FOREIGN_PREFIXES = ['zh-tw', 'zh-cn', 'zh', 'ko', 'ja', 'fr', 'de', 'it', 'pt', 'es']
+    for (const prefix of FOREIGN_PREFIXES) {
+      if (setId.startsWith(prefix + '-')) {
+        setLangFilter(null)   // global — the set query alone restricts the cards
+        return
+      }
     }
-    setLangFilter('en')   // English set — reset
+    setLangFilter('en')   // English set — reset to English-only
   }, [setQuery])
 
   // Always force card-number sort when entering a specific set view.
