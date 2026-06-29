@@ -260,6 +260,16 @@ function ShowcasePanels({ items, onCardClick }) {
   )
 }
 
+// ─── Shell wrapper (module-level — must NOT be inside PublicWishlist or it
+//     gets a new identity on every render, causing iOS keyboard to dismiss) ──
+function Shell({ children, themeMode }) {
+  return (
+    <div className={`theme-shell ${themeMode === 'dark' ? 'dark-theme' : ''}`}>
+      {children}
+    </div>
+  )
+}
+
 export default function PublicWishlist() {
   const { userId } = useParams()
 
@@ -456,18 +466,9 @@ export default function PublicWishlist() {
     }
   }, [viewer, userId])
 
-  // ── Shared shell ──────────────────────────────────────────────────────────
-  function Shell({ children }) {
-    return (
-      <div className={`theme-shell ${themeMode === 'dark' ? 'dark-theme' : ''}`}>
-        {children}
-      </div>
-    )
-  }
-
   if (status === 'loading') {
     return (
-      <Shell>
+      <Shell themeMode={themeMode}>
         <div className="flex items-center justify-center min-h-screen">
           <motion.div
             className="w-10 h-10 rounded-full border-4 border-pink-300 border-t-pink-500"
@@ -481,7 +482,7 @@ export default function PublicWishlist() {
 
   if (status === 'private' || status === 'notfound') {
     return (
-      <Shell>
+      <Shell themeMode={themeMode}>
         <div className="flex flex-col items-center justify-center min-h-screen gap-4 px-4">
           <p className="text-6xl">{status === 'notfound' ? '🔍' : '🔒'}</p>
           <p className="text-xl font-bold text-pink-500 text-center">
@@ -528,7 +529,7 @@ export default function PublicWishlist() {
     : filteredCollection
 
   return (
-    <Shell>
+    <Shell themeMode={themeMode}>
       {/* ── Header ─────────────────────────────────────────────────────────── */}
       <header className="text-center pt-8 pb-4 px-4 space-y-3">
         <div className="flex justify-center">
