@@ -27,15 +27,21 @@ const sb = createClient(
 /** Minimum acceptable image size in bytes — images below this are likely wrong-hash/placeholder */
 const MIN_BYTES = 20_000
 
-/** Returns { ok, bytes, error } for a URL */
+/** Returns { ok, bytes, error } for a URL, simulating a browser Referer to catch hotlink-blocked URLs */
 function checkUrl(url) {
   return new Promise(resolve => {
     if (!url) return resolve({ ok: false, bytes: 0, error: 'no URL' })
     const lib = url.startsWith('https') ? https : http
-    const req = lib.request(url, { method: 'HEAD', headers: { 'User-Agent': 'Pokepop-Verify/1.0' } }, res => {
+    const req = lib.request(url, {
+      method: 'HEAD',
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15',
+        'Referer': 'https://pokepop.vercel.app',
+      }
+    }, res => {
       const size = parseInt(res.headers['content-length'] ?? '0', 10)
       const type = res.headers['content-type'] ?? ''
-      if (res.statusCode !== 200) return resolve({ ok: false, bytes: size, error: `HTTP ${res.statusCode}` })
+      if (res.statusCode !== 200) return resolve({ ok: false, bytes: size, error: `HTTP ${res.statusCode} (hotlink blocked?)` })
       if (!type.startsWith('image/')) return resolve({ ok: false, bytes: size, error: `Wrong content-type: ${type}` })
       if (size < MIN_BYTES) return resolve({ ok: false, bytes: size, error: `Too small (${size}B < ${MIN_BYTES}B — likely wrong hash)` })
       resolve({ ok: true, bytes: size, error: null })
