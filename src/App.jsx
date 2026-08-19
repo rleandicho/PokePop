@@ -527,13 +527,17 @@ export default function App() {
         </div>
       )}
 
-      {/* Desktop ThemeToggle FAB — always visible bottom-left on all pages */}
-      <div className="hidden sm:block fixed z-40" style={{ bottom: 20, left: 20 }}>
-        <ThemeToggle
-          mode={themeMode}
-          onToggle={() => setThemeMode(prev => prev === 'dark' ? 'light' : 'dark')}
-        />
-      </div>
+      {/* Desktop ThemeToggle FAB — shown on non-home pages only.
+          The home page (HomePageEditorial) renders its own via .pp-home-theme-btn
+          which is also responsive, preventing a duplicate at mid-range widths. */}
+      {!isHome && (
+        <div className="hidden sm:block fixed z-40" style={{ bottom: 20, left: 20 }}>
+          <ThemeToggle
+            mode={themeMode}
+            onToggle={() => setThemeMode(prev => prev === 'dark' ? 'light' : 'dark')}
+          />
+        </div>
+      )}
 
       {/* Mobile bottom nav — shown on all non-home shell pages */}
       {!isHome && (

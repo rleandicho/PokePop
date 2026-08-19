@@ -9,6 +9,33 @@
   .pp-editorial-desktop { display: block; }
 }
 
+/* ── Gradient em text — reliable cross-browser gradient text clipping ──────── */
+/* Using CSS class avoids React inline-style rendering order issues that cause  */
+/* the gradient to flash as a solid block before background-clip is applied.    */
+.gradient-em {
+  font-style: italic;
+  background: linear-gradient(135deg, var(--app-accent-soft), var(--app-accent));
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: var(--app-accent); /* visible fallback if background-clip unsupported */
+}
+
+/* ── Home-page theme toggle — responsive positioning ───────────────────────── */
+/* Shown above the mobile bottom nav; repositioned to bottom-left on desktop.   */
+.pp-home-theme-btn {
+  position: fixed;
+  bottom: calc(76px + env(safe-area-inset-bottom, 0px));
+  left: 16px;
+  z-index: 50;
+}
+@media (min-width: 1100px) {
+  .pp-home-theme-btn {
+    bottom: 20px;
+    left: 20px;
+  }
+}
+
 :root {
   --app-bg: linear-gradient(135deg, #FFD1DC 0%, #FFF0F5 50%, #B2E2F2 100%);
   --app-text: #4b5563;

@@ -437,16 +437,11 @@ function SideItem({ T, icon, label, count, active, onClick }) {
   )
 }
 
-function GradientEm({ T, children }) {
-  return (
-    <em style={{
-      fontStyle: 'italic',
-      background: `linear-gradient(135deg, ${T.brandSoft}, ${T.brand})`,
-      WebkitBackgroundClip: 'text', backgroundClip: 'text',
-      WebkitTextFillColor: 'transparent',
-      color: T.brand, // fallback for browsers that don't support background-clip:text
-    }}>{children}</em>
-  )
+function GradientEm({ children }) {
+  // Styling is in index.css (.gradient-em) so the browser applies background-clip
+  // in one pass — avoids the flash where the gradient block is visible before
+  // WebkitTextFillColor: transparent takes effect in React inline styles.
+  return <em className="gradient-em">{children}</em>
 }
 
 // ── Pokéball that changes with light/dark mode (mirrors the card index logo)
@@ -1385,9 +1380,9 @@ export default function HomePageEditorial({ user, profile, profileReady = false,
         <h1 style={{ fontFamily: T.fontDisplay, fontWeight: 400, fontSize: 40, margin: '0 0 4px', letterSpacing: '-0.02em', lineHeight: 1.1, color: T.ink0 }}>
           {user
             ? username
-              ? <><span style={{ color: T.ink0 }}>Welcome back,</span><br /><GradientEm T={T}>{username}.</GradientEm></>
-              : <GradientEm T={T}>Welcome back!</GradientEm>
-            : <GradientEm T={T}>Welcome!</GradientEm>
+              ? <><span style={{ color: T.ink0 }}>Welcome back,</span><br /><GradientEm>{username}.</GradientEm></>
+              : <GradientEm>Welcome back!</GradientEm>
+            : <GradientEm>Welcome!</GradientEm>
           }
         </h1>
       </div>
@@ -1530,21 +1525,6 @@ export default function HomePageEditorial({ user, profile, profileReady = false,
         )}
       </div>
 
-      {/* Theme toggle — above bottom nav on mobile, respects iPhone safe-area */}
-      {onThemeToggle && (
-        <div style={{
-          position: 'fixed',
-          bottom: 'calc(76px + env(safe-area-inset-bottom, 0px))',
-          left: 16,
-          zIndex: 50,
-        }}>
-          <ThemeToggle
-            mode={themeMode}
-            onToggle={onThemeToggle}
-            className="shadow-lg backdrop-blur-md"
-          />
-        </div>
-      )}
       <BottomNav T={T} isDark={isDark} user={user} onNavigate={onNavigate} onRequestSignIn={() => setShowMiniAuth(true)} />
     </div>
   )
@@ -1683,9 +1663,9 @@ export default function HomePageEditorial({ user, profile, profileReady = false,
         <h1 style={{ fontFamily: T.fontDisplay, fontWeight: 400, fontSize: 56, margin: '0 0 28px', lineHeight: 1.05, letterSpacing: '-0.02em', color: T.ink0 }}>
           {user
             ? username
-              ? <>Welcome back, <GradientEm T={T}>{username}.</GradientEm></>
-              : <GradientEm T={T}>Welcome back!</GradientEm>
-            : <GradientEm T={T}>Welcome!</GradientEm>
+              ? <>Welcome back, <GradientEm>{username}.</GradientEm></>
+              : <GradientEm>Welcome back!</GradientEm>
+            : <GradientEm>Welcome!</GradientEm>
           }
         </h1>
 
@@ -1889,6 +1869,19 @@ export default function HomePageEditorial({ user, profile, profileReady = false,
     <>
       <div className="pp-editorial-mobile">{mobile}</div>
       <div className="pp-editorial-desktop">{desktop}</div>
+
+      {/* Theme toggle — above bottom nav on mobile, bottom-left on desktop.
+          Lives outside pp-editorial-* so it stays rendered at all breakpoints
+          without duplicating with App.jsx's shell FAB (which is hidden on home). */}
+      {onThemeToggle && (
+        <div className="pp-home-theme-btn">
+          <ThemeToggle
+            mode={themeMode}
+            onToggle={onThemeToggle}
+            className="shadow-lg backdrop-blur-md"
+          />
+        </div>
+      )}
 
       {selectedCard && (
         <FriendCardModal
