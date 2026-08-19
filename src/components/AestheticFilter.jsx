@@ -19,7 +19,8 @@ const VIBES = [
 
 // ─── Sets cache — memory + localStorage with 24-hour TTL ─────────────────────
 // v7: grouped by language tab, then series within each language
-const LS_KEY    = 'pokepop_sets_v7'
+// v8: bust to surface Pitch Black (PBL) in the sets dropdown
+const LS_KEY    = 'pokepop_sets_v8'
 const TTL_MS    = 24 * 60 * 60 * 1000
 const PROMO_KEY = 'Promos'
 const PROMO_QUERY = '(set.name:"*Promo*" OR subtypes:PROMO OR set.name:"*POP Series*" OR set.name:"*McDonald*")'

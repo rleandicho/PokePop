@@ -109,9 +109,9 @@ function tierLabel(key) {
 
 // Cache key includes sort so each sort+filter combo has its own cache slot.
 // Switching sorts never re-uses data fetched under a different sort's API ordering.
-// v5: cache bust — number sort now fetches full set before client-sort.
+// v6: cache bust — Pitch Black (PBL) + MEP Series 3 promos added to DB.
 function buildCacheKey(vibe, search, setQuery, sort, langFilter) {
-  return `v5|${vibe ?? ''}|${search ?? ''}|${setQuery ?? ''}|${sort ?? ''}|${langFilter ?? 'all'}`
+  return `v6|${vibe ?? ''}|${search ?? ''}|${setQuery ?? ''}|${sort ?? ''}|${langFilter ?? 'all'}`
 }
 
 // ─── localStorage card cache ──────────────────────────────────────────────────
@@ -119,7 +119,8 @@ function buildCacheKey(vibe, search, setQuery, sort, langFilter) {
 // Price sorts are skipped — too many rows for reliable localStorage storage.
 // v2: card data now sourced from Supabase (different shape — invalidates v1 entries)
 // v4: pokellector image URLs — busts any cached entries with stale Limitless CDN URLs
-const LS_PREFIX = 'pokepop_cards_v5|'
+// v6: PBL + MEP Series 3 added — bust so newest sort reflects new cards immediately
+const LS_PREFIX = 'pokepop_cards_v6|'
 const LS_TTL    = 60 * 60 * 1000  // 1 hour — card data rarely changes within a session
 
 function lsGet(key) {
