@@ -47,8 +47,8 @@ if (!SUPABASE_URL || !SUPABASE_KEY) {
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { persistSession: false } })
 const apply    = process.argv.includes('--apply')
 
-// Limitless CDN image URL
-const lim = n => `https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/tpci/MEP/MEP_${String(n).padStart(3, '0')}_R_EN_LG.png`
+// Pokemon.com official card images (Limitless CDN had no entries for these promos)
+const pkm = n => `https://assets.pokemon.com/static-assets/content-assets/cms2/img/cards/web/MEP/MEP_EN_${n}.png`
 
 const CARDS = [
   // ── Hoenn ─────────────────────────────────────────────────────────────────
@@ -59,8 +59,8 @@ const CARDS = [
     hp:           60,
     types:        ['Grass'],
     rarity:       'Illustration Rare',
-    image_small:  lim(55),
-    image_large:  lim(55),
+    image_small:  pkm(55),
+    image_large:  pkm(55),
   },
   {
     id:           'mep-56',
@@ -69,8 +69,8 @@ const CARDS = [
     hp:           60,
     types:        ['Fire'],
     rarity:       'Illustration Rare',
-    image_small:  lim(56),
-    image_large:  lim(56),
+    image_small:  pkm(56),
+    image_large:  pkm(56),
   },
   {
     id:           'mep-57',
@@ -79,8 +79,8 @@ const CARDS = [
     hp:           70,
     types:        ['Water'],
     rarity:       'Illustration Rare',
-    image_small:  lim(57),
-    image_large:  lim(57),
+    image_small:  pkm(57),
+    image_large:  pkm(57),
   },
   // ── Kalos ─────────────────────────────────────────────────────────────────
   {
@@ -90,8 +90,8 @@ const CARDS = [
     hp:           70,
     types:        ['Grass'],
     rarity:       'Illustration Rare',
-    image_small:  lim(58),
-    image_large:  lim(58),
+    image_small:  pkm(58),
+    image_large:  pkm(58),
   },
   {
     id:           'mep-59',
@@ -100,8 +100,8 @@ const CARDS = [
     hp:           60,
     types:        ['Fire'],
     rarity:       'Illustration Rare',
-    image_small:  lim(59),
-    image_large:  lim(59),
+    image_small:  pkm(59),
+    image_large:  pkm(59),
   },
   {
     id:           'mep-60',
@@ -110,8 +110,8 @@ const CARDS = [
     hp:           60,
     types:        ['Water'],
     rarity:       'Illustration Rare',
-    image_small:  lim(60),
-    image_large:  lim(60),
+    image_small:  pkm(60),
+    image_large:  pkm(60),
   },
   // ── Paldea ────────────────────────────────────────────────────────────────
   {
@@ -121,8 +121,8 @@ const CARDS = [
     hp:           70,
     types:        ['Grass'],
     rarity:       'Illustration Rare',
-    image_small:  lim(61),
-    image_large:  lim(61),
+    image_small:  pkm(61),
+    image_large:  pkm(61),
   },
   {
     id:           'mep-62',
@@ -131,8 +131,8 @@ const CARDS = [
     hp:           70,
     types:        ['Fire'],
     rarity:       'Illustration Rare',
-    image_small:  lim(62),
-    image_large:  lim(62),
+    image_small:  pkm(62),
+    image_large:  pkm(62),
   },
   {
     id:           'mep-63',
@@ -141,8 +141,8 @@ const CARDS = [
     hp:           70,
     types:        ['Water'],
     rarity:       'Illustration Rare',
-    image_small:  lim(63),
-    image_large:  lim(63),
+    image_small:  pkm(63),
+    image_large:  pkm(63),
   },
 ]
 
